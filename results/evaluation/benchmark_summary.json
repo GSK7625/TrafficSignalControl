@@ -1,0 +1,760 @@
+{
+  "ingolstadt1": {
+    "Fixed-Time": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 18.51,
+        "std": 0.44,
+        "min": 17.91,
+        "max": 18.97
+      },
+      "mean_queue_length": {
+        "mean": 5.01,
+        "std": 0.07,
+        "min": 4.92,
+        "max": 5.08
+      },
+      "total_completed_vehicles": {
+        "mean": 1703.33,
+        "std": 1.25,
+        "min": 1702.0,
+        "max": 1705.0
+      },
+      "completion_rate_pct": {
+        "mean": 99.26,
+        "std": 0.07,
+        "min": 99.18,
+        "max": 99.36
+      },
+      "throughput_vph": {
+        "mean": 1703.33,
+        "std": 1.25,
+        "min": 1702.0,
+        "max": 1705.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 49.96,
+        "std": 0.61,
+        "min": 49.14,
+        "max": 50.62
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 49555.51,
+        "std": 1010.57,
+        "min": 48221.05,
+        "max": 50665.79
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 109.0,
+        "std": 0.0,
+        "min": 109.0,
+        "max": 109.0
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 0.0,
+        "mean_queue_length_improvement_pct": 0.0,
+        "total_completed_vehicles_improvement_pct": 0.0,
+        "completion_rate_pct_improvement_pct": 0.0,
+        "throughput_vph_improvement_pct": 0.0,
+        "tripinfo_mean_travel_time_improvement_pct": 0.0,
+        "tripinfo_total_time_loss_improvement_pct": 0.0,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 0.0
+      }
+    },
+    "Max-Pressure": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 4.16,
+        "std": 0.32,
+        "min": 3.8,
+        "max": 4.58
+      },
+      "mean_queue_length": {
+        "mean": 0.75,
+        "std": 0.06,
+        "min": 0.66,
+        "max": 0.81
+      },
+      "total_completed_vehicles": {
+        "mean": 1703.33,
+        "std": 1.7,
+        "min": 1701.0,
+        "max": 1705.0
+      },
+      "completion_rate_pct": {
+        "mean": 99.26,
+        "std": 0.1,
+        "min": 99.13,
+        "max": 99.36
+      },
+      "throughput_vph": {
+        "mean": 1703.33,
+        "std": 1.7,
+        "min": 1701.0,
+        "max": 1705.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 33.6,
+        "std": 0.47,
+        "min": 32.96,
+        "max": 34.08
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 21693.32,
+        "std": 773.43,
+        "min": 20648.55,
+        "max": 22496.13
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 176.33,
+        "std": 3.68,
+        "min": 172.0,
+        "max": 181.0
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 77.53,
+        "mean_queue_length_improvement_pct": 85.03,
+        "total_completed_vehicles_improvement_pct": 0.0,
+        "completion_rate_pct_improvement_pct": 0.0,
+        "throughput_vph_improvement_pct": 0.0,
+        "tripinfo_mean_travel_time_improvement_pct": 32.75,
+        "tripinfo_total_time_loss_improvement_pct": 56.22,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": -61.77
+      }
+    },
+    "Q-Learning": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 16.7,
+        "std": 14.37,
+        "min": 6.07,
+        "max": 37.02
+      },
+      "mean_queue_length": {
+        "mean": 2.24,
+        "std": 0.48,
+        "min": 1.74,
+        "max": 2.88
+      },
+      "total_completed_vehicles": {
+        "mean": 1701.33,
+        "std": 3.09,
+        "min": 1697.0,
+        "max": 1704.0
+      },
+      "completion_rate_pct": {
+        "mean": 99.14,
+        "std": 0.18,
+        "min": 98.89,
+        "max": 99.3
+      },
+      "throughput_vph": {
+        "mean": 1701.33,
+        "std": 3.09,
+        "min": 1697.0,
+        "max": 1704.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 46.77,
+        "std": 15.21,
+        "min": 35.71,
+        "max": 68.28
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 44042.33,
+        "std": 25847.95,
+        "min": 25249.74,
+        "max": 80591.96
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "episode_reward": {
+        "mean": -1610.8,
+        "std": 341.17,
+        "min": -2070.2,
+        "max": -1253.4
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 9.78,
+        "mean_queue_length_improvement_pct": 55.29,
+        "total_completed_vehicles_improvement_pct": -0.12,
+        "completion_rate_pct_improvement_pct": -0.12,
+        "throughput_vph_improvement_pct": -0.12,
+        "tripinfo_mean_travel_time_improvement_pct": 6.39,
+        "tripinfo_total_time_loss_improvement_pct": 11.13,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 100.0
+      }
+    },
+    "DQN": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 0.71,
+        "std": 0.07,
+        "min": 0.65,
+        "max": 0.8
+      },
+      "mean_queue_length": {
+        "mean": 1.93,
+        "std": 0.01,
+        "min": 1.92,
+        "max": 1.95
+      },
+      "total_completed_vehicles": {
+        "mean": 1124.67,
+        "std": 9.43,
+        "min": 1118.0,
+        "max": 1138.0
+      },
+      "completion_rate_pct": {
+        "mean": 65.54,
+        "std": 0.55,
+        "min": 65.15,
+        "max": 66.32
+      },
+      "throughput_vph": {
+        "mean": 1124.67,
+        "std": 9.43,
+        "min": 1118.0,
+        "max": 1138.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 23.02,
+        "std": 0.12,
+        "min": 22.89,
+        "max": 23.18
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 4733.28,
+        "std": 23.43,
+        "min": 4700.36,
+        "max": 4752.95
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "episode_reward": {
+        "mean": -1392.2,
+        "std": 10.9,
+        "min": -1407.4,
+        "max": -1382.4
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 96.16,
+        "mean_queue_length_improvement_pct": 61.48,
+        "total_completed_vehicles_improvement_pct": -33.97,
+        "completion_rate_pct_improvement_pct": -33.97,
+        "throughput_vph_improvement_pct": -33.97,
+        "tripinfo_mean_travel_time_improvement_pct": 53.92,
+        "tripinfo_total_time_loss_improvement_pct": 90.45,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 100.0
+      }
+    },
+    "Original SUMO": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 17.34,
+        "std": 0.15,
+        "min": 17.17,
+        "max": 17.54
+      },
+      "mean_queue_length": {
+        "mean": 5.86,
+        "std": 0.01,
+        "min": 5.84,
+        "max": 5.87
+      },
+      "total_completed_vehicles": {
+        "mean": 1693.67,
+        "std": 2.05,
+        "min": 1691.0,
+        "max": 1696.0
+      },
+      "completion_rate_pct": {
+        "mean": 98.7,
+        "std": 0.12,
+        "min": 98.54,
+        "max": 98.83
+      },
+      "throughput_vph": {
+        "mean": 1693.67,
+        "std": 2.05,
+        "min": 1691.0,
+        "max": 1696.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 48.64,
+        "std": 0.14,
+        "min": 48.5,
+        "max": 48.84
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 47059.76,
+        "std": 259.45,
+        "min": 46795.25,
+        "max": 47412.24
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 6.32,
+        "mean_queue_length_improvement_pct": -16.97,
+        "total_completed_vehicles_improvement_pct": -0.57,
+        "completion_rate_pct_improvement_pct": -0.56,
+        "throughput_vph_improvement_pct": -0.57,
+        "tripinfo_mean_travel_time_improvement_pct": 2.64,
+        "tripinfo_total_time_loss_improvement_pct": 5.04,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 100.0
+      }
+    }
+  },
+  "cologne1": {
+    "Fixed-Time": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 70.27,
+        "std": 1.41,
+        "min": 68.29,
+        "max": 71.43
+      },
+      "mean_queue_length": {
+        "mean": 37.17,
+        "std": 0.75,
+        "min": 36.11,
+        "max": 37.73
+      },
+      "total_completed_vehicles": {
+        "mean": 1952.67,
+        "std": 1.25,
+        "min": 1951.0,
+        "max": 1954.0
+      },
+      "completion_rate_pct": {
+        "mean": 96.9,
+        "std": 0.06,
+        "min": 96.82,
+        "max": 96.97
+      },
+      "throughput_vph": {
+        "mean": 1952.67,
+        "std": 1.25,
+        "min": 1951.0,
+        "max": 1954.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 108.69,
+        "std": 1.74,
+        "min": 106.26,
+        "max": 110.24
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 167499.3,
+        "std": 3506.36,
+        "min": 162574.28,
+        "max": 170461.75
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 109.0,
+        "std": 0.0,
+        "min": 109.0,
+        "max": 109.0
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 0.0,
+        "mean_queue_length_improvement_pct": 0.0,
+        "total_completed_vehicles_improvement_pct": 0.0,
+        "completion_rate_pct_improvement_pct": 0.0,
+        "throughput_vph_improvement_pct": 0.0,
+        "tripinfo_mean_travel_time_improvement_pct": 0.0,
+        "tripinfo_total_time_loss_improvement_pct": 0.0,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 0.0
+      }
+    },
+    "Max-Pressure": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 13.77,
+        "std": 0.15,
+        "min": 13.57,
+        "max": 13.92
+      },
+      "mean_queue_length": {
+        "mean": 6.66,
+        "std": 0.04,
+        "min": 6.62,
+        "max": 6.71
+      },
+      "total_completed_vehicles": {
+        "mean": 1996.33,
+        "std": 0.47,
+        "min": 1996.0,
+        "max": 1997.0
+      },
+      "completion_rate_pct": {
+        "mean": 99.08,
+        "std": 0.02,
+        "min": 99.06,
+        "max": 99.11
+      },
+      "throughput_vph": {
+        "mean": 1996.33,
+        "std": 0.47,
+        "min": 1996.0,
+        "max": 1997.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 57.76,
+        "std": 0.26,
+        "min": 57.39,
+        "max": 57.95
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 69820.46,
+        "std": 628.08,
+        "min": 68932.81,
+        "max": 70292.34
+      },
+      "teleport_count": {
+        "mean": 1.33,
+        "std": 1.89,
+        "min": 0.0,
+        "max": 4.0
+      },
+      "phase_change_count": {
+        "mean": 397.0,
+        "std": 3.56,
+        "min": 394.0,
+        "max": 402.0
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 80.4,
+        "mean_queue_length_improvement_pct": 82.08,
+        "total_completed_vehicles_improvement_pct": 2.24,
+        "completion_rate_pct_improvement_pct": 2.25,
+        "throughput_vph_improvement_pct": 2.24,
+        "tripinfo_mean_travel_time_improvement_pct": 46.86,
+        "tripinfo_total_time_loss_improvement_pct": 58.32,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": -264.22
+      }
+    },
+    "Q-Learning": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 35.32,
+        "std": 13.18,
+        "min": 25.29,
+        "max": 53.94
+      },
+      "mean_queue_length": {
+        "mean": 16.38,
+        "std": 4.46,
+        "min": 12.55,
+        "max": 22.64
+      },
+      "total_completed_vehicles": {
+        "mean": 1988.0,
+        "std": 0.82,
+        "min": 1987.0,
+        "max": 1989.0
+      },
+      "completion_rate_pct": {
+        "mean": 98.66,
+        "std": 0.04,
+        "min": 98.61,
+        "max": 98.71
+      },
+      "throughput_vph": {
+        "mean": 1988.0,
+        "std": 0.82,
+        "min": 1987.0,
+        "max": 1989.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 82.45,
+        "std": 15.59,
+        "min": 70.4,
+        "max": 104.46
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 118544.24,
+        "std": 30888.75,
+        "min": 94637.34,
+        "max": 162160.24
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "episode_reward": {
+        "mean": -11795.8,
+        "std": 3213.26,
+        "min": -16301.8,
+        "max": -9033.4
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 49.74,
+        "mean_queue_length_improvement_pct": 55.93,
+        "total_completed_vehicles_improvement_pct": 1.81,
+        "completion_rate_pct_improvement_pct": 1.82,
+        "throughput_vph_improvement_pct": 1.81,
+        "tripinfo_mean_travel_time_improvement_pct": 24.14,
+        "tripinfo_total_time_loss_improvement_pct": 29.23,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 100.0
+      }
+    },
+    "DQN": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 11.58,
+        "std": 0.29,
+        "min": 11.21,
+        "max": 11.92
+      },
+      "mean_queue_length": {
+        "mean": 5.73,
+        "std": 0.13,
+        "min": 5.64,
+        "max": 5.91
+      },
+      "total_completed_vehicles": {
+        "mean": 1997.33,
+        "std": 1.25,
+        "min": 1996.0,
+        "max": 1999.0
+      },
+      "completion_rate_pct": {
+        "mean": 99.13,
+        "std": 0.06,
+        "min": 99.06,
+        "max": 99.21
+      },
+      "throughput_vph": {
+        "mean": 1997.33,
+        "std": 1.25,
+        "min": 1996.0,
+        "max": 1999.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 51.48,
+        "std": 0.5,
+        "min": 50.98,
+        "max": 52.17
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 57351.33,
+        "std": 1084.24,
+        "min": 56309.73,
+        "max": 58846.64
+      },
+      "teleport_count": {
+        "mean": 0.33,
+        "std": 0.47,
+        "min": 0.0,
+        "max": 1.0
+      },
+      "phase_change_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "episode_reward": {
+        "mean": -4125.13,
+        "std": 92.96,
+        "min": -4256.6,
+        "max": -4059.0
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 83.52,
+        "mean_queue_length_improvement_pct": 84.58,
+        "total_completed_vehicles_improvement_pct": 2.29,
+        "completion_rate_pct_improvement_pct": 2.3,
+        "throughput_vph_improvement_pct": 2.29,
+        "tripinfo_mean_travel_time_improvement_pct": 52.64,
+        "tripinfo_total_time_loss_improvement_pct": 65.76,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 100.0
+      }
+    },
+    "Original SUMO": {
+      "run_count": 3,
+      "seeds": [
+        42,
+        101,
+        2024
+      ],
+      "tripinfo_mean_waiting_time": {
+        "mean": 29.22,
+        "std": 0.11,
+        "min": 29.09,
+        "max": 29.37
+      },
+      "mean_queue_length": {
+        "mean": 15.64,
+        "std": 0.15,
+        "min": 15.49,
+        "max": 15.84
+      },
+      "total_completed_vehicles": {
+        "mean": 1979.67,
+        "std": 1.25,
+        "min": 1978.0,
+        "max": 1981.0
+      },
+      "completion_rate_pct": {
+        "mean": 98.24,
+        "std": 0.06,
+        "min": 98.16,
+        "max": 98.31
+      },
+      "throughput_vph": {
+        "mean": 1979.67,
+        "std": 1.25,
+        "min": 1978.0,
+        "max": 1981.0
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 77.47,
+        "std": 0.28,
+        "min": 77.13,
+        "max": 77.82
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 108146.13,
+        "std": 610.38,
+        "min": 107528.43,
+        "max": 108977.17
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "phase_change_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 58.42,
+        "mean_queue_length_improvement_pct": 57.92,
+        "total_completed_vehicles_improvement_pct": 1.38,
+        "completion_rate_pct_improvement_pct": 1.38,
+        "throughput_vph_improvement_pct": 1.38,
+        "tripinfo_mean_travel_time_improvement_pct": 28.72,
+        "tripinfo_total_time_loss_improvement_pct": 35.43,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": 100.0
+      }
+    }
+  }
+}

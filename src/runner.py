@@ -449,6 +449,8 @@ class SimulationRunner:
                 "collision_steps": self.total_collision_steps,
                 "collision_vehicle_involvements": self.total_collision_vehicle_involvements,
                 "unique_colliding_vehicles_count": len(self.unique_colliding_vehicles),
+                "phase_change_count": sum(mgr.phase_switch_count for mgr in self.tls_managers.values()),
+                "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.tls_managers.items()},
             }
             if self.controller is not None:
                 metadata["controller_name"] = self.controller.name

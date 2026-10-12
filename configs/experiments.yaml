@@ -1,0 +1,20 @@
+# Benchmark Experiments Configuration
+scenarios:
+  - cologne1
+  - ingolstadt1
+
+algorithms:
+  - Fixed-Time
+  - Max-Pressure
+  - Q-Learning
+  - DQN
+  - Original SUMO
+
+simulation:
+  steps: 3600
+  step_length: 1.0
+  seed: 42
+  use_tripinfo: true
+  yellow_duration: 3.0
+  all_red_duration: 0.0
+  min_green: 5.0

@@ -168,7 +168,7 @@ Thư mục `results/experiments/` chứa kết quả tổng hợp của toàn b�
 
 ## 5. Chạy bộ kiểm thử tự động (Unit & Integration Tests)
 
-Chạy toàn bộ 79 bài kiểm thử tự động bằng pytest:
+Chạy toàn bộ 106 bài kiểm thử tự động bằng pytest:
 ```powershell
 pytest -v
 ```
@@ -178,8 +178,99 @@ Hoặc qua module unittest:
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-Chạy riêng kiểm thử controller và thực nghiệm:
+Chạy riêng kiểm thử RL:
 ```powershell
-pytest tests/test_fixed_time.py tests/test_max_pressure.py tests/test_runner_controller.py -v
-pytest tests/test_fixed_time_live.py tests/test_max_pressure_live.py -v
+pytest tests/test_rl_components.py tests/test_rl_env.py tests/test_q_learning.py tests/test_dqn.py -v
 ```
+
+---
+
+## 6. Huấn luyện và Đánh giá Học tăng cường (Giai đoạn 5: Q-Learning & DQN)
+
+### 6.1. Huấn luyện Q-Learning (Tabular Q-Learning)
+```powershell
+# Huấn luyện trên Ingolstadt1 (15 episodes, seed 42):
+python -m src.training.train_q_learning --dataset ingolstadt1 --episodes 15 --seed 42
+
+# Huấn luyện trên Cologne1 (15 episodes, seed 42):
+python -m src.training.train_q_learning --dataset cologne1 --episodes 15 --seed 42
+```
+
+### 6.2. Huấn luyện Deep Q-Network (DQN)
+```powershell
+# Huấn luyện trên Ingolstadt1 (15 episodes, seed 42):
+python -m src.training.train_dqn --dataset ingolstadt1 --episodes 15 --seed 42
+
+# Huấn luyện trên Cologne1 (15 episodes, seed 42):
+python -m src.training.train_dqn --dataset cologne1 --episodes 15 --seed 42
+```
+
+### 6.3. Đánh giá độc lập (Evaluation Mode)
+Chạy mô hình ở chế độ suy luận hoàn toàn không tiếp tục cập nhật trọng số và tắt exploration ngẫu nhiên ($\epsilon = 0$):
+```powershell
+# Đánh giá Q-Learning:
+python -m src.evaluation.evaluate_rl --dataset cologne1 --algo q_learning --model models/q_learning/q_learning_cologne1_best.json
+python -m src.evaluation.evaluate_rl --dataset ingolstadt1 --algo q_learning --model models/q_learning/q_learning_ingolstadt1_best.json
+
+# Đánh giá DQN:
+python -m src.evaluation.evaluate_rl --dataset cologne1 --algo dqn --model models/dqn/dqn_cologne1_best.pt
+python -m src.evaluation.evaluate_rl --dataset ingolstadt1 --algo dqn --model models/dqn/dqn_ingolstadt1_best.pt
+```
+
+### 6.4. Tổng hợp báo cáo so sánh và sinh biểu đồ
+```powershell
+# Sinh bảng đối chiếu và báo cáo khoa học 4 thuật toán:
+python -m src.evaluation.compare_algorithms
+
+# Sinh toàn bộ 16 biểu đồ tiến trình học và so sánh hiệu năng:
+python -m src.experiments.plot_rl
+```
+
+### 6.5. Chạy quan sát mô phỏng trực quan (SUMO-GUI) với Q-Learning và DQN
+```powershell
+python main.py --dataset cologne1 --controller q-learning --gui --steps 300
+python main.py --dataset cologne1 --controller dqn --gui --steps 300
+```
+
+---
+
+## 7. Giai đoạn 6: Tự động hóa Thực nghiệm Đa Seed và Đối chuẩn Toàn diện (Phase 6 Benchmark)
+
+### 7.1. Chạy một thực nghiệm đánh giá đơn lẻ
+Thực thi kiểm chuẩn một thuật toán trên một kịch bản với một seed cụ thể:
+```powershell
+# Chạy Fixed-Time trên Cologne1 (Seed 42):
+python -m src.evaluation.experiment_runner --scenario cologne1 --algorithm Fixed-Time --seed 42
+
+# Chạy Max-Pressure trên Ingolstadt1 (Seed 101):
+python -m src.evaluation.experiment_runner --scenario ingolstadt1 --algorithm Max-Pressure --seed 101
+
+# Chạy Q-Learning trên Cologne1 (Seed 42):
+python -m src.evaluation.experiment_runner --scenario cologne1 --algorithm Q-Learning --seed 42
+
+# Chạy DQN trên Cologne1 (Seed 42):
+python -m src.evaluation.experiment_runner --scenario cologne1 --algorithm DQN --seed 42
+```
+
+### 7.2. Chạy toàn bộ ma trận thực nghiệm chuẩn hóa (Full Benchmark Matrix)
+Tự động chạy toàn bộ 30 lượt mô phỏng độc lập (full 3600 giây, đa seed 42, 101, 2024 cho cả 5 thuật toán trên Cologne1 và Ingolstadt1), kiểm tra tính hợp lệ và xuất bảng tổng hợp:
+```powershell
+python -m src.evaluation.experiment_runner --run-all
+```
+- Dữ liệu từng lượt chạy lưu tại: `results/evaluation/runs/<run_id>/`
+- Dữ liệu bảng tổng hợp các lượt chạy: `results/evaluation/benchmark_runs.csv`
+- Báo cáo phân tích thống kê (mean, std, min, max, % cải thiện): `results/evaluation/benchmark_summary.json`
+
+### 7.3. Tạo lại toàn bộ 30 biểu đồ học thuật xuất bản (Publication Charts)
+Sinh đồng loạt tất cả các biểu đồ Nhóm A (so sánh thuật toán có error bars), Nhóm B (diễn biến động thời gian) và Nhóm C (tiến trình học tăng cường):
+```powershell
+python -m src.evaluation.plot_comparison
+```
+Toàn bộ biểu đồ định dạng PNG độ phân giải cao 300 DPI được lưu tại thư mục: `results/figures/`.
+
+### 7.4. Chạy kiểm thử tự động toàn diện (Unit & Integration Tests)
+```powershell
+pytest -v
+```
+Toàn bộ 115/115 bài kiểm thử tự động của dự án sẽ được kiểm chứng tự động.
+

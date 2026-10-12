@@ -1,0 +1,33 @@
+# Deep Q-Network (DQN) Configuration
+algorithm: DQN
+decision_interval: 5.0
+min_green: 5.0
+yellow_duration: 3.0
+all_red_duration: 0.0
+
+network:
+  hidden_dim: 128
+  activation: ReLU
+  num_layers: 2
+
+hyperparameters:
+  learning_rate: 0.001
+  gamma: 0.95
+  epsilon_start: 1.0
+  epsilon_min: 0.05
+  epsilon_decay: 0.85
+  buffer_size: 20000
+  batch_size: 32
+  learning_starts: 64
+  target_update_interval: 100
+  max_grad_norm: 10.0
+  num_episodes: 15
+  seed: 42
+
+observation:
+  max_queue_scale: 20.0
+  max_time_scale: 60.0
+
+reward:
+  name: NegativeAverageQueueReward
+  scale: 1.0

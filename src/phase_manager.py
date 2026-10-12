@@ -90,6 +90,10 @@ class SafePhaseManager:
         self._yellow_time_remaining: float = 0.0
         self._all_red_time_remaining: float = 0.0
 
+        # Phase usage tracking
+        self.phase_switch_count: int = 0
+        self.phase_durations: dict[int, float] = {i: 0.0 for i in range(len(green_phases))}
+
     def get_current_phase(self) -> int:
         """Returns the current active green phase index."""
         return self._current_phase
@@ -152,6 +156,7 @@ class SafePhaseManager:
         self._yellow_time_remaining = self.yellow_duration
         self._all_red_time_remaining = 0.0
         self._time_in_phase = 0.0
+        self.phase_switch_count += 1
         return True
 
     def update(self, step_duration: float = 1.0, traci_module=None) -> None:
@@ -188,6 +193,9 @@ class SafePhaseManager:
                 self._all_red_time_remaining = 0.0
         else:
             self._time_in_phase += step_duration
+            self.phase_durations[self._current_phase] = (
+                self.phase_durations.get(self._current_phase, 0.0) + step_duration
+            )
 
         if traci_module is not None:
             self.apply_to_traci(traci_module)

@@ -32,7 +32,13 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 
-# Temporary simulation results (keep consolidated benchmark experiments)
+# Temporary simulation results (keep consolidated benchmark experiments and figures)
 results/*
 !results/experiments/
 !results/experiments/**
+!results/figures/
+!results/figures/**
+!results/training/
+!results/training/**
+!results/evaluation/
+results/evaluation/runs/

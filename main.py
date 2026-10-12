@@ -6,9 +6,12 @@ import os
 import sys
 
 from src.config import get_scenario_config
+from src.controllers.dqn import DQNController
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
+from src.controllers.q_learning import QLearningController
 from src.data_inspector import inspect_all_scenarios, inspect_scenario
+from src.rl.observations import ObservationBuilder
 from src.runner import SimulationRunner
 
 
@@ -65,8 +68,14 @@ def main():
         "--controller",
         type=str,
         default="none",
-        choices=["none", "fixed-time", "max-pressure"],
-        help="Traffic controller algorithm: 'fixed-time', 'max-pressure', or 'none' (uses --mode)",
+        choices=["none", "fixed-time", "max-pressure", "q-learning", "dqn"],
+        help="Traffic controller algorithm: 'fixed-time', 'max-pressure', 'q-learning', 'dqn', or 'none' (uses --mode)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Path to trained model checkpoint for Q-Learning (.json) or DQN (.pt)",
     )
     parser.add_argument(
         "--fixed-time-green",
@@ -155,6 +164,40 @@ def main():
         effective_mode = "agent"
     elif args.controller == "max-pressure":
         controller = MaxPressureController(min_green=args.min_green, pressure_metric=args.pressure_metric)
+        effective_mode = "agent"
+    elif args.controller == "q-learning":
+        from src.runner import extract_green_phases
+        info = inspect_scenario(args.dataset, data_dir="data")
+        tl_id = info.tls_ids[0]
+        green_phases = extract_green_phases(args.dataset, tl_id, info.phases_per_tls[tl_id])
+        controller = QLearningController(num_actions=len(green_phases), seed=args.seed, eval_mode=True)
+        model_path = args.model or f"models/q_learning/q_learning_{args.dataset}_best.json"
+        if os.path.isfile(model_path):
+            controller.load(model_path)
+            print(f"[INFO] Loaded Q-Learning model from '{model_path}'")
+        else:
+            print(f"[WARN] Q-Learning model '{model_path}' not found, using untrained agent.")
+        effective_mode = "agent"
+    elif args.controller == "dqn":
+        from src.runner import extract_green_phases
+        info = inspect_scenario(args.dataset, data_dir="data")
+        tl_id = info.tls_ids[0]
+        green_phases = extract_green_phases(args.dataset, tl_id, info.phases_per_tls[tl_id])
+        in_lanes = info.controlled_lanes_per_tls.get(tl_id, [])
+        builder = ObservationBuilder(incoming_lanes=in_lanes, num_green_phases=len(green_phases), min_green=args.min_green)
+        controller = DQNController(
+            observation_dim=builder.observation_dim,
+            action_dim=len(green_phases),
+            obs_builder=builder,
+            seed=args.seed,
+            eval_mode=True,
+        )
+        model_path = args.model or f"models/dqn/dqn_{args.dataset}_best.pt"
+        if os.path.isfile(model_path):
+            controller.load(model_path)
+            print(f"[INFO] Loaded DQN model from '{model_path}'")
+        else:
+            print(f"[WARN] DQN model '{model_path}' not found, using untrained agent.")
         effective_mode = "agent"
     else:
         effective_mode = args.mode
