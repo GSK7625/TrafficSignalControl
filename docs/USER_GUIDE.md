@@ -89,11 +89,17 @@ python main.py --dataset cologne3 --gui --steps 300
 ```
 *Ghi chú: Khi bật GUI, SUMO sẽ tự động mở cửa sổ đồ họa, chạy mô phỏng và đóng cửa sổ khi kết thúc.*
 
-#### c) Tùy biến chế độ điều khiển và tham số an toàn
-- `--mode`: Chế độ điều khiển tín hiệu đèn:
+#### c) Tùy biến chế độ điều khiển và thuật toán tối ưu (Giai đoạn 4)
+- `--controller`: Thuật toán điều khiển tín hiệu đèn:
+  - `none` (mặc định): Hoạt động theo cờ `--mode`.
+  - `fixed-time`: Bộ điều khiển Fixed-Time theo chu kỳ và thời lượng cố định định trước.
+  - `max-pressure`: Bộ điều khiển Max-Pressure tối ưu hóa áp lực hàng đợi giữa làn vào và làn ra.
+- `--fixed-time-green`: Thời gian đèn xanh cho Fixed-Time (giây), mặc định `30.0`.
+- `--pressure-metric`: Tiêu chí đo áp lực Max-Pressure: `queue` (số xe dừng chờ < 0.1 m/s, mặc định) hoặc `vehicle_count` (tổng số xe trên làn).
+- `--mode`: Chế độ điều khiển tín hiệu đèn khi `--controller none`:
   - `original` (mặc định cho baseline): SUMO tự thực thi chương trình đèn gốc được định nghĩa sẵn trong mạng (`.net.xml`), không bị TraCI can thiệp hay ép chu kỳ cố định.
   - `cyclic`: Bộ điều khiển xoay vòng các pha xanh định kỳ 30s.
-  - `agent`: Chế độ dành cho thuật toán RL hoặc bộ điều khiển bên ngoài (khi nhận `actions={}` sẽ giữ nguyên pha an toàn mà không tự ý đổi).
+  - `agent`: Chế độ dành cho thuật toán hoặc bộ điều khiển bên ngoài (khi nhận `actions={}` sẽ giữ nguyên pha an toàn mà không tự ý đổi).
 - `--yellow-dur`: Thời gian pha vàng giải tỏa (giây), mặc định `3.0` (chuẩn benchmark RESCO).
 - `--all-red-dur`: Thời gian toàn đỏ giải tỏa (giây), mặc định `0.0` (chuẩn benchmark RESCO; có thể cấu hình lên `1.0`-`2.0` cho mô phỏng an toàn giao thông thực tế).
 - `--min-green`: Thời gian đèn xanh tối thiểu (giây), mặc định `5.0`.
@@ -101,13 +107,19 @@ python main.py --dataset cologne3 --gui --steps 300
 - `--step-len`: Độ dài mỗi bước mô phỏng (giây), mặc định `1.0`.
 - `--output-dir`: Thư mục lưu kết quả, mặc định `results`.
 
-Ví dụ:
+Ví dụ thực thi các thuật toán:
 ```powershell
-# Chạy baseline nguyên bản của Ingolstadt1 có trích xuất tripinfo:
-python main.py --dataset ingolstadt1 --mode original --tripinfo
+# 1. Chạy thuật toán Fixed-Time (chu kỳ xanh 30s) trên Cologne1:
+python main.py --dataset cologne1 --controller fixed-time --fixed-time-green 30.0 --tripinfo
 
-# Chạy với chu kỳ xoay vòng 30s, vàng 3s, toàn đỏ 1.5s:
-python main.py --dataset cologne1 --mode cyclic --yellow-dur 3.0 --all-red-dur 1.5
+# 2. Chạy thuật toán Max-Pressure trên Ingolstadt1:
+python main.py --dataset ingolstadt1 --controller max-pressure --min-green 5.0 --tripinfo
+
+# 3. Chạy baseline nguyên bản của SUMO trên Cologne1:
+python main.py --dataset cologne1 --mode original --tripinfo
+
+# 4. Chạy toàn bộ thực nghiệm tự động so sánh Fixed-Time, Max-Pressure, Original và sinh biểu đồ:
+python -m src.experiments.run_experiments
 ```
 
 ---
@@ -122,17 +134,19 @@ Bao gồm 2 tệp:
    ```json
    {
      "scenario_name": "cologne1",
-     "total_steps": 100,
-     "total_completed_vehicles": 4,
-     "mean_queue_length": 11.88,
-     "max_queue_length": 39,
-     "mean_waiting_time": 24.8,
-     "total_waiting_time": 248.0,
-     "total_queue_delay": 1188.0,
-     "mean_travel_time": 10.5,
-     "total_time_loss": 142.31,
-     "tripinfo_completed_vehicles": 4,
-     "tripinfo_mean_travel_time": 10.5
+     "total_steps": 3600,
+     "total_completed_vehicles": 1998,
+     "mean_queue_length": 6.43,
+     "max_queue_length": 24,
+     "mean_waiting_time": 13.32,
+     "total_waiting_time": 26613.36,
+     "total_queue_delay": 23148.0,
+     "mean_travel_time": 56.27,
+     "total_time_loss": 67048.9,
+     "tripinfo_completed_vehicles": 1998,
+     "tripinfo_mean_travel_time": 56.27,
+     "tripinfo_mean_waiting_time": 13.32,
+     "controller_name": "MaxPressure"
    }
    ```
 2. `step_metrics.csv`: Dữ liệu chuỗi thời gian chi tiết theo từng bước mô phỏng:
@@ -145,16 +159,27 @@ Bao gồm 2 tệp:
    - `step_completed_vehicles`: Số xe về đích trong bước đó.
    - `cumulative_completed_vehicles`: Số xe về đích cộng dồn.
 
+Thư mục `results/experiments/` chứa kết quả tổng hợp của toàn bộ các thử nghiệm đối chuẩn:
+- `benchmark_summary.json`: Bảng dữ liệu JSON gộp tất cả thuật toán và kịch bản.
+- `benchmark_report.md`: Báo cáo khoa học markdown tổng kết số liệu 9 chỉ số bắt buộc.
+- `charts/`: 5 biểu đồ so sánh (`waiting_time_comparison.png`, `queue_length_comparison.png`, `throughput_comparison.png`, `time_loss_comparison.png`, `combined_metrics_dashboard.png`).
+
 ---
 
 ## 5. Chạy bộ kiểm thử tự động (Unit & Integration Tests)
 
-Chạy toàn bộ 55 bài kiểm thử (bao gồm kiểm thử đơn vị, kiểm thử tích hợp TraCI trực tiếp và các bộ kiểm thử khắc phục lỗi audit):
+Chạy toàn bộ 79 bài kiểm thử tự động bằng pytest:
+```powershell
+pytest -v
+```
+
+Hoặc qua module unittest:
 ```powershell
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-Chạy riêng kiểm thử tích hợp kết nối SUMO live:
+Chạy riêng kiểm thử controller và thực nghiệm:
 ```powershell
-python -m unittest tests/test_integration_sumo.py
+pytest tests/test_fixed_time.py tests/test_max_pressure.py tests/test_runner_controller.py -v
+pytest tests/test_fixed_time_live.py tests/test_max_pressure_live.py -v
 ```

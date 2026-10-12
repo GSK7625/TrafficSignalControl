@@ -6,6 +6,8 @@ import os
 import sys
 
 from src.config import get_scenario_config
+from src.controllers.fixed_time import FixedTimeController
+from src.controllers.max_pressure import MaxPressureController
 from src.data_inspector import inspect_all_scenarios, inspect_scenario
 from src.runner import SimulationRunner
 
@@ -58,6 +60,26 @@ def main():
         default="original",
         choices=["original", "cyclic", "agent"],
         help="Signal control mode: 'original' (SUMO native program), 'cyclic' (30s cycle), 'agent' (external control)",
+    )
+    parser.add_argument(
+        "--controller",
+        type=str,
+        default="none",
+        choices=["none", "fixed-time", "max-pressure"],
+        help="Traffic controller algorithm: 'fixed-time', 'max-pressure', or 'none' (uses --mode)",
+    )
+    parser.add_argument(
+        "--fixed-time-green",
+        type=float,
+        default=30.0,
+        help="Green time duration for Fixed-Time controller in seconds (default: 30.0)",
+    )
+    parser.add_argument(
+        "--pressure-metric",
+        type=str,
+        default="queue",
+        choices=["queue", "vehicle_count"],
+        help="Pressure measurement metric for Max-Pressure: 'queue' (halting vehicles) or 'vehicle_count' (all vehicles)",
     )
     parser.add_argument(
         "--yellow-dur",
@@ -127,8 +149,19 @@ def main():
         print(format_scenario_info(info))
         return
 
+    controller = None
+    if args.controller == "fixed-time":
+        controller = FixedTimeController(default_green_time=args.fixed_time_green)
+        effective_mode = "agent"
+    elif args.controller == "max-pressure":
+        controller = MaxPressureController(min_green=args.min_green, pressure_metric=args.pressure_metric)
+        effective_mode = "agent"
+    else:
+        effective_mode = args.mode
+
     print(f"\n[INFO] Initializing simulation for dataset: '{args.dataset}'")
-    print(f"[INFO] Mode: {'GUI (sumo-gui)' if args.gui else 'Headless (sumo)'} | Control Mode: '{args.mode}'")
+    ctrl_desc = f"Controller: '{controller.name}'" if controller else f"Control Mode: '{effective_mode}'"
+    print(f"[INFO] Mode: {'GUI (sumo-gui)' if args.gui else 'Headless (sumo)'} | {ctrl_desc}")
     print(
         f"[INFO] Min Green: {args.min_green}s | Yellow: {args.yellow_dur}s | "
         f"All-Red: {args.all_red_dur}s | Step Length: {args.step_len}s"
@@ -144,11 +177,11 @@ def main():
         max_steps=args.steps,
         seed=args.seed,
         output_dir=args.output_dir,
-        control_mode=args.mode,
+        control_mode=effective_mode,
         use_tripinfo=args.tripinfo,
     )
 
-    runner = SimulationRunner(cfg)
+    runner = SimulationRunner(cfg, controller=controller)
     print(f"[INFO] Traffic lights found: {list(runner.tls_managers.keys())}")
     for tls_id, mgr in runner.tls_managers.items():
         print(f"  TLS '{tls_id}': {len(mgr.green_phases)} active green phases configured")

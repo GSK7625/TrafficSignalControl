@@ -11,6 +11,7 @@ except ImportError:
     traci = None
 
 from src.config import SimulationConfig, get_scenario_config
+from src.controllers.base import ControlledLink, IntersectionObservation
 from src.data_inspector import PhaseInfo, ScenarioInfo, inspect_scenario
 from src.metrics import MetricsCollector, StepMetrics
 from src.phase_manager import SafePhaseManager
@@ -46,9 +47,19 @@ def extract_green_phases(scenario_name: str, tl_id: str, phases: List[PhaseInfo]
 class SimulationRunner:
     """Manages the full lifecycle of a SUMO simulation using TraCI."""
 
-    def __init__(self, config: SimulationConfig, control_mode: Optional[str] = None):
+    def __init__(
+        self,
+        config: SimulationConfig,
+        control_mode: Optional[str] = None,
+        controller: Optional[Any] = None,
+    ):
         self.config = config
-        self.control_mode = control_mode if control_mode is not None else config.control_mode
+        self.controller = controller
+        if controller is not None:
+            self.control_mode = "agent"
+        else:
+            self.control_mode = control_mode if control_mode is not None else config.control_mode
+
         self.scenario_info: ScenarioInfo = inspect_scenario(
             config.dataset_name, data_dir=config.data_dir
         )
@@ -60,6 +71,7 @@ class SimulationRunner:
         self.all_controlled_lanes = sorted(list(set(self.all_controlled_lanes)))
 
         self.has_run: bool = False
+        self.tls_controlled_links: Dict[str, List[ControlledLink]] = {}
         self.reset()
 
     def reset(self) -> None:
@@ -69,6 +81,9 @@ class SimulationRunner:
         """
         if getattr(self, "is_running", False):
             self.close()
+
+        if self.controller is not None:
+            self.controller.reset()
 
         import uuid
         run_uuid = uuid.uuid4().hex[:6]
@@ -162,10 +177,80 @@ class SimulationRunner:
         self.current_step = 0
         self.sim_time = self.config.begin_time
 
+        # Query controlled links from TraCI for each traffic light
+        for tl_id in self.tls_managers:
+            try:
+                raw_links = traci.trafficlight.getControlledLinks(tl_id)
+                links_list = []
+                for s_idx, conn_tuple in enumerate(raw_links):
+                    for conn in conn_tuple:
+                        from_l = conn[0] if len(conn) > 0 else ""
+                        to_l = conn[1] if len(conn) > 1 else ""
+                        via_l = conn[2] if len(conn) > 2 else None
+                        links_list.append(
+                            ControlledLink(
+                                signal_index=s_idx,
+                                from_lane=from_l,
+                                to_lane=to_l,
+                                via_lane=via_l,
+                            )
+                        )
+                self.tls_controlled_links[tl_id] = links_list
+            except Exception:
+                self.tls_controlled_links[tl_id] = []
+
         # Apply initial green phases only if active control is engaged (not in original baseline mode)
         if self._active_control_engaged:
             for manager in self.tls_managers.values():
                 manager.apply_to_traci(traci)
+
+    def get_observation(self) -> Dict[str, IntersectionObservation]:
+        """Extracts current traffic state observation for all controlled intersections."""
+        obs = {}
+        for tl_id, mgr in self.tls_managers.items():
+            links = self.tls_controlled_links.get(tl_id, [])
+            in_lanes = set(l.from_lane for l in links if l.from_lane)
+            out_lanes = set(l.to_lane for l in links if l.to_lane)
+
+            in_queues: Dict[str, float] = {}
+            in_vehs: Dict[str, float] = {}
+            for lane_id in in_lanes:
+                try:
+                    in_queues[lane_id] = float(traci.lane.getLastStepHaltingNumber(lane_id))
+                except Exception:
+                    in_queues[lane_id] = 0.0
+                try:
+                    in_vehs[lane_id] = float(traci.lane.getLastStepVehicleNumber(lane_id))
+                except Exception:
+                    in_vehs[lane_id] = 0.0
+
+            out_queues: Dict[str, float] = {}
+            out_vehs: Dict[str, float] = {}
+            for lane_id in out_lanes:
+                try:
+                    out_queues[lane_id] = float(traci.lane.getLastStepHaltingNumber(lane_id))
+                except Exception:
+                    out_queues[lane_id] = 0.0
+                try:
+                    out_vehs[lane_id] = float(traci.lane.getLastStepVehicleNumber(lane_id))
+                except Exception:
+                    out_vehs[lane_id] = 0.0
+
+            obs[tl_id] = IntersectionObservation(
+                tls_id=tl_id,
+                current_phase=mgr.get_current_phase(),
+                time_in_phase=mgr.time_in_current_phase(),
+                is_in_transition=mgr.is_in_transition(),
+                green_phases=list(mgr.green_phases),
+                controlled_links=links,
+                in_lane_queues=in_queues,
+                out_lane_queues=out_queues,
+                in_lane_vehicles=in_vehs,
+                out_lane_vehicles=out_vehs,
+                sim_time=self.sim_time,
+                step=self.current_step,
+            )
+        return obs
 
     def step(self, actions: Optional[Dict[str, int]] = None) -> StepMetrics:
         """Executes a single simulation step.
@@ -176,7 +261,7 @@ class SimulationRunner:
                      If None is passed, behavior depends on control_mode:
                        - 'original': native SUMO traffic light logic runs without TraCI override.
                        - 'cyclic': cycles to next green phase after 30 seconds.
-                       - 'agent': maintains currently held phases.
+                       - 'agent': maintains currently held phases (or queries controller if registered).
 
         Returns:
             StepMetrics for the completed step.
@@ -185,6 +270,10 @@ class SimulationRunner:
             raise RuntimeError("SimulationRunner is not running. Call start() first.")
 
         # 1. Process phase action requests or control modes
+        if actions is None and self.controller is not None:
+            obs = self.get_observation()
+            actions = self.controller.select_action(obs)
+
         if actions is not None:
             if self.control_mode == "original":
                 raise ValueError(
@@ -294,15 +383,26 @@ class SimulationRunner:
 
         return metrics
 
-    def run(self, num_steps: Optional[int] = None) -> Dict[str, Any]:
+    def run(
+        self,
+        num_steps: Optional[int] = None,
+        controller: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """Runs the simulation until num_steps or scenario completion, then saves results.
 
         Args:
             num_steps: Optional maximum number of steps to execute.
+            controller: Optional BaseTrafficController instance governing signal decisions.
 
         Returns:
             Dictionary containing the summary of the simulation run.
         """
+        if controller is not None:
+            self.controller = controller
+            self.control_mode = "agent"
+            self._active_control_engaged = True
+            self.controller.reset()
+
         max_steps = num_steps if num_steps is not None else self.config.max_steps
 
         try:
@@ -350,6 +450,10 @@ class SimulationRunner:
                 "collision_vehicle_involvements": self.total_collision_vehicle_involvements,
                 "unique_colliding_vehicles_count": len(self.unique_colliding_vehicles),
             }
+            if self.controller is not None:
+                metadata["controller_name"] = self.controller.name
+                metadata["controller_config"] = self.controller.get_config()
+
             self.metrics_collector.set_run_metadata(metadata)
             self.close()
             self.has_run = True

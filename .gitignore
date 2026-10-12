@@ -31,3 +31,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Temporary simulation results (keep consolidated benchmark experiments)
+results/*
+!results/experiments/
+!results/experiments/**
