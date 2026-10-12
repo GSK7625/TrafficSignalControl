@@ -1,0 +1,11 @@
+{
+  "scenario_name": "cologne1",
+  "total_steps": 120,
+  "total_completed_vehicles": 14,
+  "mean_queue_length": 14.39,
+  "max_queue_length": 40,
+  "mean_waiting_time": 28.78,
+  "total_waiting_time": 1727.0,
+  "mean_travel_time": 25.93,
+  "total_time_loss": 1976.74
+}

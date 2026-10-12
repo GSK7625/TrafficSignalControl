@@ -1,0 +1,12 @@
+{
+  "scenario_name": "ingolstadt1",
+  "total_steps": 10,
+  "total_completed_vehicles": 0,
+  "mean_queue_length": 0.0,
+  "max_queue_length": 0,
+  "mean_waiting_time": 0.0,
+  "total_waiting_time": 0.0,
+  "total_queue_delay": 0.0,
+  "mean_travel_time": 0.0,
+  "total_time_loss": 0.72
+}

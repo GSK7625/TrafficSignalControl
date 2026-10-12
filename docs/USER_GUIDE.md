@@ -1,0 +1,160 @@
+# HƯỚNG DẪN SỬ DỤNG NỀN TẢNG MÔ PHỎNG SUMO (GIAI ĐOẠN 2)
+
+Hệ thống cung cấp Simulation Runner bằng Python và TraCI để chạy, kiểm tra và thu thập chỉ số mô phỏng giao thông trên dataset RESCO.
+
+---
+
+## 1. Yêu cầu môi trường
+
+- **Hệ điều hành:** Windows 10/11
+- **Python:** 3.11+
+- **SUMO:** Phiên bản 1.28.0+ (đã cấu hình biến môi trường `SUMO_HOME` trỏ tới thư mục cài đặt SUMO, ví dụ `C:\Program Files (x86)\SUMO\`)
+- **Các thư viện Python:**
+  - `traci` (giao tiếp TraCI với SUMO)
+  - `sumolib` (tiện ích mạng đường SUMO)
+  - `unittest` (kiểm thử tích hợp sẵn)
+
+---
+
+## 2. Cấu trúc mã nguồn
+
+```text
+TrafficSignalControl/
+├── data/                             # Thư mục dataset RESCO gốc (chỉ đọc)
+├── results/                          # Thư mục lưu trữ kết quả mô phỏng (tách biệt)
+├── docs/                             # Tài liệu kỹ thuật
+│   ├── DATASET_INSPECTION_REPORT.md  # Báo cáo kiểm tra chi tiết dataset RESCO
+│   └── USER_GUIDE.md                 # Hướng dẫn sử dụng nền tảng mô phỏng
+├── src/                              # Mã nguồn chính của nền tảng
+│   ├── __init__.py
+│   ├── config.py                     # Quản lý cấu hình SimulationConfig
+│   ├── data_inspector.py             # Trình kiểm tra & phân tích dữ liệu XML SUMO
+│   ├── metrics.py                    # Thu thập & xuất chỉ số (waiting time, queue, ...)
+│   ├── phase_manager.py              # Bộ quản lý pha đèn an toàn (SafePhaseManager)
+│   └── runner.py                     # SimulationRunner điều khiển vòng đời TraCI
+├── tests/                            # Bộ kiểm thử tự động
+│   ├── __init__.py
+│   ├── test_config.py                # Kiểm thử cấu hình
+│   ├── test_data_inspector.py        # Kiểm thử bộ phân tích dữ liệu
+│   ├── test_integration_sumo.py      # Kiểm thử tích hợp chạy SUMO thật qua TraCI
+│   ├── test_metrics.py               # Kiểm thử bộ thu thập chỉ số
+│   ├── test_phase_manager.py         # Kiểm thử quản lý pha an toàn
+│   └── test_runner.py                # Kiểm thử runner
+└── main.py                           # Điểm vào dòng lệnh (CLI)
+```
+
+---
+
+## 3. Các lệnh sử dụng chính
+
+### 3.1. Kiểm tra thông tin dataset
+
+Kiểm tra thông tin chi tiết của một kịch bản cụ thể:
+```powershell
+python main.py --inspect --dataset cologne1
+python main.py --inspect --dataset ingolstadt1
+```
+
+Kiểm tra và in bảng tổng hợp của toàn bộ 10 dataset RESCO:
+```powershell
+python main.py --inspect-all
+```
+
+---
+
+### 3.2. Chạy mô phỏng (Simulation)
+
+#### a) Chạy chế độ Headless (mặc định — chạy ngầm với hiệu năng cao)
+Chạy kịch bản `cologne1` 100 bước:
+```powershell
+python main.py --dataset cologne1 --steps 100
+```
+
+Chạy kịch bản `ingolstadt1` 200 bước:
+```powershell
+python main.py --dataset ingolstadt1 --steps 200
+```
+
+Chạy toàn bộ kịch bản (mặc định 3600 giây):
+```powershell
+python main.py --dataset cologne1
+```
+
+#### b) Chạy với giao diện đồ họa trực quan (SUMO-GUI)
+Thêm cờ `--gui` vào bất kỳ lệnh nào:
+```powershell
+python main.py --dataset cologne1 --gui --steps 300
+python main.py --dataset ingolstadt1 --gui --steps 300
+python main.py --dataset cologne3 --gui --steps 300
+```
+*Ghi chú: Khi bật GUI, SUMO sẽ tự động mở cửa sổ đồ họa, chạy mô phỏng và đóng cửa sổ khi kết thúc.*
+
+#### c) Tùy biến chế độ điều khiển và tham số an toàn
+- `--mode`: Chế độ điều khiển tín hiệu đèn:
+  - `original` (mặc định cho baseline): SUMO tự thực thi chương trình đèn gốc được định nghĩa sẵn trong mạng (`.net.xml`), không bị TraCI can thiệp hay ép chu kỳ cố định.
+  - `cyclic`: Bộ điều khiển xoay vòng các pha xanh định kỳ 30s.
+  - `agent`: Chế độ dành cho thuật toán RL hoặc bộ điều khiển bên ngoài (khi nhận `actions={}` sẽ giữ nguyên pha an toàn mà không tự ý đổi).
+- `--yellow-dur`: Thời gian pha vàng giải tỏa (giây), mặc định `3.0` (chuẩn benchmark RESCO).
+- `--all-red-dur`: Thời gian toàn đỏ giải tỏa (giây), mặc định `0.0` (chuẩn benchmark RESCO; có thể cấu hình lên `1.0`-`2.0` cho mô phỏng an toàn giao thông thực tế).
+- `--min-green`: Thời gian đèn xanh tối thiểu (giây), mặc định `5.0`.
+- `--tripinfo`: Tùy chọn sinh và trích xuất chỉ số đối chiếu chuẩn tuyệt đối từ tệp XML `--tripinfo-output` của SUMO.
+- `--step-len`: Độ dài mỗi bước mô phỏng (giây), mặc định `1.0`.
+- `--output-dir`: Thư mục lưu kết quả, mặc định `results`.
+
+Ví dụ:
+```powershell
+# Chạy baseline nguyên bản của Ingolstadt1 có trích xuất tripinfo:
+python main.py --dataset ingolstadt1 --mode original --tripinfo
+
+# Chạy với chu kỳ xoay vòng 30s, vàng 3s, toàn đỏ 1.5s:
+python main.py --dataset cologne1 --mode cyclic --yellow-dur 3.0 --all-red-dur 1.5
+```
+
+---
+
+## 4. Định dạng kết quả xuất ra (`results/`)
+
+Mỗi lần chạy sẽ tạo một thư mục con tương ứng với kịch bản và timestamp, ví dụ:
+`results/cologne1_20261012_174444/`
+
+Bao gồm 2 tệp:
+1. `summary.json`: Báo cáo thống kê tổng hợp (tách bạch rõ ràng giữa thời gian chờ, độ trễ hàng đợi làn vào `total_queue_delay`, và số liệu ground-truth `tripinfo_*` nếu bật `--tripinfo`):
+   ```json
+   {
+     "scenario_name": "cologne1",
+     "total_steps": 100,
+     "total_completed_vehicles": 4,
+     "mean_queue_length": 11.88,
+     "max_queue_length": 39,
+     "mean_waiting_time": 24.8,
+     "total_waiting_time": 248.0,
+     "total_queue_delay": 1188.0,
+     "mean_travel_time": 10.5,
+     "total_time_loss": 142.31,
+     "tripinfo_completed_vehicles": 4,
+     "tripinfo_mean_travel_time": 10.5
+   }
+   ```
+2. `step_metrics.csv`: Dữ liệu chuỗi thời gian chi tiết theo từng bước mô phỏng:
+   - `step`: Thứ tự bước (1, 2, ...).
+   - `sim_time`: Thời gian mô phỏng thực tế của kịch bản (ví dụ 25201.0s).
+   - `running_vehicles`: Số phương tiện đang lưu thông trên mạng.
+   - `queue_length`: Tổng số xe đang dừng chờ (tốc độ < 0.1 m/s) trên các làn vào của nút giao.
+   - `waiting_time`: Tổng thời gian chờ tích lũy của các xe đang chạy.
+   - `time_loss`: Tổng thời gian hao phí (trễ) do tắc nghẽn.
+   - `step_completed_vehicles`: Số xe về đích trong bước đó.
+   - `cumulative_completed_vehicles`: Số xe về đích cộng dồn.
+
+---
+
+## 5. Chạy bộ kiểm thử tự động (Unit & Integration Tests)
+
+Chạy toàn bộ 55 bài kiểm thử (bao gồm kiểm thử đơn vị, kiểm thử tích hợp TraCI trực tiếp và các bộ kiểm thử khắc phục lỗi audit):
+```powershell
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+Chạy riêng kiểm thử tích hợp kết nối SUMO live:
+```powershell
+python -m unittest tests/test_integration_sumo.py
+```
