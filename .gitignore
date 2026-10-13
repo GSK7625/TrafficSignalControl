@@ -38,6 +38,10 @@ results/*
 !results/experiments/**
 !results/figures/
 !results/figures/**
+!results/figures_3algos/
+!results/figures_3algos/**
+!results/figures_4algos/
+!results/figures_4algos/**
 !results/training/
 !results/training/**
 !results/evaluation/

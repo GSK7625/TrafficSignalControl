@@ -38,6 +38,19 @@
       "teleport_count": 0,
       "episode_reward": -9802.4,
       "improvement_waiting_pct": 61.43
+    },
+    "DQN": {
+      "mean_waiting_time": 11.41,
+      "waiting_time_std": 0.0,
+      "mean_queue_length": 5.72,
+      "queue_length_std": 0.0,
+      "total_completed_vehicles": 1997,
+      "completion_rate_pct": 99.11,
+      "mean_travel_time": 51.29,
+      "total_time_loss": 56928.87,
+      "teleport_count": 0,
+      "episode_reward": -4117.2,
+      "improvement_waiting_pct": 83.33
     }
   }
 }
