@@ -1,7 +1,7 @@
 """Automated Experiment Runner for Phase 6 benchmarking.
 
 Executes, validates, and aggregates benchmarks across all 4 traffic signal control
-algorithms (Fixed-Time, Max-Pressure, Q-Learning, DQN) plus the Original SUMO baseline
+algorithms (Fixed-Time, Max-Pressure, Q-Learning, DQN)
 under strictly standardized, reproducible experimental conditions.
 """
 
@@ -19,7 +19,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from src.config import SimulationConfig, get_scenario_config
-from src.controllers.dqn import DQNController
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
 from src.controllers.q_learning import QLearningController
@@ -45,7 +44,7 @@ SCENARIO_DEMAND = {
 class ExperimentConfig:
     """Configuration for a single benchmark evaluation run."""
     scenario_name: str
-    algorithm: str  # 'Fixed-Time', 'Max-Pressure', 'Q-Learning', 'DQN', 'Original SUMO'
+    algorithm: str  # 'Fixed-Time', 'Max-Pressure', 'Q-Learning', 'DQN'
     seed: int = 42
     training_seed: int = 42
     steps: Optional[int] = None  # None = full horizon (3600s)
@@ -56,7 +55,29 @@ class ExperimentConfig:
     min_green: float = 5.0
     fixed_time_green: float = 30.0
     pressure_metric: str = "queue"
-    decision_interval: float = 5.0
+    decision_interval: Optional[float] = None
+
+
+def resolve_effective_decision_interval(
+    cfg: ExperimentConfig, ckpt_params: Optional[Dict[str, Any]] = None
+) -> float:
+    """Resolves the effective decision interval (cadence) for an evaluation run.
+
+    Baselines (Fixed-Time, Max-Pressure) default to 1.0s to ensure exact phase timings
+    and prevent phase green time elongation (e.g. 30s turning into 32s).
+    RL algorithms (Q-Learning, DQN) default to checkpoint values if present, or 5.0s.
+    An explicit cfg.decision_interval always overrides defaults.
+    """
+    if cfg.decision_interval is not None:
+        return float(cfg.decision_interval)
+
+    algo_key = cfg.algorithm.lower().replace(" ", "_").replace("-", "_")
+    if algo_key in ("q_learning", "qlearning", "dqn", "deep_q_network"):
+        if ckpt_params and "decision_interval" in ckpt_params:
+            return float(ckpt_params["decision_interval"])
+        return 5.0
+
+    return 1.0
 
 
 def resolve_model_path(cfg: ExperimentConfig) -> Optional[str]:
@@ -311,7 +332,10 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     env: Optional[TrafficSignalRLEnv] = None
     runner: Optional[SimulationRunner] = None
 
-    effective_decision_interval = cfg.decision_interval
+    effective_decision_interval = resolve_effective_decision_interval(cfg)
+    effective_min_green = float(cfg.min_green)
+    effective_yellow_duration = float(cfg.yellow_duration)
+    effective_all_red_duration = float(cfg.all_red_duration)
     try:
         if algo_key in ("q_learning", "qlearning", "dqn", "deep_q_network"):
             if scenario_info.tls_count > 1:
@@ -322,13 +346,33 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 )
             # RL Agents evaluated in evaluation mode (zero exploration, zero learning updates)
             ckpt_params = load_checkpoint_env_params(model_path)
-            effective_decision_interval = ckpt_params.get("decision_interval", cfg.decision_interval)
+            effective_decision_interval = resolve_effective_decision_interval(cfg, ckpt_params=ckpt_params)
+
+            # Safety constraint validation between checkpoint and benchmark config
+            effective_min_green = float(ckpt_params.get("min_green", cfg.min_green))
+            effective_yellow_duration = float(ckpt_params.get("yellow_duration", cfg.yellow_duration))
+            effective_all_red_duration = float(ckpt_params.get("all_red_duration", cfg.all_red_duration))
+
+            mismatches = []
+            if "min_green" in ckpt_params and abs(float(ckpt_params["min_green"]) - cfg.min_green) > 1e-4:
+                mismatches.append(f"min_green (ckpt={ckpt_params['min_green']}s vs cfg={cfg.min_green}s)")
+            if "yellow_duration" in ckpt_params and abs(float(ckpt_params["yellow_duration"]) - cfg.yellow_duration) > 1e-4:
+                mismatches.append(f"yellow_duration (ckpt={ckpt_params['yellow_duration']}s vs cfg={cfg.yellow_duration}s)")
+            if "all_red_duration" in ckpt_params and abs(float(ckpt_params["all_red_duration"]) - cfg.all_red_duration) > 1e-4:
+                mismatches.append(f"all_red_duration (ckpt={ckpt_params['all_red_duration']}s vs cfg={cfg.all_red_duration}s)")
+
+            if mismatches:
+                raise ValueError(
+                    f"Safety constraint mismatch for '{cfg.algorithm}': checkpoint specifies "
+                    f"{', '.join(mismatches)}. Benchmark comparison requires identical safety constraints."
+                )
+
             env_kwargs: Dict[str, Any] = {
                 "scenario_name": cfg.scenario_name,
                 "decision_interval": effective_decision_interval,
-                "min_green": ckpt_params.get("min_green", cfg.min_green),
-                "yellow_duration": ckpt_params.get("yellow_duration", cfg.yellow_duration),
-                "all_red_duration": ckpt_params.get("all_red_duration", cfg.all_red_duration),
+                "min_green": effective_min_green,
+                "yellow_duration": effective_yellow_duration,
+                "all_red_duration": effective_all_red_duration,
                 "max_steps": cfg.steps,
                 "seed": cfg.seed,
                 "output_dir": run_dir,
@@ -357,6 +401,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 agent.eval_mode = True
                 agent.epsilon = 0.0  # Strict zero exploration
             else:
+                from src.controllers.dqn import DQNController
                 agent = DQNController(
                     observation_dim=env.observation_dim,
                     action_dim=env.num_actions,
@@ -398,7 +443,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             summary = env.get_summary() or {}
 
         else:
-            # Baseline controllers: Fixed-Time, Max-Pressure, Original SUMO
+            # Baseline controllers: Fixed-Time, Max-Pressure
             controller = None
             if cfg.algorithm == "Fixed-Time":
                 controller = FixedTimeController(default_green_time=cfg.fixed_time_green)
@@ -406,24 +451,26 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             elif cfg.algorithm == "Max-Pressure":
                 controller = MaxPressureController(min_green=cfg.min_green, pressure_metric=cfg.pressure_metric)
                 control_mode = "agent"
-            elif cfg.algorithm == "Original SUMO":
-                control_mode = "original"
             else:
-                raise ValueError(f"Unknown algorithm: {cfg.algorithm}")
+                raise ValueError(
+                    f"Unknown algorithm: {cfg.algorithm}. "
+                    "Benchmark evaluation only compares traffic signal control algorithms "
+                    "(Fixed-Time, Max-Pressure, Q-Learning, DQN)."
+                )
 
             sim_cfg = get_scenario_config(
                 dataset_name=cfg.scenario_name,
                 gui=False,
                 step_length=1.0,
-                yellow_duration=cfg.yellow_duration,
-                all_red_duration=cfg.all_red_duration,
-                min_green=cfg.min_green,
+                yellow_duration=effective_yellow_duration,
+                all_red_duration=effective_all_red_duration,
+                min_green=effective_min_green,
                 max_steps=cfg.steps,
                 seed=cfg.seed,
                 output_dir=run_dir,
                 control_mode=control_mode,
                 use_tripinfo=True,
-                decision_interval=cfg.decision_interval,
+                decision_interval=effective_decision_interval,
             )
 
             runner = SimulationRunner(sim_cfg, controller=controller)
@@ -491,9 +538,9 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         "fingerprint": fingerprint,
         "cohort_id": cohort_id,
         "decision_interval": effective_decision_interval,
-        "min_green": cfg.min_green,
-        "yellow_duration": cfg.yellow_duration,
-        "all_red_duration": cfg.all_red_duration,
+        "min_green": effective_min_green,
+        "yellow_duration": effective_yellow_duration,
+        "all_red_duration": effective_all_red_duration,
         "fixed_time_green": cfg.fixed_time_green,
         "pressure_metric": cfg.pressure_metric,
         "steps": cfg.steps,
@@ -734,7 +781,7 @@ def run_full_benchmark_matrix(
     if scenarios is None:
         scenarios = ["ingolstadt1", "cologne1"]
     if algorithms is None:
-        algorithms = ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN", "Original SUMO"]
+        algorithms = ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"]
     if seeds is None:
         seeds = [42, 101, 2024]
 

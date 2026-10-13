@@ -319,6 +319,13 @@ class MetricsCollector:
         if total_loss == 0.0 and self.step_records:
             total_loss = self.step_records[-1].time_loss
 
+        # Metric Definitions & Accounting:
+        # - completed_mean_wait (mean_waiting_time): average stopped time (speed < 0.1 m/s)
+        #   for completed vehicles that exited the network.
+        # - system_total_delay: total stopped delay inside network (completed + running) plus
+        #   total pending delay (delay of vehicles queued to enter the network).
+        # - system_mean_delay: system_total_delay averaged across all demand vehicles
+        #   (completed + currently running + pending insertion at simulation end).
         completed_wait = sum(self.completed_waiting_times)
         running_wait = sum(self.vehicle_last_waiting_time.values())
         total_network_wait = completed_wait + running_wait

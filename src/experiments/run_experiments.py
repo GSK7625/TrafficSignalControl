@@ -1,4 +1,4 @@
-"""Automated experiment pipeline running Fixed-Time, Max-Pressure, and Original SUMO baseline."""
+"""Automated experiment pipeline running Fixed-Time and Max-Pressure baselines."""
 
 from datetime import datetime
 import json
@@ -33,8 +33,6 @@ def run_single_experiment(
     elif algo_name == "Max-Pressure":
         controller = MaxPressureController(min_green=min_green, pressure_metric="queue")
         mode = "agent"
-    elif algo_name == "Original SUMO":
-        mode = "original"
     else:
         raise ValueError(f"Unknown algorithm: {algo_name}")
 
@@ -85,7 +83,7 @@ def run_all_benchmarks(
     if scenarios is None:
         scenarios = ["cologne1", "ingolstadt1"]
     if algorithms is None:
-        algorithms = ["Original SUMO", "Fixed-Time", "Max-Pressure"]
+        algorithms = ["Fixed-Time", "Max-Pressure"]
 
     os.makedirs(output_dir, exist_ok=True)
     all_results: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -137,9 +135,8 @@ def write_markdown_report(
         f"- **Thời gian thực hiện:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "- **Môi trường:** Python 3.11, SUMO 1.28.0, TraCI",
         "- **Thuật toán so sánh:**",
-        "  1. **Original SUMO Program**: Chương trình tín hiệu có sẵn trong RESCO benchmark (baseline chuẩn)",
-        "  2. **Fixed-Time Controller**: Bộ điều khiển chu kỳ cố định tự triển khai (chu kỳ 30s)",
-        "  3. **Max-Pressure Controller**: Bộ điều khiển áp lực dòng xe (tính theo hàng đợi đầu vào - đầu ra)",
+        "  1. **Fixed-Time Controller**: Bộ điều khiển chu kỳ cố định tự triển khai (30s xanh mỗi pha)",
+        "  2. **Max-Pressure Controller**: Bộ điều khiển áp lực dòng xe (tính theo hàng đợi đầu vào - đầu ra)",
         "",
         "---",
         "",

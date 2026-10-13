@@ -93,6 +93,8 @@ class SafePhaseManager:
         # Phase usage tracking
         self.phase_switch_count: int = 0
         self.phase_durations: dict[int, float] = {i: 0.0 for i in range(len(green_phases))}
+        self.total_transition_time: float = 0.0
+        self.actual_yellow_time: float = 0.0
 
     def get_current_phase(self) -> int:
         """Returns the current active green phase index."""
@@ -143,8 +145,10 @@ class SafePhaseManager:
                     self.phase_durations.get(green_idx, 0.0) + step_duration
                 )
             else:
+                self.total_transition_time += step_duration
                 if any(c in signal_state for c in ("y", "Y")):
                     self._state_type = PhaseState.YELLOW
+                    self.actual_yellow_time += step_duration
                 else:
                     self._state_type = PhaseState.ALL_RED
                 self._time_in_phase += step_duration
@@ -165,6 +169,8 @@ class SafePhaseManager:
                 )
             else:
                 self._state_type = PhaseState.YELLOW
+                self.total_transition_time += step_duration
+                self.actual_yellow_time += step_duration
                 self._time_in_phase += step_duration
 
     def request_phase(self, target_phase_idx: int) -> bool:
@@ -214,6 +220,11 @@ class SafePhaseManager:
 
     def update(self, step_duration: float = 1.0, traci_module=None) -> None:
         """Advances internal timing by step_duration and updates SUMO TLS if traci_module is provided."""
+        if self._state_type in (PhaseState.YELLOW, PhaseState.ALL_RED):
+            self.total_transition_time += step_duration
+            if any(c in self._current_signal_string for c in ("y", "Y")):
+                self.actual_yellow_time += step_duration
+
         if self._state_type == PhaseState.YELLOW:
             self._time_in_phase += step_duration
             self._yellow_time_remaining -= step_duration

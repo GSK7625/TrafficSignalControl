@@ -28,7 +28,6 @@ def set_plot_style():
 ALGO_COLORS = {
     "Fixed-Time": "#1f77b4",     # Steel Blue
     "Max-Pressure": "#2ca02c",   # Forest Green
-    "Original SUMO": "#7f7f7f",  # Neutral Gray
     "Q-Learning": "#ff7f0e",     # Amber Orange
     "DQN": "#d62728",            # Crimson Red
 }
@@ -55,7 +54,7 @@ def plot_group_a_comparisons(
 
     generated = []
     scenarios = [s for s in ["cologne1", "ingolstadt1"] if s in data]
-    algos_order = ["Fixed-Time", "Max-Pressure", "Original SUMO", "Q-Learning", "DQN"]
+    algos_order = ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"]
 
     for scen in scenarios:
         scen_data = data[scen]
@@ -180,7 +179,14 @@ def plot_group_b_dynamics(
 
     for scen in scenarios:
         # Pick seed 42 run for each algorithm in this scenario
-        scen_runs = [r for r in runs if r.get("scenario_name") == scen and r.get("seed") == 42 and r.get("is_valid", False)]
+        allowed_algos = {"Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"}
+        scen_runs = [
+            r for r in runs
+            if r.get("scenario_name") == scen
+            and r.get("seed") == 42
+            and r.get("is_valid", False)
+            and r.get("algorithm") in allowed_algos
+        ]
         if not scen_runs:
             continue
 

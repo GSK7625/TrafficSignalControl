@@ -228,5 +228,61 @@ class TestCheckpointLoadingAndEvalMode(unittest.TestCase):
             self.assertIsNone(loss)
 
 
+class TestOnlyControlAlgorithmsCompared(unittest.TestCase):
+    """Verifies that the project only benchmarks traffic signal control algorithms and excludes Original SUMO."""
+
+    def test_original_sumo_rejected_in_experiment_runner(self):
+        from src.evaluation.experiment_runner import ExperimentConfig, run_single_experiment
+        cfg = ExperimentConfig(scenario_name="cologne1", algorithm="Original SUMO")
+        rec = run_single_experiment(cfg)
+        self.assertEqual(rec["status"], "FAILED")
+        self.assertFalse(rec["is_valid"])
+        self.assertIn("only compares traffic signal control algorithms", rec["error_message"])
+
+    def test_run_full_benchmark_matrix_default_algorithms(self):
+        from unittest.mock import patch, mock_open
+        from src.evaluation.experiment_runner import run_full_benchmark_matrix
+
+        with patch("src.evaluation.experiment_runner.run_single_experiment") as mock_run:
+            mock_run.return_value = {
+                "scenario_name": "test",
+                "algorithm": "Fixed-Time",
+                "seed": 42,
+                "fingerprint": "mock_fp",
+                "is_valid": True,
+                "status": "SUCCESS",
+                "tripinfo_mean_waiting_time": 10.0,
+            }
+            with patch("src.evaluation.experiment_runner.aggregate_benchmark_statistics", return_value={}):
+                with patch("builtins.open", mock_open()):
+                    with patch("pandas.DataFrame.to_csv"):
+                        all_recs, _ = run_full_benchmark_matrix(
+                            scenarios=["cologne1"],
+                            seeds=[42],
+                            resume=False,
+                        )
+            # Ensure the algorithms executed were only the 4 traffic control algorithms
+            executed_algos = [call.args[0].algorithm for call in mock_run.call_args_list]
+            self.assertEqual(executed_algos, ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"])
+            self.assertNotIn("Original SUMO", executed_algos)
+
+    def test_compare_algorithms_and_plot_orders_exclude_original_sumo(self):
+        import inspect
+        from src.evaluation.plot_comparison import ALGO_COLORS, plot_group_a_comparisons
+        from src.evaluation.compare_algorithms import generate_comparison_report
+
+        # ALGO_COLORS must not have Original SUMO
+        self.assertNotIn("Original SUMO", ALGO_COLORS)
+        self.assertEqual(set(ALGO_COLORS.keys()), {"Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"})
+
+        # Check source code of compare_algorithms doesn't reference Original SUMO
+        src = inspect.getsource(generate_comparison_report)
+        self.assertNotIn("Original SUMO", src)
+
+        # Check source code of plot_group_a_comparisons doesn't reference Original SUMO
+        plot_src = inspect.getsource(plot_group_a_comparisons)
+        self.assertNotIn("Original SUMO", plot_src)
+
+
 if __name__ == "__main__":
     unittest.main()

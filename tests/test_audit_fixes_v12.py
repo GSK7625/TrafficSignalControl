@@ -103,3 +103,34 @@ class TestAuditFixesV12(unittest.TestCase):
         agent_random = QLearningController(num_actions=3, seed=42, eval_mode=True, tie_break_strategy="random")
         self.assertEqual(agent_random.tie_break_strategy, "random")
         self.assertEqual(agent_random.get_config()["tie_break_strategy"], "random")
+
+    def test_main_and_eval_modules_importable_without_torch(self):
+        """main.py, experiment_runner, and evaluate_rl must be importable without torch installed."""
+        import subprocess
+        import sys
+        code = (
+            "import sys\n"
+            "sys.modules['torch'] = None\n"
+            "import main\n"
+            "from src.evaluation import experiment_runner, evaluate_rl\n"
+            "print('SUCCESS')\n"
+        )
+        res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, f"Import failed: {res.stderr}")
+        self.assertIn("SUCCESS", res.stdout)
+
+    def test_main_dqn_graceful_error_without_torch(self):
+        """Running main.py with --algorithm dqn without torch must exit with code 1 and inform user."""
+        import subprocess
+        import sys
+        code = (
+            "import sys\n"
+            "sys.modules['torch'] = None\n"
+            "import main\n"
+            "sys.argv = ['main.py', '--dataset', 'cologne1', '--algorithm', 'dqn']\n"
+            "main.main()\n"
+        )
+        res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("[ERROR] PyTorch is required to run DQN controller", res.stdout)
+

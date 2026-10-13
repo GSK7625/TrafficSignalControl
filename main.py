@@ -6,12 +6,10 @@ import os
 import sys
 
 from src.config import get_scenario_config
-from src.controllers.dqn import DQNController
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
 from src.controllers.q_learning import QLearningController
 from src.data_inspector import inspect_all_scenarios, inspect_scenario
-from src.rl.observations import ObservationBuilder
 from src.runner import SimulationRunner
 
 
@@ -149,6 +147,11 @@ def main():
         action="store_true",
         help="Inspect and print details for all available datasets in data/",
     )
+    parser.add_argument(
+        "--allow-untrained",
+        action="store_true",
+        help="Allow running RL controllers (q-learning, dqn) without a trained checkpoint",
+    )
 
     args = parser.parse_args()
 
@@ -172,7 +175,8 @@ def main():
         controller = FixedTimeController(default_green_time=args.fixed_time_green)
         effective_mode = "agent"
     elif args.controller == "max-pressure":
-        controller = MaxPressureController(min_green=args.min_green, pressure_metric=args.pressure_metric)
+        effective_min_green = args.min_green if args.min_green is not None else 5.0
+        controller = MaxPressureController(min_green=effective_min_green, pressure_metric=args.pressure_metric)
         effective_mode = "agent"
     elif args.controller == "q-learning":
         from src.runner import extract_green_phases
@@ -192,9 +196,29 @@ def main():
             controller.load(model_path)
             print(f"[INFO] Loaded Q-Learning model from '{model_path}'")
         else:
-            print(f"[WARN] Q-Learning model '{model_path}' not found, using untrained agent.")
+            if not args.allow_untrained:
+                print(
+                    f"[ERROR] Q-Learning model checkpoint '{model_path}' not found!\n"
+                    "To evaluate with an untrained agent, explicitly pass '--allow-untrained'."
+                )
+                sys.exit(1)
+            print(f"[WARN] Q-Learning model '{model_path}' not found, using untrained agent (--allow-untrained supplied).")
         effective_mode = "agent"
     elif args.controller == "dqn":
+        try:
+            from src.controllers.dqn import DQNController
+            from src.rl.observations import ObservationBuilder
+        except ImportError as exc:
+            print(
+                f"[ERROR] PyTorch is required to run DQN controller, but failed to import: {exc}\n"
+                "Please activate the virtual environment where PyTorch is installed:\n"
+                "  .\\.venv\\Scripts\\Activate.ps1\n"
+                "Or run directly using:\n"
+                "  .\\.venv\\Scripts\\python main.py --controller dqn ...\n"
+                "Or install torch via: pip install torch"
+            )
+            sys.exit(1)
+
         from src.runner import extract_green_phases
         info = inspect_scenario(args.dataset, data_dir="data")
         tl_id = info.tls_ids[0]
@@ -218,7 +242,13 @@ def main():
             controller.load(model_path)
             print(f"[INFO] Loaded DQN model from '{model_path}'")
         else:
-            print(f"[WARN] DQN model '{model_path}' not found, using untrained agent.")
+            if not args.allow_untrained:
+                print(
+                    f"[ERROR] DQN model checkpoint '{model_path}' not found!\n"
+                    "To evaluate with an untrained agent, explicitly pass '--allow-untrained'."
+                )
+                sys.exit(1)
+            print(f"[WARN] DQN model '{model_path}' not found, using untrained agent (--allow-untrained supplied).")
         effective_mode = "agent"
     else:
         effective_mode = args.mode

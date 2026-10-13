@@ -91,7 +91,7 @@ class MaxPressureController(BaseTrafficController):
 
     def __init__(
         self,
-        min_green: float = 5.0,
+        min_green: Optional[float] = 5.0,
         pressure_metric: str = "queue",
     ):
         """Initializes MaxPressureController.
@@ -101,6 +101,8 @@ class MaxPressureController(BaseTrafficController):
             pressure_metric: Metric to compute pressure ('queue' for halting vehicles, 'vehicle_count' for all vehicles).
         """
         super().__init__(name="MaxPressure")
+        if min_green is None:
+            min_green = 5.0
         if min_green < 0:
             raise ValueError(f"min_green must be non-negative, got {min_green}")
         if pressure_metric not in ("queue", "vehicle_count"):

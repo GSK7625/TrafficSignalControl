@@ -43,7 +43,6 @@ def generate_benchmark_plots(
     algos = list(results[first_scen].keys())
 
     colors = {
-        "Original SUMO": "#7f7f7f",      # Neutral gray for baseline
         "Fixed-Time": "#1f77b4",          # Classic blue
         "Max-Pressure": "#2ca02c",        # Energetic green
     }
@@ -170,7 +169,7 @@ def generate_benchmark_plots(
     axs[1, 1].set_xticks(x + width * (len(algos) - 1) / 2)
     axs[1, 1].set_xticklabels([s.upper() for s in scenarios])
 
-    fig.suptitle("Benchmark Comparison: Fixed-Time vs Max-Pressure vs Original SUMO", fontsize=15, fontweight="bold", y=0.99)
+    fig.suptitle("Benchmark Comparison: Fixed-Time vs Max-Pressure", fontsize=15, fontweight="bold", y=0.99)
     fig.tight_layout()
     p5 = os.path.join(output_dir, "combined_metrics_dashboard.png")
     fig.savefig(p5)

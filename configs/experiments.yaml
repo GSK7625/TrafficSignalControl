@@ -8,7 +8,6 @@ algorithms:
   - Max-Pressure
   - Q-Learning
   - DQN
-  - Original SUMO
 
 simulation:
   steps: 3600

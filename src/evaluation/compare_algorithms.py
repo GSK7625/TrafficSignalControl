@@ -31,7 +31,7 @@ def generate_comparison_report(
 
         # 1. Load Fixed-Time and Max-Pressure from Phase 4
         scen_baselines = baseline_data.get(scen, {})
-        for b_name in ["Fixed-Time", "Max-Pressure", "Original SUMO"]:
+        for b_name in ["Fixed-Time", "Max-Pressure"]:
             if b_name in scen_baselines:
                 combined_results[scen][b_name] = scen_baselines[b_name]
 
@@ -66,7 +66,7 @@ def generate_comparison_report(
         lines.append("|---|---|---|---|---|---|---|---|")
 
         scen_res = combined_results.get(scen, {})
-        for algo in ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN", "Original SUMO"]:
+        for algo in ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"]:
             if algo in scen_res:
                 r = scen_res[algo]
                 wt = r.get("mean_waiting_time", 0.0)

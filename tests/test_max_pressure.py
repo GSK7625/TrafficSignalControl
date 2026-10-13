@@ -216,6 +216,21 @@ class TestMaxPressureController(unittest.TestCase):
         action = ctrl.select_action({"tls_3p": obs})
         self.assertEqual(action["tls_3p"], 2)  # Phase 2 has highest pressure (15.0)
 
+    def test_init_with_none_or_default_min_green(self):
+        """Case 11: min_green=None must default to 5.0 without raising TypeError."""
+        ctrl_none = MaxPressureController(min_green=None)
+        self.assertEqual(ctrl_none.min_green, 5.0)
+
+        ctrl_default = MaxPressureController()
+        self.assertEqual(ctrl_default.min_green, 5.0)
+
+        ctrl_custom = MaxPressureController(min_green=12.5)
+        self.assertEqual(ctrl_custom.min_green, 12.5)
+
+        with self.assertRaises(ValueError):
+            MaxPressureController(min_green=-1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
+

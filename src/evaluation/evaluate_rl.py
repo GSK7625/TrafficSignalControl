@@ -6,7 +6,6 @@ import os
 import time
 from typing import Any, Dict, Optional
 
-from src.controllers.dqn import DQNController
 from src.controllers.q_learning import QLearningController
 from src.rl.environment import TrafficSignalRLEnv
 
@@ -145,6 +144,7 @@ def evaluate_agent(
             agent.eval_mode = True
             agent.epsilon = 0.0  # Zero exploration
         elif algo_key in ("dqn", "deep_q_network"):
+            from src.controllers.dqn import DQNController
             agent = DQNController(
                 observation_dim=env.observation_dim,
                 action_dim=env.num_actions,
