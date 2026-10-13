@@ -74,7 +74,9 @@ class FixedTimeController(BaseTrafficController):
 
             curr_idx = self._current_seq_index[tls_id]
             curr_phase = seq[curr_idx]
-            target_dur = self._get_duration(tls_id, curr_phase)
+            base_dur = self._get_duration(tls_id, curr_phase)
+            offset_dur = max(0.0, self._offset_remaining.get(tls_id, 0.0))
+            effective_dur = base_dur + offset_dur
 
             # If the intersection is currently undergoing yellow or all-red clearance,
             # maintain the target phase request until transition completes
@@ -84,8 +86,9 @@ class FixedTimeController(BaseTrafficController):
 
             # Check if active green phase matches schedule and duration is reached
             if obs.current_phase == curr_phase:
-                if obs.time_in_phase >= target_dur and len(seq) > 1:
+                if obs.time_in_phase >= effective_dur and len(seq) > 1:
                     # Time to cycle to next phase
+                    self._offset_remaining[tls_id] = 0.0
                     next_idx = (curr_idx + 1) % len(seq)
                     next_phase = seq[next_idx]
                     self._current_seq_index[tls_id] = next_idx
@@ -102,7 +105,8 @@ class FixedTimeController(BaseTrafficController):
                             "prev_phase": curr_phase,
                             "next_phase": next_phase,
                             "elapsed_green": obs.time_in_phase,
-                            "target_duration": target_dur,
+                            "target_duration": base_dur,
+                            "offset_applied": offset_dur,
                         },
                     )
                 else:

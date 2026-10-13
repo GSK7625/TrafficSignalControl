@@ -25,20 +25,24 @@ def extract_green_phases(scenario_name: str, tl_id: str, phases: List[PhaseInfo]
     green_states = []
     for p in phases:
         has_green = any(c in ("G", "g") for c in p.state)
-        # Identify intermediate yellow clearance transitions (typically 3-4s with yellow active)
-        is_yellow_clearance = (
-            "y" in p.state
-            and p.duration <= 4.0
-            and p.state.count("y") >= p.state.count("G")
-        )
-        if has_green and not is_yellow_clearance:
-            green_states.append(p.state)
+        has_yellow = any(c in ("y", "Y") for c in p.state)
+        # Any phase displaying yellow is a clearance transition and must NOT be an action
+        if has_green and not has_yellow:
+            if p.state not in green_states:
+                green_states.append(p.state)
 
     if not green_states:
-        # Fallback: take all phases that have any green signal
+        # Fallback: take phases that have any green and strictly fewer yellow than green
+        green_states = [
+            p.state for p in phases
+            if any(c in ("G", "g") for c in p.state)
+            and p.state.count("y") < p.state.count("G")
+        ]
+    if not green_states:
+        # Extreme fallback: take all phases that have any green signal
         green_states = [p.state for p in phases if any(c in ("G", "g") for c in p.state)]
     if not green_states:
-        # Extreme fallback: take all defined phases
+        # Final fallback
         green_states = [p.state for p in phases]
 
     return green_states
@@ -121,6 +125,22 @@ class SimulationRunner:
         self.sim_time: float = self.config.begin_time
         self.is_running: bool = False
         self._active_control_engaged: bool = (self.control_mode in ("cyclic", "agent"))
+        self._controlled_tls_ids: set = set()
+        if self.control_mode == "cyclic":
+            self._controlled_tls_ids = set(self.tls_managers.keys())
+        elif self.control_mode == "agent":
+            if self.controller is not None and getattr(self.controller, "target_tls_id", None) is not None:
+                self._controlled_tls_ids = {self.controller.target_tls_id}
+            elif self.controller is not None:
+                self._controlled_tls_ids = set(self.tls_managers.keys())
+            else:
+                if len(self.tls_managers) == 1:
+                    self._controlled_tls_ids = set(self.tls_managers.keys())
+                else:
+                    self._controlled_tls_ids = set()
+        self.decision_interval: float = float(self.config.decision_interval)
+        self._last_selected_actions: Optional[Dict[str, int]] = None
+        self._steps_since_last_decision: int = 0
         self.total_teleports: int = 0
         self.total_collisions: int = 0
         self.unique_colliding_vehicles: set = set()
@@ -196,13 +216,30 @@ class SimulationRunner:
                             )
                         )
                 self.tls_controlled_links[tl_id] = links_list
-            except Exception:
+            except Exception as e:
                 self.tls_controlled_links[tl_id] = []
+                self.metrics_collector.record_error(
+                    f"Traffic light {tl_id} getControlledLinks query error: {e}"
+                )
 
-        # Apply initial green phases only if active control is engaged (not in original baseline mode)
+        # Apply initial green phases only if active control is engaged for the intersection
         if self._active_control_engaged:
-            for manager in self.tls_managers.values():
-                manager.apply_to_traci(traci)
+            for tls_id in self._controlled_tls_ids:
+                if tls_id in self.tls_managers:
+                    self.tls_managers[tls_id].apply_to_traci(traci)
+        else:
+            for tls_id, manager in self.tls_managers.items():
+                if tls_id not in self._controlled_tls_ids:
+                    try:
+                        curr_phase = traci.trafficlight.getPhase(tls_id)
+                        curr_state = traci.trafficlight.getRedYellowGreenState(tls_id)
+                        manager.sync_external_phase(
+                            phase_index=int(curr_phase) if isinstance(curr_phase, (int, float)) else None,
+                            signal_state=curr_state if isinstance(curr_state, str) else None,
+                            step_duration=0.0,
+                        )
+                    except Exception:
+                        pass
 
     def get_observation(self) -> Dict[str, IntersectionObservation]:
         """Extracts current traffic state observation for all controlled intersections."""
@@ -217,24 +254,36 @@ class SimulationRunner:
             for lane_id in in_lanes:
                 try:
                     in_queues[lane_id] = float(traci.lane.getLastStepHaltingNumber(lane_id))
-                except Exception:
+                except Exception as e:
                     in_queues[lane_id] = 0.0
+                    self.metrics_collector.record_error(
+                        f"Step {self.current_step} incoming lane {lane_id} getLastStepHaltingNumber error: {e}"
+                    )
                 try:
                     in_vehs[lane_id] = float(traci.lane.getLastStepVehicleNumber(lane_id))
-                except Exception:
+                except Exception as e:
                     in_vehs[lane_id] = 0.0
+                    self.metrics_collector.record_error(
+                        f"Step {self.current_step} incoming lane {lane_id} getLastStepVehicleNumber error: {e}"
+                    )
 
             out_queues: Dict[str, float] = {}
             out_vehs: Dict[str, float] = {}
             for lane_id in out_lanes:
                 try:
                     out_queues[lane_id] = float(traci.lane.getLastStepHaltingNumber(lane_id))
-                except Exception:
+                except Exception as e:
                     out_queues[lane_id] = 0.0
+                    self.metrics_collector.record_error(
+                        f"Step {self.current_step} outgoing lane {lane_id} getLastStepHaltingNumber error: {e}"
+                    )
                 try:
                     out_vehs[lane_id] = float(traci.lane.getLastStepVehicleNumber(lane_id))
-                except Exception:
+                except Exception as e:
                     out_vehs[lane_id] = 0.0
+                    self.metrics_collector.record_error(
+                        f"Step {self.current_step} outgoing lane {lane_id} getLastStepVehicleNumber error: {e}"
+                    )
 
             obs[tl_id] = IntersectionObservation(
                 tls_id=tl_id,
@@ -271,8 +320,18 @@ class SimulationRunner:
 
         # 1. Process phase action requests or control modes
         if actions is None and self.controller is not None:
-            obs = self.get_observation()
-            actions = self.controller.select_action(obs)
+            decision_steps = max(1, int(round(self.decision_interval / self.config.step_length)))
+            if self._last_selected_actions is None or self._steps_since_last_decision >= decision_steps:
+                obs = self.get_observation()
+                actions = self.controller.select_action(obs)
+                self._last_selected_actions = actions
+                self._steps_since_last_decision = 1
+            else:
+                actions = self._last_selected_actions
+                self._steps_since_last_decision += 1
+        elif actions is not None:
+            self._last_selected_actions = actions
+            self._steps_since_last_decision = 1
 
         if actions is not None:
             if self.control_mode == "original":
@@ -284,8 +343,10 @@ class SimulationRunner:
             for tls_id, target_phase in actions.items():
                 if tls_id in self.tls_managers:
                     self.tls_managers[tls_id].request_phase(target_phase)
+                    self._controlled_tls_ids.add(tls_id)
         elif self.control_mode == "cyclic":
             self._active_control_engaged = True
+            self._controlled_tls_ids = set(self.tls_managers.keys())
             # Default progression: cycle to next green phase after 30 seconds
             for manager in self.tls_managers.values():
                 if (
@@ -296,10 +357,11 @@ class SimulationRunner:
                     next_p = (manager.get_current_phase() + 1) % len(manager.green_phases)
                     manager.request_phase(next_p)
 
-        # 2. Apply current signal strings to TraCI if active control is engaged
+        # 2. Apply current signal strings to TraCI for actively controlled intersections
         if self._active_control_engaged:
-            for manager in self.tls_managers.values():
-                manager.apply_to_traci(traci)
+            for tls_id in self._controlled_tls_ids:
+                if tls_id in self.tls_managers:
+                    self.tls_managers[tls_id].apply_to_traci(traci)
 
         # 3. Advance SUMO simulation
         traci.simulationStep()
@@ -368,9 +430,27 @@ class SimulationRunner:
             if step_has_collision:
                 self.total_collision_steps += 1
 
-        # 4. Advance phase manager internal timers after simulation step executed
-        for manager in self.tls_managers.values():
-            manager.update(step_duration=self.config.step_length)
+        # 4. Advance phase manager internal timers or sync with SUMO for un-controlled TLS
+        for tls_id, manager in self.tls_managers.items():
+            if tls_id in self._controlled_tls_ids:
+                manager.update(step_duration=self.config.step_length)
+            else:
+                # Intersections controlled by native SUMO (or control_mode == "original")
+                synced = False
+                if traci is not None and self.is_running:
+                    try:
+                        curr_phase = traci.trafficlight.getPhase(tls_id)
+                        curr_state = traci.trafficlight.getRedYellowGreenState(tls_id)
+                        manager.sync_external_phase(
+                            phase_index=int(curr_phase) if isinstance(curr_phase, (int, float)) else None,
+                            signal_state=curr_state if isinstance(curr_state, str) else None,
+                            step_duration=self.config.step_length,
+                        )
+                        synced = True
+                    except Exception:
+                        pass
+                if not synced:
+                    manager.update(step_duration=self.config.step_length)
 
         # 5. Record step metrics
         metrics = self.metrics_collector.record_step(
@@ -401,6 +481,10 @@ class SimulationRunner:
             self.controller = controller
             self.control_mode = "agent"
             self._active_control_engaged = True
+            if getattr(self.controller, "target_tls_id", None) is not None:
+                self._controlled_tls_ids = {self.controller.target_tls_id}
+            else:
+                self._controlled_tls_ids = set(self.tls_managers.keys())
             self.controller.reset()
 
         max_steps = num_steps if num_steps is not None else self.config.max_steps

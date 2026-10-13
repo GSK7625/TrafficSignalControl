@@ -7,8 +7,17 @@ from src.controllers.base import (
 )
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController, compute_phase_pressure
-from src.controllers.q_learning import QLearningController
-from src.controllers.dqn import DQNController
+
+
+def __getattr__(name: str):
+    if name == "QLearningController":
+        from src.controllers.q_learning import QLearningController
+        return QLearningController
+    if name == "DQNController":
+        from src.controllers.dqn import DQNController
+        return DQNController
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "BaseTrafficController",

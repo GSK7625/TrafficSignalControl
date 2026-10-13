@@ -60,6 +60,11 @@ class DQNController(BaseTrafficController):
         target_update_interval: int = 100,
         max_grad_norm: float = 10.0,
         obs_builder: Optional[ObservationBuilder] = None,
+        target_tls_id: Optional[str] = None,
+        decision_interval: float = 5.0,
+        min_green: float = 5.0,
+        yellow_duration: float = 3.0,
+        all_red_duration: float = 0.0,
         seed: Optional[int] = None,
         device: Optional[str] = None,
         eval_mode: bool = False,
@@ -84,6 +89,11 @@ class DQNController(BaseTrafficController):
         self.target_update_interval = int(target_update_interval)
         self.max_grad_norm = float(max_grad_norm)
         self.obs_builder = obs_builder
+        self.target_tls_id = target_tls_id
+        self.decision_interval = float(decision_interval)
+        self.min_green = float(min_green)
+        self.yellow_duration = float(yellow_duration)
+        self.all_red_duration = float(all_red_duration)
         self.eval_mode = bool(eval_mode)
 
         self.device = torch.device(device if device is not None else "cpu")
@@ -167,21 +177,22 @@ class DQNController(BaseTrafficController):
         if len(self.replay_buffer) < max(self.batch_size, self.learning_starts):
             return None
 
-        states, actions, rewards, next_states, dones, next_masks = self.replay_buffer.sample(
-            self.batch_size, device=self.device
+        states, actions, rewards, next_states, dones, next_masks, terminated_flags = self.replay_buffer.sample(
+            self.batch_size, device=self.device, return_terminated=True
         )
 
         # 1. Current Q-values: Q(s, a)
         curr_q = self.q_network(states).gather(1, actions)
 
-        # 2. Target Q-values: r + gamma * max_a' Q_target(s', a') * (1 - done)
+        # 2. Target Q-values: r + gamma * max_a' Q_target(s', a') * (1 - terminated)
+        # Preserves bootstrap value under truncation (finite horizon cutoff), zeroes out only upon true termination.
         with torch.no_grad():
             next_q = self.target_network(next_states)
             if next_masks is not None:
                 # Mask out invalid next actions with very low value
                 next_q = next_q.masked_fill(~next_masks, -1e9)
             max_next_q = next_q.max(dim=1, keepdim=True)[0]
-            target_q = rewards + (1.0 - dones) * self.gamma * max_next_q
+            target_q = rewards + (1.0 - terminated_flags) * self.gamma * max_next_q
 
         # 3. Compute loss and optimize
         loss = self.criterion(curr_q, target_q)
@@ -211,10 +222,20 @@ class DQNController(BaseTrafficController):
         """BaseTrafficController interface method: maps observations to target actions."""
         actions: Dict[str, int] = {}
         for tls_id, obs in observations.items():
+            if self.target_tls_id is not None and tls_id != self.target_tls_id:
+                continue
+
             if self.obs_builder is None:
                 # Fallback to current phase if builder not configured
                 actions[tls_id] = obs.current_phase
                 continue
+
+            # Guard against mismatched observation builder lanes in multi-intersection setups
+            if len(observations) > 1:
+                builder_lanes = set(self.obs_builder.incoming_lanes)
+                obs_lanes = set(obs.in_lane_queues.keys())
+                if builder_lanes and not builder_lanes.intersection(obs_lanes):
+                    continue
 
             obs_vec = self.obs_builder.build_vector(obs)
 
@@ -256,7 +277,13 @@ class DQNController(BaseTrafficController):
             "batch_size": self.batch_size,
             "learning_starts": self.learning_starts,
             "target_update_interval": self.target_update_interval,
+            "max_grad_norm": self.max_grad_norm,
             "eval_mode": self.eval_mode,
+            "target_tls_id": self.target_tls_id,
+            "decision_interval": self.decision_interval,
+            "min_green": self.min_green,
+            "yellow_duration": self.yellow_duration,
+            "all_red_duration": self.all_red_duration,
             "obs_builder_config": self.obs_builder.get_config() if self.obs_builder else None,
         }
 
@@ -280,19 +307,79 @@ class DQNController(BaseTrafficController):
             raise FileNotFoundError(f"Checkpoint not found: {filepath}")
 
         checkpoint = torch.load(filepath, map_location=self.device)
+        cfg = checkpoint.get("config", {})
+        ckpt_hidden = cfg.get("hidden_dim", self.hidden_dim)
+        ckpt_obs_dim = cfg.get("observation_dim", self.observation_dim)
+        ckpt_act_dim = cfg.get("action_dim", self.action_dim)
+
+        # Infer dimensions from state dict weights if available
+        if "q_network_state_dict" in checkpoint and "network.0.weight" in checkpoint["q_network_state_dict"]:
+            w0 = checkpoint["q_network_state_dict"]["network.0.weight"]
+            ckpt_hidden = w0.shape[0]
+            ckpt_obs_dim = w0.shape[1]
+
+        if (
+            ckpt_hidden != self.hidden_dim
+            or ckpt_obs_dim != self.observation_dim
+            or ckpt_act_dim != self.action_dim
+        ):
+            self.hidden_dim = ckpt_hidden
+            self.observation_dim = ckpt_obs_dim
+            self.action_dim = ckpt_act_dim
+            self.q_network = QNetwork(self.observation_dim, self.action_dim, self.hidden_dim).to(self.device)
+            self.target_network = QNetwork(self.observation_dim, self.action_dim, self.hidden_dim).to(self.device)
+            self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
+
         self.q_network.load_state_dict(checkpoint["q_network_state_dict"])
         self.target_network.load_state_dict(checkpoint["target_network_state_dict"])
 
         if "optimizer_state_dict" in checkpoint and not self.eval_mode:
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            try:
+                self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            except Exception:
+                pass
 
-        cfg = checkpoint["config"]
         self.learning_rate = cfg.get("learning_rate", self.learning_rate)
         self.gamma = cfg.get("gamma", self.gamma)
         self.epsilon = cfg.get("epsilon", self.epsilon)
         self.epsilon_min = cfg.get("epsilon_min", self.epsilon_min)
         self.epsilon_decay = cfg.get("epsilon_decay", self.epsilon_decay)
         self.total_updates = checkpoint.get("total_updates", 0)
+        self.batch_size = cfg.get("batch_size", self.batch_size)
+        self.learning_starts = cfg.get("learning_starts", self.learning_starts)
+        self.target_update_interval = cfg.get("target_update_interval", self.target_update_interval)
+        self.max_grad_norm = cfg.get("max_grad_norm", self.max_grad_norm)
+        if "buffer_size" in cfg:
+            self.buffer_size = cfg["buffer_size"]
+            if hasattr(self, "replay_buffer") and self.replay_buffer.capacity != self.buffer_size:
+                self.replay_buffer = ReplayBuffer(capacity=self.buffer_size)
+        self.target_tls_id = cfg.get("target_tls_id", self.target_tls_id)
+        self.decision_interval = cfg.get("decision_interval", getattr(self, "decision_interval", 5.0))
+        self.min_green = cfg.get("min_green", getattr(self, "min_green", 5.0))
+        self.yellow_duration = cfg.get("yellow_duration", getattr(self, "yellow_duration", 3.0))
+        self.all_red_duration = cfg.get("all_red_duration", getattr(self, "all_red_duration", 0.0))
+
+        # Restore observation builder normalization scales if available
+        obs_builder_cfg = cfg.get("obs_builder_config")
+        if obs_builder_cfg:
+            if self.obs_builder is not None:
+                if "max_queue_scale" in obs_builder_cfg:
+                    self.obs_builder.max_queue_scale = float(obs_builder_cfg["max_queue_scale"])
+                if "max_time_scale" in obs_builder_cfg:
+                    self.obs_builder.max_time_scale = float(obs_builder_cfg["max_time_scale"])
+                if "min_green" in obs_builder_cfg:
+                    self.obs_builder.min_green = float(obs_builder_cfg["min_green"])
+            elif "incoming_lanes" in obs_builder_cfg and "num_green_phases" in obs_builder_cfg:
+                self.obs_builder = ObservationBuilder(
+                    incoming_lanes=obs_builder_cfg["incoming_lanes"],
+                    num_green_phases=obs_builder_cfg["num_green_phases"],
+                    min_green=obs_builder_cfg.get("min_green", 5.0),
+                    max_queue_scale=obs_builder_cfg.get("max_queue_scale", 20.0),
+                    max_time_scale=obs_builder_cfg.get("max_time_scale", 60.0),
+                )
+
+        if "target_tls_id" in cfg and self.target_tls_id is None:
+            self.target_tls_id = cfg["target_tls_id"]
 
         if "action_counts" in checkpoint:
             self.action_counts = np.array(checkpoint["action_counts"], dtype=int)

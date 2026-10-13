@@ -14,10 +14,10 @@ from src.runner import SimulationRunner
 class TestAuditFixes(unittest.TestCase):
     def test_controlled_links_matches_signal_state_length(self):
         """P1 Fix: Verify controlled_links counts signal links (state length), not raw connections."""
-        info = inspect_scenario("saltlake2_400sX200w", data_dir="data")
-        # In saltlake2_400sX200w, A3 has 21 connections but only 12 signal links (state length 12)
-        self.assertEqual(info.controlled_links_per_tls["A3"], 12)
-        self.assertEqual(info.controlled_links_per_tls["B3"], 16)
+        info = inspect_scenario("cologne1", data_dir="data")
+        tls_id = "cluster_357187_359543"
+        self.assertEqual(info.controlled_links_per_tls[tls_id], len(info.phases_per_tls[tls_id][0].state))
+        self.assertEqual(info.controlled_links_per_tls[tls_id], 20)
 
     def test_empty_actions_does_not_trigger_default_progression(self):
         """P0 Fix: Passing actions={} should NOT trigger default 30s progression."""

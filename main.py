@@ -66,6 +66,8 @@ def main():
     )
     parser.add_argument(
         "--controller",
+        "--algorithm",
+        dest="controller",
         type=str,
         default="none",
         choices=["none", "fixed-time", "max-pressure", "q-learning", "dqn"],
@@ -93,26 +95,32 @@ def main():
     parser.add_argument(
         "--yellow-dur",
         type=float,
-        default=3.0,
-        help="Yellow clearance duration in seconds (default: 3.0)",
+        default=None,
+        help="Yellow clearance duration in seconds (default: checkpoint value or 3.0)",
     )
     parser.add_argument(
         "--all-red-dur",
         type=float,
-        default=0.0,
-        help="All-red clearance duration in seconds (default: 0.0)",
+        default=None,
+        help="All-red clearance duration in seconds (default: checkpoint value or 0.0)",
     )
     parser.add_argument(
         "--min-green",
         type=float,
-        default=5.0,
-        help="Minimum green time constraint in seconds (default: 5.0)",
+        default=None,
+        help="Minimum green time constraint in seconds (default: checkpoint value or 5.0)",
     )
     parser.add_argument(
         "--step-len",
         type=float,
         default=1.0,
         help="Simulation time step in seconds (default: 1.0)",
+    )
+    parser.add_argument(
+        "--decision-interval",
+        type=float,
+        default=None,
+        help="Cadence in seconds between controller decisions (default: 5.0 for RL controllers, 1.0 for baselines)",
     )
     parser.add_argument(
         "--tripinfo",
@@ -159,6 +167,7 @@ def main():
         return
 
     controller = None
+    ckpt_params = {}
     if args.controller == "fixed-time":
         controller = FixedTimeController(default_green_time=args.fixed_time_green)
         effective_mode = "agent"
@@ -170,9 +179,16 @@ def main():
         info = inspect_scenario(args.dataset, data_dir="data")
         tl_id = info.tls_ids[0]
         green_phases = extract_green_phases(args.dataset, tl_id, info.phases_per_tls[tl_id])
-        controller = QLearningController(num_actions=len(green_phases), seed=args.seed, eval_mode=True)
+        controller = QLearningController(
+            num_actions=len(green_phases),
+            target_tls_id=tl_id,
+            seed=args.seed,
+            eval_mode=True,
+        )
         model_path = args.model or f"models/q_learning/q_learning_{args.dataset}_best.json"
         if os.path.isfile(model_path):
+            from src.evaluation.evaluate_rl import load_checkpoint_env_params
+            ckpt_params = load_checkpoint_env_params(model_path)
             controller.load(model_path)
             print(f"[INFO] Loaded Q-Learning model from '{model_path}'")
         else:
@@ -184,15 +200,20 @@ def main():
         tl_id = info.tls_ids[0]
         green_phases = extract_green_phases(args.dataset, tl_id, info.phases_per_tls[tl_id])
         in_lanes = info.controlled_lanes_per_tls.get(tl_id, [])
-        builder = ObservationBuilder(incoming_lanes=in_lanes, num_green_phases=len(green_phases), min_green=args.min_green)
+        model_path = args.model or f"models/dqn/dqn_{args.dataset}_best.pt"
+        if os.path.isfile(model_path):
+            from src.evaluation.evaluate_rl import load_checkpoint_env_params
+            ckpt_params = load_checkpoint_env_params(model_path)
+        effective_min_green = args.min_green if args.min_green is not None else ckpt_params.get("min_green", 5.0)
+        builder = ObservationBuilder(incoming_lanes=in_lanes, num_green_phases=len(green_phases), min_green=effective_min_green)
         controller = DQNController(
             observation_dim=builder.observation_dim,
             action_dim=len(green_phases),
             obs_builder=builder,
+            target_tls_id=tl_id,
             seed=args.seed,
             eval_mode=True,
         )
-        model_path = args.model or f"models/dqn/dqn_{args.dataset}_best.pt"
         if os.path.isfile(model_path):
             controller.load(model_path)
             print(f"[INFO] Loaded DQN model from '{model_path}'")
@@ -202,26 +223,39 @@ def main():
     else:
         effective_mode = args.mode
 
+    effective_min_green = args.min_green if args.min_green is not None else ckpt_params.get("min_green", 5.0)
+    effective_yellow_dur = args.yellow_dur if args.yellow_dur is not None else ckpt_params.get("yellow_duration", 3.0)
+    effective_all_red_dur = args.all_red_dur if args.all_red_dur is not None else ckpt_params.get("all_red_duration", 0.0)
+    ctrl_norm = (args.controller or "").lower().replace("-", "_")
+    effective_dec_interval = (
+        args.decision_interval
+        if args.decision_interval is not None
+        else ckpt_params.get("decision_interval", 5.0 if ctrl_norm in ("dqn", "q_learning") else 1.0)
+    )
+
     print(f"\n[INFO] Initializing simulation for dataset: '{args.dataset}'")
     ctrl_desc = f"Controller: '{controller.name}'" if controller else f"Control Mode: '{effective_mode}'"
     print(f"[INFO] Mode: {'GUI (sumo-gui)' if args.gui else 'Headless (sumo)'} | {ctrl_desc}")
+
     print(
-        f"[INFO] Min Green: {args.min_green}s | Yellow: {args.yellow_dur}s | "
-        f"All-Red: {args.all_red_dur}s | Step Length: {args.step_len}s"
+        f"[INFO] Min Green: {effective_min_green}s | Yellow: {effective_yellow_dur}s | "
+        f"All-Red: {effective_all_red_dur}s | Step Length: {args.step_len}s | "
+        f"Decision Interval: {effective_dec_interval}s"
     )
 
     cfg = get_scenario_config(
         dataset_name=args.dataset,
         gui=args.gui,
         step_length=args.step_len,
-        yellow_duration=args.yellow_dur,
-        all_red_duration=args.all_red_dur,
-        min_green=args.min_green,
+        yellow_duration=effective_yellow_dur,
+        all_red_duration=effective_all_red_dur,
+        min_green=effective_min_green,
         max_steps=args.steps,
         seed=args.seed,
         output_dir=args.output_dir,
         control_mode=effective_mode,
         use_tripinfo=args.tripinfo,
+        decision_interval=effective_dec_interval,
     )
 
     runner = SimulationRunner(cfg, controller=controller)

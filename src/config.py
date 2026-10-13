@@ -33,10 +33,13 @@ class SimulationConfig:
     sumo_binary: str = "sumo"
     control_mode: str = "original"
     use_tripinfo: bool = False
+    decision_interval: float = 1.0
 
     def __post_init__(self):
         if self.step_length <= 0:
             raise ValueError(f"step_length must be positive, got {self.step_length}")
+        if self.decision_interval <= 0 or self.decision_interval != self.decision_interval or self.decision_interval == float("inf"):
+            raise ValueError(f"decision_interval must be positive and finite, got {self.decision_interval}")
         if self.yellow_duration <= 0:
             raise ValueError(f"yellow_duration must be positive, got {self.yellow_duration}")
         if self.all_red_duration < 0:
@@ -108,6 +111,7 @@ def get_scenario_config(
     output_dir: str = "results",
     control_mode: str = "original",
     use_tripinfo: bool = False,
+    decision_interval: float = 1.0,
     **kwargs,
 ) -> SimulationConfig:
     """Creates a SimulationConfig populated with metadata from the dataset inspection."""
@@ -135,4 +139,28 @@ def get_scenario_config(
         sumocfg_path=scenario_info.cfg_path,
         control_mode=control_mode,
         use_tripinfo=use_tripinfo,
+        decision_interval=decision_interval,
     )
+
+
+def load_yaml_config(config_path: str) -> dict:
+    """Loads and validates a YAML configuration file.
+
+    Args:
+        config_path: Path to the YAML configuration file.
+
+    Returns:
+        Dictionary containing configuration parameters.
+
+    Raises:
+        FileNotFoundError: If the configuration file does not exist.
+        ValueError: If YAML does not parse into a dictionary.
+    """
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    import yaml
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    if not isinstance(config, dict):
+        raise ValueError(f"Invalid YAML configuration format in {config_path}: expected dictionary, got {type(config)}")
+    return config

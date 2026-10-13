@@ -146,10 +146,44 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
             rou_tree = ET.parse(r_file)
             rou_root = rou_tree.getroot()
 
-            items = rou_root.findall("trip") + rou_root.findall("vehicle") + rou_root.findall("flow")
-            demand_count += len(items)
+            trips_and_vehs = rou_root.findall("trip") + rou_root.findall("vehicle")
+            demand_count += len(trips_and_vehs)
 
-            for item in items:
+            flows = rou_root.findall("flow")
+            for flow in flows:
+                if flow.get("number") is not None:
+                    try:
+                        demand_count += int(flow.get("number"))
+                    except ValueError:
+                        demand_count += 1
+                elif flow.get("period") is not None:
+                    try:
+                        b = float(flow.get("begin", 0.0))
+                        e = float(flow.get("end", 3600.0))
+                        p = float(flow.get("period"))
+                        demand_count += max(0, int((e - b) / p))
+                    except (ValueError, ZeroDivisionError):
+                        demand_count += 1
+                elif flow.get("vehsPerHour") is not None:
+                    try:
+                        b = float(flow.get("begin", 0.0))
+                        e = float(flow.get("end", 3600.0))
+                        vph = float(flow.get("vehsPerHour"))
+                        demand_count += max(0, int((e - b) * (vph / 3600.0)))
+                    except ValueError:
+                        demand_count += 1
+                elif flow.get("probability") is not None:
+                    try:
+                        b = float(flow.get("begin", 0.0))
+                        e = float(flow.get("end", 3600.0))
+                        prob = float(flow.get("probability"))
+                        demand_count += max(0, int((e - b) * prob))
+                    except ValueError:
+                        demand_count += 1
+                else:
+                    demand_count += 1
+
+            for item in trips_and_vehs + flows:
                 d = item.get("depart") or item.get("begin")
                 if d is not None:
                     try:

@@ -114,6 +114,59 @@ class SafePhaseManager:
         """Returns elapsed time in current green phase (or yellow transition)."""
         return self._time_in_phase
 
+    def sync_external_phase(
+        self,
+        phase_index: Optional[int] = None,
+        signal_state: Optional[str] = None,
+        step_duration: float = 1.0,
+    ) -> None:
+        """Synchronizes phase tracking with an external controller (e.g. native SUMO program).
+
+        Maps external signal states to internal green phase indices [0, len(green_phases)-1]
+        and appropriately classifies yellow/all-red clearance intervals without polluting
+        green phase metrics or setting out-of-range phase indices.
+        """
+        if signal_state is not None:
+            self._current_signal_string = signal_state
+            if signal_state in self.green_phases:
+                green_idx = self.green_phases.index(signal_state)
+                if green_idx != self._current_phase:
+                    self._current_phase = green_idx
+                    self._target_phase = green_idx
+                    self._time_in_phase = 0.0
+                    self.phase_switch_count += 1
+                elif self._state_type != PhaseState.GREEN:
+                    self._time_in_phase = 0.0
+                self._state_type = PhaseState.GREEN
+                self._time_in_phase += step_duration
+                self.phase_durations[green_idx] = (
+                    self.phase_durations.get(green_idx, 0.0) + step_duration
+                )
+            else:
+                if any(c in signal_state for c in ("y", "Y")):
+                    self._state_type = PhaseState.YELLOW
+                else:
+                    self._state_type = PhaseState.ALL_RED
+                self._time_in_phase += step_duration
+        elif phase_index is not None:
+            if 0 <= phase_index < len(self.green_phases):
+                if phase_index != self._current_phase:
+                    self._current_phase = phase_index
+                    self._target_phase = phase_index
+                    self._time_in_phase = 0.0
+                    self.phase_switch_count += 1
+                elif self._state_type != PhaseState.GREEN:
+                    self._time_in_phase = 0.0
+                self._state_type = PhaseState.GREEN
+                self._current_signal_string = self.green_phases[phase_index]
+                self._time_in_phase += step_duration
+                self.phase_durations[phase_index] = (
+                    self.phase_durations.get(phase_index, 0.0) + step_duration
+                )
+            else:
+                self._state_type = PhaseState.YELLOW
+                self._time_in_phase += step_duration
+
     def request_phase(self, target_phase_idx: int) -> bool:
         """Requests switching to a new green phase index.
 

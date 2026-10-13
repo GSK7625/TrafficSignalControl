@@ -1,2 +1,0 @@
-step,sim_time,running_vehicles,queue_length,waiting_time,time_loss,step_completed_vehicles,cumulative_completed_vehicles
-1,57601.0,0,0,0.0,0.0,0,0

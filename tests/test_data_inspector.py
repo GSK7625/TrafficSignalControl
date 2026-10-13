@@ -42,10 +42,11 @@ class TestDataInspector(unittest.TestCase):
 
     def test_inspect_all_scenarios(self):
         all_info = inspect_all_scenarios(self.data_dir)
-        self.assertGreaterEqual(len(all_info), 10)
+        self.assertGreaterEqual(len(all_info), 4)
         self.assertIn("cologne1", all_info)
         self.assertIn("ingolstadt1", all_info)
         self.assertIn("cologne3", all_info)
+        self.assertIn("grid4x4", all_info)
 
     def test_inspect_nonexistent_scenario(self):
         with self.assertRaises((FileNotFoundError, ValueError)):

@@ -1,5 +1,7 @@
 """Reinforcement Learning Environment for Traffic Signal Control in SUMO."""
 
+import os
+import shutil
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
@@ -37,9 +39,31 @@ class TrafficSignalRLEnv:
         output_dir: str = "results/rl",
         use_tripinfo: bool = True,
         gui: bool = False,
+        obs_builder: Optional[ObservationBuilder] = None,
+        state_discretizer: Optional[StateDiscretizer] = None,
+        max_queue_scale: float = 20.0,
+        max_time_scale: float = 60.0,
+        max_effective_green: float = 25.0,
+        serving_queue_thresholds: Optional[Tuple[float, float]] = None,
+        waiting_queue_thresholds: Optional[Tuple[float, float, float]] = None,
+        target_tls_id: Optional[str] = None,
     ):
         self.scenario_name = scenario_name
-        self.decision_interval = float(decision_interval)
+        self.target_tls_id = target_tls_id
+        d_int = float(decision_interval)
+        if d_int <= 0 or d_int != d_int or d_int == float("inf"):
+            raise ValueError(f"decision_interval must be positive and finite, got {decision_interval}")
+        sim_step_length = 1.0
+        if d_int < sim_step_length:
+            raise ValueError(
+                f"decision_interval ({decision_interval}s) must be >= simulation step_length ({sim_step_length}s)"
+            )
+        ratio = d_int / sim_step_length
+        if abs(ratio - round(ratio)) > 1e-5:
+            raise ValueError(
+                f"decision_interval ({decision_interval}s) must be an integer multiple of simulation step_length ({sim_step_length}s)"
+            )
+        self.decision_interval = d_int
         self.min_green = float(min_green)
         self.yellow_duration = float(yellow_duration)
         self.all_red_duration = float(all_red_duration)
@@ -62,10 +86,22 @@ class TrafficSignalRLEnv:
             output_dir=output_dir,
             control_mode="agent",
             use_tripinfo=use_tripinfo,
+            decision_interval=self.decision_interval,
         )
 
         self.runner = SimulationRunner(self.config)
-        self.tls_id = self.runner.scenario_info.tls_ids[0]
+        all_tls = self.runner.scenario_info.tls_ids
+        if len(all_tls) > 1 and target_tls_id is None:
+            raise ValueError(
+                f"Scenario '{scenario_name}' contains {len(all_tls)} traffic lights ({all_tls}). "
+                f"TrafficSignalRLEnv is a single-agent environment and requires single-intersection networks "
+                f"or an explicit target_tls_id. Multi-agent RL is required for coordinated multi-intersection control."
+            )
+        self.tls_id = target_tls_id if target_tls_id is not None else all_tls[0]
+        if self.tls_id not in self.runner.tls_managers:
+            raise ValueError(f"Target TLS '{self.tls_id}' not found in scenario '{scenario_name}'")
+        # Restrict runner's active control strictly to the controlled intersection
+        self.runner._controlled_tls_ids = {self.tls_id}
         self.green_phases = self.runner.tls_managers[self.tls_id].green_phases
         self.num_actions = len(self.green_phases)
 
@@ -77,14 +113,29 @@ class TrafficSignalRLEnv:
             self.incoming_lanes = self.runner.all_controlled_lanes
 
         # Build feature extractors
-        self.obs_builder = ObservationBuilder(
-            incoming_lanes=self.incoming_lanes,
-            num_green_phases=self.num_actions,
-            min_green=self.min_green,
-        )
-        self.state_discretizer = StateDiscretizer(
-            min_green=self.min_green,
-        )
+        if obs_builder is not None:
+            self.obs_builder = obs_builder
+        else:
+            self.obs_builder = ObservationBuilder(
+                incoming_lanes=self.incoming_lanes,
+                num_green_phases=self.num_actions,
+                min_green=self.min_green,
+                max_queue_scale=max_queue_scale,
+                max_time_scale=max_time_scale,
+            )
+
+        if state_discretizer is not None:
+            self.state_discretizer = state_discretizer
+        else:
+            disc_kwargs: Dict[str, Any] = {
+                "min_green": self.min_green,
+                "max_effective_green": max_effective_green,
+            }
+            if serving_queue_thresholds is not None:
+                disc_kwargs["serving_queue_thresholds"] = serving_queue_thresholds
+            if waiting_queue_thresholds is not None:
+                disc_kwargs["waiting_queue_thresholds"] = waiting_queue_thresholds
+            self.state_discretizer = StateDiscretizer(**disc_kwargs)
 
         # Reward function
         self.reward_fn: BaseRewardFunction = (
@@ -200,7 +251,7 @@ class TrafficSignalRLEnv:
         self.reward_fn.reset()
 
         # Advance simulation for decision_interval steps (e.g. 5 steps of 1.0s)
-        steps_to_run = int(round(self.decision_interval / self.config.step_length))
+        steps_to_run = max(1, int(round(self.decision_interval / self.config.step_length)))
         steps_executed = 0
         terminated = False
         truncated = False
@@ -289,10 +340,38 @@ class TrafficSignalRLEnv:
             "pending_insertion_vehicles": pending_vehs,
             "teleport_count": self.runner.total_teleports,
             "collision_count": self.runner.total_collision_incidents,
+            "collision_incidents": self.runner.total_collision_incidents,
+            "collision_steps": self.runner.total_collision_steps,
+            "collision_vehicle_involvements": self.runner.total_collision_vehicle_involvements,
+            "unique_colliding_vehicles_count": len(self.runner.unique_colliding_vehicles),
+            "phase_change_count": sum(mgr.phase_switch_count for mgr in self.runner.tls_managers.values()),
+            "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.runner.tls_managers.items()},
         }
         self.runner.metrics_collector.set_run_metadata(metadata)
         self.runner.close()
-        return self.runner.metrics_collector.get_summary()
+
+        # Export metrics into unique run folder
+        run_folder = os.path.join(self.config.output_dir, self.runner.run_folder_name)
+        os.makedirs(run_folder, exist_ok=True)
+
+        if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
+            import shutil
+            final_tripinfo = os.path.join(run_folder, "tripinfo.xml")
+            shutil.copy2(self.runner.tripinfo_path, final_tripinfo)
+            try:
+                os.remove(self.runner.tripinfo_path)
+            except Exception:
+                pass
+            self.runner.metrics_collector.tripinfo_file = final_tripinfo
+
+        json_path, csv_path = self.runner.metrics_collector.export_results(run_folder)
+
+        summary = self.runner.metrics_collector.get_summary()
+        summary["output_json"] = json_path
+        summary["output_csv"] = csv_path
+        summary["output_dir"] = run_folder
+        self._last_summary = summary
+        return summary
 
     def get_summary(self) -> Optional[Dict[str, Any]]:
         """Returns the summary of the last completed episode."""
@@ -308,3 +387,7 @@ class TrafficSignalRLEnv:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+
+# Alias for compatibility
+TrafficSignalEnv = TrafficSignalRLEnv

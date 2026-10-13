@@ -53,6 +53,7 @@ class StepMetrics:
     time_loss: float
     step_completed_vehicles: int
     cumulative_completed_vehicles: int
+    pending_vehicles: int = 0
 
 
 class MetricsCollector:
@@ -69,6 +70,8 @@ class MetricsCollector:
         self.completed_waiting_times: List[float] = []
         self.vehicle_last_waiting_time: Dict[str, float] = {}
         self.total_delay_seconds: float = 0.0
+        self.pending_vehicles_history: List[int] = []
+        self.total_pending_delay: float = 0.0
         self._cumulative_completed: int = 0
         self._cached_tripinfo_summary: Optional[Dict[str, Any]] = None
         self.run_metadata: Dict[str, Any] = {}
@@ -242,6 +245,19 @@ class MetricsCollector:
             self.is_valid = False
             self.error_messages.append(f"Step {step} vehicle getIDList read error: {e}")
 
+        # Query pending insertion vehicles
+        pending_count = 0
+        try:
+            pending_ids = traci_module.simulation.getPendingVehicles()
+            pending_count = len(pending_ids) if pending_ids is not None else 0
+        except Exception as e:
+            self.measurement_errors += 1
+            self.is_valid = False
+            self.error_messages.append(f"Step {step} simulation getPendingVehicles read error: {e}")
+            pending_count = 0
+        self.pending_vehicles_history.append(pending_count)
+        self.total_pending_delay += pending_count * step_length
+
         record = StepMetrics(
             step=step,
             sim_time=sim_time,
@@ -251,6 +267,7 @@ class MetricsCollector:
             time_loss=total_time_loss,
             step_completed_vehicles=step_completed,
             cumulative_completed_vehicles=self._cumulative_completed,
+            pending_vehicles=pending_count,
         )
         self.step_records.append(record)
         return record
@@ -266,6 +283,11 @@ class MetricsCollector:
                 "mean_queue_length": 0.0,
                 "max_queue_length": 0,
                 "mean_waiting_time": 0.0,
+                "completed_mean_waiting_time": 0.0,
+                "system_mean_delay": 0.0,
+                "system_total_delay": 0.0,
+                "pending_insertion_vehicles": 0,
+                "total_pending_delay": 0.0,
                 "completed_vehicles_waiting_time": 0.0,
                 "running_vehicles_waiting_time": 0.0,
                 "total_network_waiting_time": 0.0,
@@ -301,11 +323,17 @@ class MetricsCollector:
         running_wait = sum(self.vehicle_last_waiting_time.values())
         total_network_wait = completed_wait + running_wait
 
+        system_total_delay = total_network_wait + self.total_pending_delay
+        pending_end = self.pending_vehicles_history[-1] if self.pending_vehicles_history else 0
+        total_vehs_considered = max(1, total_completed + len(self.vehicle_last_waiting_time) + pending_end)
+        system_mean_delay = system_total_delay / total_vehs_considered
+        completed_mean_wait = (completed_wait / total_completed) if total_completed > 0 else 0.0
+
         # Total waiting time / delay
         waiting_times = [r.waiting_time for r in self.step_records]
         if self.completed_waiting_times or self.vehicle_last_waiting_time:
             total_wait = total_network_wait
-            mean_wait = (completed_wait / total_completed) if total_completed > 0 else (
+            mean_wait = completed_mean_wait if total_completed > 0 else (
                 total_network_wait / max(1, len(self.vehicle_departure_times))
             )
         elif self.total_delay_seconds > 0.0:
@@ -323,6 +351,11 @@ class MetricsCollector:
             "mean_queue_length": round(sum(queue_lengths) / total_steps, 2),
             "max_queue_length": max(queue_lengths) if queue_lengths else 0,
             "mean_waiting_time": round(mean_wait, 2),
+            "completed_mean_waiting_time": round(completed_mean_wait, 2),
+            "system_mean_delay": round(system_mean_delay, 2),
+            "system_total_delay": round(system_total_delay, 2),
+            "pending_insertion_vehicles": pending_end,
+            "total_pending_delay": round(self.total_pending_delay, 2),
             "completed_vehicles_waiting_time": round(completed_wait, 2),
             "running_vehicles_waiting_time": round(running_wait, 2),
             "total_network_waiting_time": round(total_network_wait, 2),
@@ -383,6 +416,7 @@ class MetricsCollector:
             "time_loss",
             "step_completed_vehicles",
             "cumulative_completed_vehicles",
+            "pending_vehicles",
         ]
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -391,3 +425,7 @@ class MetricsCollector:
                 writer.writerow(asdict(record))
 
         return json_path, csv_path
+
+
+# Alias for compatibility
+SimulationMetricsCollector = MetricsCollector

@@ -38,8 +38,14 @@ class QLearningController(BaseTrafficController):
         epsilon_min: float = 0.01,
         epsilon_decay: float = 0.98,
         discretizer: Optional[StateDiscretizer] = None,
+        target_tls_id: Optional[str] = None,
+        decision_interval: float = 5.0,
+        min_green: float = 5.0,
+        yellow_duration: float = 3.0,
+        all_red_duration: float = 0.0,
         seed: Optional[int] = None,
         eval_mode: bool = False,
+        tie_break_strategy: str = "random",
     ):
         super().__init__(name="QLearning")
         if num_actions <= 0:
@@ -56,7 +62,13 @@ class QLearningController(BaseTrafficController):
         self.epsilon_min = float(epsilon_min)
         self.epsilon_decay = float(epsilon_decay)
         self.discretizer = discretizer if discretizer is not None else StateDiscretizer()
+        self.target_tls_id = target_tls_id
+        self.decision_interval = float(decision_interval)
+        self.min_green = float(min_green)
+        self.yellow_duration = float(yellow_duration)
+        self.all_red_duration = float(all_red_duration)
         self.eval_mode = bool(eval_mode)
+        self.tie_break_strategy = str(tie_break_strategy).lower()
 
         if seed is not None:
             self.set_seed(seed)
@@ -81,6 +93,8 @@ class QLearningController(BaseTrafficController):
     def get_q_values(self, state: Tuple[int, int, int, int]) -> np.ndarray:
         """Retrieves or initializes Q-values for a given discrete state."""
         if state not in self.q_table:
+            if getattr(self, "eval_mode", False):
+                return np.zeros(self.num_actions, dtype=np.float64)
             self.q_table[state] = np.zeros(self.num_actions, dtype=np.float64)
         return self.q_table[state]
 
@@ -110,11 +124,14 @@ class QLearningController(BaseTrafficController):
             q_vals = self.get_q_values(state)
             candidate_q = [q_vals[a] for a in candidates]
             max_q = max(candidate_q)
-            # Break ties uniformly at random among candidates achieving maximum Q
+            # Break ties among candidates achieving maximum Q
             best_candidates = [
                 a for a, q in zip(candidates, candidate_q) if abs(q - max_q) <= 1e-8
             ]
-            chosen_action = random.choice(best_candidates)
+            if self.eval_mode and self.tie_break_strategy == "first":
+                chosen_action = best_candidates[0]
+            else:
+                chosen_action = random.choice(best_candidates)
         else:
             # Explore: uniform random selection among valid actions
             chosen_action = random.choice(candidates)
@@ -128,8 +145,10 @@ class QLearningController(BaseTrafficController):
         action: int,
         reward: float,
         next_state: Tuple[int, int, int, int],
-        done: bool,
+        done: bool = False,
         valid_next_actions: Optional[Sequence[int]] = None,
+        terminated: Optional[bool] = None,
+        truncated: Optional[bool] = None,
     ) -> float:
         """Applies Bellman Q-learning update.
 
@@ -138,8 +157,10 @@ class QLearningController(BaseTrafficController):
             action: Action taken.
             reward: Immediate scalar reward.
             next_state: Next discrete state.
-            done: Whether the episode has terminated.
+            done: Whether episode terminated or truncated (for backward compatibility).
             valid_next_actions: Valid actions available in next_state.
+            terminated: True if episode ended at true terminal absorbing state.
+            truncated: True if episode ended due to time limit / horizon.
 
         Returns:
             Absolute Bellman TD error.
@@ -149,7 +170,10 @@ class QLearningController(BaseTrafficController):
 
         q_current = self.get_q_values(state)
 
-        if done:
+        # True terminal state cuts off bootstrapping; time-limit truncation continues bootstrapping
+        is_true_terminal = terminated if terminated is not None else done
+
+        if is_true_terminal:
             target = float(reward)
         else:
             next_q = self.get_q_values(next_state)
@@ -178,6 +202,9 @@ class QLearningController(BaseTrafficController):
         """BaseTrafficController interface method: maps observations to target actions."""
         actions: Dict[str, int] = {}
         for tls_id, obs in observations.items():
+            if self.target_tls_id is not None and tls_id != self.target_tls_id:
+                continue
+
             state = self.discretizer.discretize(obs)
 
             # Determine valid actions from observation constraints
@@ -215,6 +242,12 @@ class QLearningController(BaseTrafficController):
             "epsilon_min": self.epsilon_min,
             "epsilon_decay": self.epsilon_decay,
             "eval_mode": self.eval_mode,
+            "target_tls_id": self.target_tls_id,
+            "decision_interval": self.decision_interval,
+            "min_green": self.min_green,
+            "yellow_duration": self.yellow_duration,
+            "all_red_duration": self.all_red_duration,
+            "tie_break_strategy": self.tie_break_strategy,
             "num_states_in_table": len(self.q_table),
             "discretizer_config": self.discretizer.get_config(),
         }
@@ -247,6 +280,11 @@ class QLearningController(BaseTrafficController):
         self.epsilon = cfg["epsilon"]
         self.epsilon_min = cfg["epsilon_min"]
         self.epsilon_decay = cfg["epsilon_decay"]
+        self.decision_interval = cfg.get("decision_interval", getattr(self, "decision_interval", 5.0))
+        self.min_green = cfg.get("min_green", getattr(self, "min_green", 5.0))
+        self.yellow_duration = cfg.get("yellow_duration", getattr(self, "yellow_duration", 3.0))
+        self.all_red_duration = cfg.get("all_red_duration", getattr(self, "all_red_duration", 0.0))
+        self.tie_break_strategy = cfg.get("tie_break_strategy", getattr(self, "tie_break_strategy", "random"))
 
         # Restore discretizer if config present
         if "discretizer_config" in cfg:
@@ -257,6 +295,9 @@ class QLearningController(BaseTrafficController):
                 serving_queue_thresholds=tuple(d_cfg.get("serving_thresholds", [1.0, 5.0])),
                 waiting_queue_thresholds=tuple(d_cfg.get("waiting_thresholds", [1.0, 6.0, 15.0])),
             )
+
+        if "target_tls_id" in cfg and self.target_tls_id is None:
+            self.target_tls_id = cfg["target_tls_id"]
 
         # Restore Q-table
         self.q_table.clear()
