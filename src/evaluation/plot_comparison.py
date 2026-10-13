@@ -306,39 +306,39 @@ def plot_group_c_rl(
         dqn_data = load_json(dqn_file)
 
         # 11 & 12. Individual and Comparison Rewards
-        if ql_data and dqn_data:
-            ql_hist = ql_data.get("history", [])
-            dqn_hist = dqn_data.get("history", [])
-
-            fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-            if ql_hist:
-                ax.plot(
-                    [h["episode"] for h in ql_hist],
-                    [h["reward"] for h in ql_hist],
-                    marker="o",
-                    color=ALGO_COLORS["Q-Learning"],
-                    label="Q-Learning (Tabular)",
-                    linewidth=2.0,
-                )
-            if dqn_hist:
-                ax.plot(
-                    [h["episode"] for h in dqn_hist],
-                    [h["reward"] for h in dqn_hist],
-                    marker="s",
-                    color=ALGO_COLORS["DQN"],
-                    label="DQN (Neural Network)",
-                    linewidth=2.0,
-                )
-            ax.set_title(f"RL Training Reward Progression — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
-            ax.set_xlabel("Training Episode", fontsize=11)
-            ax.set_ylabel("Episode Cumulative Reward (- Queue)", fontsize=11)
-            ax.grid(True)
-            ax.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
-            plt.tight_layout()
-            p11 = os.path.join(output_dir, f"{scen}_rl_reward_progression.png")
-            plt.savefig(p11)
-            plt.close(fig)
-            generated.append(p11)
+        if ql_data or dqn_data:
+            ql_hist = ql_data.get("history", []) if ql_data else []
+            dqn_hist = dqn_data.get("history", []) if dqn_data else []
+            if ql_hist or dqn_hist:
+                fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
+                if ql_hist:
+                    ax.plot(
+                        [h["episode"] for h in ql_hist],
+                        [h["reward"] for h in ql_hist],
+                        marker="o",
+                        color=ALGO_COLORS["Q-Learning"],
+                        label="Q-Learning (Tabular)",
+                        linewidth=2.0,
+                    )
+                if dqn_hist:
+                    ax.plot(
+                        [h["episode"] for h in dqn_hist],
+                        [h["reward"] for h in dqn_hist],
+                        marker="s",
+                        color=ALGO_COLORS["DQN"],
+                        label="DQN (Neural Network)",
+                        linewidth=2.0,
+                    )
+                ax.set_title(f"RL Training Reward Progression — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
+                ax.set_xlabel("Training Episode", fontsize=11)
+                ax.set_ylabel("Episode Cumulative Reward (- Queue)", fontsize=11)
+                ax.grid(True)
+                ax.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
+                plt.tight_layout()
+                p11 = os.path.join(output_dir, f"{scen}_rl_reward_progression.png")
+                plt.savefig(p11)
+                plt.close(fig)
+                generated.append(p11)
 
         # 13. DQN Huber Loss
         if dqn_data and "history" in dqn_data:

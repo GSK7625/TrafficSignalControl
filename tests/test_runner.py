@@ -40,6 +40,12 @@ class TestRunner(unittest.TestCase):
         self.assertIn("--start", cmd)
         self.assertIn("--quit-on-end", cmd)
 
+        cfg_with_delay = get_scenario_config("cologne1", gui=True, gui_delay=50.0)
+        runner_with_delay = SimulationRunner(cfg_with_delay)
+        cmd_delay = runner_with_delay.build_sumo_cmd()
+        self.assertIn("--delay", cmd_delay)
+        self.assertIn("50.0", cmd_delay)
+
     @patch("src.runner.traci")
     def test_runner_start_step_close(self, mock_traci):
         cfg = get_scenario_config("cologne1", max_steps=5)

@@ -39,6 +39,7 @@ class TrafficSignalRLEnv:
         output_dir: str = "results/rl",
         use_tripinfo: bool = True,
         gui: bool = False,
+        gui_delay: float = 0.0,
         obs_builder: Optional[ObservationBuilder] = None,
         state_discretizer: Optional[StateDiscretizer] = None,
         max_queue_scale: float = 20.0,
@@ -72,11 +73,13 @@ class TrafficSignalRLEnv:
         self.output_dir = output_dir
         self.use_tripinfo = use_tripinfo
         self.gui = gui
+        self.gui_delay = float(gui_delay)
 
         # Initialize SimulationConfig and temporary runner to inspect intersection details
         self.config: SimulationConfig = get_scenario_config(
             dataset_name=scenario_name,
             gui=gui,
+            gui_delay=self.gui_delay,
             step_length=1.0,
             yellow_duration=yellow_duration,
             all_red_duration=all_red_duration,

@@ -19,6 +19,7 @@ class SimulationConfig:
     dataset_name: str
     data_dir: str = "data"
     gui: bool = False
+    gui_delay: float = 0.0
     step_length: float = 1.0
     yellow_duration: float = 3.0
     all_red_duration: float = 0.0
@@ -40,6 +41,8 @@ class SimulationConfig:
             raise ValueError(f"step_length must be positive, got {self.step_length}")
         if self.decision_interval <= 0 or self.decision_interval != self.decision_interval or self.decision_interval == float("inf"):
             raise ValueError(f"decision_interval must be positive and finite, got {self.decision_interval}")
+        if self.gui_delay < 0:
+            raise ValueError(f"gui_delay must be non-negative, got {self.gui_delay}")
         if self.yellow_duration <= 0:
             raise ValueError(f"yellow_duration must be positive, got {self.yellow_duration}")
         if self.all_red_duration < 0:
@@ -102,6 +105,7 @@ def get_scenario_config(
     dataset_name: str,
     data_dir: str = "data",
     gui: bool = False,
+    gui_delay: float = 0.0,
     step_length: float = 1.0,
     yellow_duration: float = 3.0,
     all_red_duration: float = 0.0,
@@ -127,6 +131,7 @@ def get_scenario_config(
         dataset_name=dataset_name,
         data_dir=data_dir,
         gui=gui,
+        gui_delay=kwargs.get("gui_delay", gui_delay),
         step_length=step_length,
         yellow_duration=yellow_duration,
         all_red_duration=all_red_duration,

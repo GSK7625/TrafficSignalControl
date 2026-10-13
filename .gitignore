@@ -42,3 +42,4 @@ results/*
 !results/training/**
 !results/evaluation/
 results/evaluation/runs/
+results/training/env_*/

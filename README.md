@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![SUMO](https://img.shields.io/badge/Eclipse%20SUMO-1.28.0+-00599C?style=flat)](https://eclipse.dev/sumo/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat&logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Tests](https://img.shields.io/badge/pytest-173%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
+[![Tests](https://img.shields.io/badge/pytest-174%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thuật toán điều khiển tín hiệu đèn giao thông thích ứng (**Adaptive Traffic Signal Control - ATSC**) trên môi trường **Eclipse SUMO** (Simulation of Urban MObility) thông qua giao thức **TraCI**, tích hợp các kịch bản chuẩn thuộc bộ dữ liệu **RESCO** (Reinforcement Learning Benchmarks for Traffic Signal Control).
@@ -20,6 +20,8 @@ Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thu�
 7. [Hướng dẫn sử dụng CLI](#7-hướng-dẫn-sử-dụng-cli)
    - [7.1. Kiểm tra thông tin kịch bản (Dataset Inspection)](#71-kiểm-tra-thông-tin-kịch-bản-dataset-inspection)
    - [7.2. Chạy mô phỏng điều khiển (Simulation Execution)](#72-chạy-mô-phỏng-điều-khiển-simulation-execution)
+     - [7.2.1. Chạy dòng lệnh không đồ họa (Headless Mode)](#721-chạy-dòng-lệnh-không-đồ-họa-headless-mode)
+     - [7.2.2. Chạy giao diện trực quan với SUMO-GUI (--gui, --gui-delay)](#722-chạy-giao-diện-trực-quan-với-sumo-gui---gui---gui-delay)
    - [7.3. Huấn luyện Agent Học tăng cường (RL Training)](#73-huấn-luyện-agent-học-tăng-cường-rl-training)
    - [7.4. Đánh giá Agent độc lập (RL Evaluation)](#74-đánh-giá-agent-độc-lập-rl-evaluation)
    - [7.5. Chạy Benchmark toàn diện (Phase 6 Evaluation)](#75-chạy-benchmark-toàn-diện-phase-6-evaluation)
@@ -34,11 +36,12 @@ Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thu�
 ## 1. Giới thiệu & Tính năng nổi bật
 
 - **Tích hợp 4 thuật toán chuẩn mực**: Hỗ trợ 2 phương pháp kinh điển (**Fixed-Time**, **Max-Pressure**) và 2 phương pháp Học tăng cường (**Tabular Q-Learning**, **Deep Q-Network - DQN**).
+- **Hỗ trợ giao diện đồ họa SUMO-GUI trực quan**: Chuyển đổi linh hoạt giữa chế độ dòng lệnh Headless tốc độ cao (benchmark, training) và chế độ trực quan **SUMO-GUI** (`--gui`, `--gui-delay`) để xem từng xe di chuyển, chuyển làn và chu kỳ đèn giao thông theo thời gian thực.
 - **Bộ quản lý an toàn pha đèn (Safe Phase Manager)**: Tự động chèn pha vàng dọn nút (*Yellow clearance transition*) và pha đỏ toàn phần (*All-red clearance*), đảm bảo thời gian đèn xanh tối thiểu (`min_green >= 5s`) ngăn ngừa chuyển pha đột ngột gây tai nạn trong mô phỏng.
 - **Phân tách nhịp điều khiển (Decoupled Cadence)**: Tách biệt nhịp quyết định của baseline (1.0s để tránh hiện tượng dãn chu kỳ) và agent RL (5.0s theo chuẩn RESCO).
 - **Thu thập dữ liệu thực tế chính xác (Ground-truth Tripinfo)**: Phân tích trực tiếp tệp `--tripinfo-output` chuẩn của SUMO để đo lường thời gian trễ, thời gian chờ, quãng đường di chuyển và vận tốc thực tế của từng phương tiện.
 - **Hệ thống đánh giá khoa học & Tự động hóa**: Khung thực nghiệm ma trận đa kịch bản, đa thuật toán, đa seed (42, 101, 2024); xác thực toàn vẹn bằng SHA-256 fingerprint; thống kê mẫu không chệch ($ddof=1$) và tự động sinh 15 biểu đồ chuẩn công bố khoa học.
-- **Chất lượng mã nguồn & Kiểm thử toàn diện**: 173 kiểm thử tự động với `pytest` bao quát 100% các thành phần logic, an toàn và biên mô phỏng.
+- **Chất lượng mã nguồn & Kiểm thử toàn diện**: 174 kiểm thử tự động với `pytest` bao quát 100% các thành phần logic, an toàn và biên mô phỏng.
 
 ---
 
@@ -234,30 +237,68 @@ python main.py --inspect-all
 
 ### 7.2. Chạy mô phỏng điều khiển (Simulation Execution)
 
-#### A. Chạy thuật toán Fixed-Time:
+Nền tảng hỗ trợ 2 chế độ vận hành: **Headless (mặc định)** để chạy nền tốc độ cao và **SUMO-GUI (`--gui`)** để theo dõi trực quan mô phỏng.
+
+#### 7.2.1. Chạy dòng lệnh không đồ họa (Headless Mode)
+Chế độ mặc định tối ưu hiệu năng tính toán, thích hợp cho benchmark và xử lý hàng loạt:
+
+##### A. Thuật toán Fixed-Time (Đèn xanh cố định 30s):
 ```powershell
 python main.py --dataset cologne1 --algorithm fixed-time --fixed-time-green 30.0 --tripinfo
 ```
 
-#### B. Chạy thuật toán Max-Pressure:
+##### B. Thuật toán Max-Pressure (Áp lực hàng đợi):
 ```powershell
 python main.py --dataset ingolstadt1 --algorithm max-pressure --pressure-metric queue --tripinfo
 ```
 
-#### C. Chạy agent Học tăng cường (Q-Learning / DQN) đã huấn luyện:
+##### C. Agent Học tăng cường (Q-Learning / DQN) với checkpoint:
 ```powershell
-# Chạy Q-Learning với checkpoint
+# Chạy Q-Learning với checkpoint đã huấn luyện
 python main.py --dataset cologne1 --algorithm q-learning --model models/q_learning/q_learning_cologne1_best.json --tripinfo
 
-# Chạy DQN với checkpoint và bật giao diện đồ họa SUMO-GUI
-python main.py --dataset ingolstadt1 --algorithm dqn --model models/dqn/dqn_ingolstadt1_best.pt --gui --tripinfo
+# Chạy DQN với checkpoint đã huấn luyện
+python main.py --dataset ingolstadt1 --algorithm dqn --model models/dqn/dqn_ingolstadt1_best.pt --tripinfo
 ```
 
+---
+
+#### 7.2.2. Chạy giao diện trực quan với SUMO-GUI (`--gui`, `--gui-delay`)
+Thêm cờ `--gui` vào bất kỳ lệnh nào của `main.py` để mở trực tiếp cửa sổ mô phỏng **SUMO-GUI**.
+
 > [!TIP]
-> Nếu bạn muốn thử nghiệm nhanh bộ điều khiển RL mà chưa có checkpoint mô hình đã huấn luyện, hãy truyền thêm cờ `--allow-untrained`:
-> ```powershell
-> python main.py --dataset cologne1 --algorithm dqn --allow-untrained --steps 300
-> ```
+> **Điều chỉnh tốc độ hiển thị mô phỏng:**
+> - Mặc định TraCI chạy ở tốc độ CPU tối đa khiến các xe lướt qua rất nhanh. Thêm cờ `--gui-delay <ms>` (ví dụ `--gui-delay 50` hoặc `100` ms) để làm chậm nhịp hiển thị giữa các bước mô phỏng, giúp quan sát các pha đèn đổi màu và dòng xe di chuyển mượt mà.
+> - Bạn cũng có thể điều chỉnh trực tiếp ô **Delay (ms)** ở thanh công cụ góc trên của cửa sổ SUMO-GUI bất kỳ lúc nào khi đang chạy.
+
+##### A. Xem mô phỏng Fixed-Time trên SUMO-GUI:
+```powershell
+python main.py --dataset cologne1 --algorithm fixed-time --gui --gui-delay 50 --steps 500
+```
+
+##### B. Xem mô phỏng Max-Pressure trên SUMO-GUI:
+```powershell
+python main.py --dataset ingolstadt1 --algorithm max-pressure --gui --gui-delay 50 --steps 500
+```
+
+##### C. Xem agent Học tăng cường (Q-Learning / DQN) điều khiển trên SUMO-GUI:
+```powershell
+# Xem agent Q-Learning trên kịch bản cologne1
+python main.py --dataset cologne1 --algorithm q-learning --model models/q_learning/q_learning_cologne1_best.json --gui --gui-delay 50
+
+# Xem agent DQN trên kịch bản ingolstadt1
+python main.py --dataset ingolstadt1 --algorithm dqn --model models/dqn/dqn_ingolstadt1_best.pt --gui --gui-delay 50
+```
+
+##### D. Thử nghiệm nhanh agent RL chưa huấn luyện (`--allow-untrained`):
+```powershell
+python main.py --dataset cologne1 --algorithm dqn --allow-untrained --steps 300 --gui --gui-delay 50
+```
+
+##### E. Đánh giá độc lập mô hình RL kèm giao diện đồ họa GUI (`evaluate_rl`):
+```powershell
+python -m src.evaluation.evaluate_rl --dataset ingolstadt1 --algo dqn --model models/dqn/dqn_ingolstadt1_best.pt --gui --gui-delay 50
+```
 
 ---
 
@@ -417,7 +458,7 @@ Hệ thống tính toán và đối chuẩn các chỉ số hiệu năng then ch
 Dự án áp dụng quy trình kiểm thử nghiêm ngặt bao quát toàn bộ logic xử lý, từ đơn vị thành phần đến tích hợp SUMO TraCI:
 
 ```powershell
-# Chạy toàn bộ 173 test cases
+# Chạy toàn bộ 174 test cases
 pytest -q
 
 # Chạy có hiển thị chi tiết tên từng bài test
@@ -462,3 +503,14 @@ pytest tests/test_runner.py tests/test_phase_manager.py
   # Trên Linux:
   pkill -9 sumo
   ```
+
+### 5. Cửa sổ SUMO-GUI tự động tắt ngay khi mô phỏng vừa chạy xong
+- **Nguyên nhân**: Theo mặc định khi chạy hết số bước `--steps` hoặc chạm mốc kết thúc kịch bản, tiến trình TraCI sẽ tự động đóng kết nối và thoát cửa sổ GUI.
+- **Khắc phục**: 
+  - Thêm cờ `--gui-delay 50` hoặc `--gui-delay 100` để làm chậm tốc độ hiển thị giữa các bước, giúp quan sát lâu hơn.
+  - Tăng số bước `--steps` (ví dụ `--steps 1000`) hoặc không truyền `--steps` để chạy toàn bộ thời lượng kịch bản (3600s).
+  - Có thể bấm nút **Pause** trên giao diện SUMO-GUI bất kỳ lúc nào để tạm dừng và phóng to thu nhỏ kiểm tra các nút giao.
+
+### 6. Không tìm thấy tệp thực thi `sumo-gui`
+- **Nguyên nhân**: Bản cài đặt SUMO là bản tối giản (chỉ có dòng lệnh `sumo`) hoặc thiếu tệp `sumo-gui.exe`.
+- **Khắc phục**: Kiểm tra trong terminal lệnh `sumo-gui --version`. Nếu chưa có, hãy cài đặt gói đầy đủ của Eclipse SUMO từ trang chủ chính thức (trên Windows chọn bộ cài đặt MSI tiêu chuẩn).

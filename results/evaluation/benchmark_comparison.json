@@ -1,0 +1,43 @@
+{
+  "cologne1": {
+    "Fixed-Time": {
+      "mean_waiting_time": 68.45,
+      "waiting_time_std": 0.0,
+      "mean_queue_length": 36.2,
+      "queue_length_std": 0.0,
+      "total_completed_vehicles": 1953,
+      "completion_rate_pct": 96.92,
+      "mean_travel_time": 106.62,
+      "total_time_loss": 163431.02,
+      "teleport_count": 0,
+      "episode_reward": "-",
+      "improvement_waiting_pct": 0.0
+    },
+    "Max-Pressure": {
+      "mean_waiting_time": 13.32,
+      "waiting_time_std": 0.0,
+      "mean_queue_length": 6.43,
+      "queue_length_std": 0.0,
+      "total_completed_vehicles": 1998,
+      "completion_rate_pct": 99.16,
+      "mean_travel_time": 56.27,
+      "total_time_loss": 66920.17,
+      "teleport_count": 1,
+      "episode_reward": "-",
+      "improvement_waiting_pct": 80.54
+    },
+    "Q-Learning": {
+      "mean_waiting_time": 26.4,
+      "waiting_time_std": 0.0,
+      "mean_queue_length": 13.61,
+      "queue_length_std": 0.0,
+      "total_completed_vehicles": 1991,
+      "completion_rate_pct": 98.81,
+      "mean_travel_time": 69.88,
+      "total_time_loss": 93767.5,
+      "teleport_count": 0,
+      "episode_reward": -9802.4,
+      "improvement_waiting_pct": 61.43
+    }
+  }
+}

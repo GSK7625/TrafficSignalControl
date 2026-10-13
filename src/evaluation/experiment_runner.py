@@ -863,18 +863,67 @@ def run_full_benchmark_matrix(
     return all_records, summary_stats
 
 
+ALGO_NAME_MAP = {
+    "ft": "Fixed-Time",
+    "fixed-time": "Fixed-Time",
+    "fixed_time": "Fixed-Time",
+    "mp": "Max-Pressure",
+    "max-pressure": "Max-Pressure",
+    "max_pressure": "Max-Pressure",
+    "ql": "Q-Learning",
+    "q-learning": "Q-Learning",
+    "q_learning": "Q-Learning",
+    "dqn": "DQN",
+    "deep_q_network": "DQN",
+}
+
+
+def normalize_algo_name(name: str) -> str:
+    """Normalizes algorithm names including short aliases like ft, mp, ql."""
+    cleaned = name.strip()
+    return ALGO_NAME_MAP.get(cleaned.lower(), cleaned)
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Phase 6 Experiment Runner")
-    parser.add_argument("--scenario", type=str, default="ingolstadt1", help="Scenario name")
-    parser.add_argument("--algorithm", type=str, default="Fixed-Time", help="Algorithm name")
-    parser.add_argument("--seed", type=int, default=42, help="Seed")
-    parser.add_argument("--run-all", action="store_true", help="Run full benchmark matrix")
+    parser.add_argument("--scenario", type=str, default="cologne1", help="Single scenario name (default: cologne1)")
+    parser.add_argument("--scenarios", type=str, default=None, help="Comma-separated scenarios (e.g. 'cologne1' or 'cologne1,ingolstadt1')")
+    parser.add_argument("--algorithm", type=str, default="Fixed-Time", help="Single algorithm name or alias (e.g. ft, mp, ql, Fixed-Time)")
+    parser.add_argument("--algorithms", type=str, default=None, help="Comma-separated algorithms/aliases (e.g. 'ft,mp,ql' or 'Fixed-Time,Max-Pressure,Q-Learning')")
+    parser.add_argument("--seed", type=int, default=42, help="Single seed (default: 42)")
+    parser.add_argument("--seeds", type=str, default=None, help="Comma-separated seeds (e.g. '42' or '42,101,2024')")
+    parser.add_argument("--run-all", action="store_true", help="Run full benchmark matrix (all scenarios, algorithms, seeds)")
     parser.add_argument("--fresh", action="store_true", help="Start fresh without loading existing benchmark_runs.json")
     args = parser.parse_args()
 
-    if args.run_all:
-        run_full_benchmark_matrix(resume=not args.fresh)
+    # Determine execution mode
+    is_multi = args.run_all or (args.scenarios is not None) or (args.algorithms is not None) or (args.seeds is not None)
+
+    if is_multi:
+        scenarios_list = (
+            [s.strip() for s in args.scenarios.split(",") if s.strip()]
+            if args.scenarios
+            else ([args.scenario] if not args.run_all else None)
+        )
+        algorithms_list = (
+            [normalize_algo_name(a) for a in args.algorithms.split(",") if a.strip()]
+            if args.algorithms
+            else ([normalize_algo_name(args.algorithm)] if not args.run_all else None)
+        )
+        seeds_list = (
+            [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
+            if args.seeds
+            else ([args.seed] if not args.run_all else None)
+        )
+        run_full_benchmark_matrix(
+            scenarios=scenarios_list,
+            algorithms=algorithms_list,
+            seeds=seeds_list,
+            resume=not args.fresh,
+        )
     else:
-        cfg = ExperimentConfig(scenario_name=args.scenario, algorithm=args.algorithm, seed=args.seed)
+        norm_algo = normalize_algo_name(args.algorithm)
+        cfg = ExperimentConfig(scenario_name=args.scenario, algorithm=norm_algo, seed=args.seed)
         run_single_experiment(cfg)
+

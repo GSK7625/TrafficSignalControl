@@ -82,6 +82,8 @@ def evaluate_agent(
     yellow_duration: Optional[float] = None,
     all_red_duration: Optional[float] = None,
     output_dir: str = "results/evaluation",
+    gui: bool = False,
+    gui_delay: float = 0.0,
 ) -> Dict[str, Any]:
     """Runs a rigorous evaluation episode with exploration and learning disabled.
 
@@ -96,6 +98,8 @@ def evaluate_agent(
         yellow_duration: Yellow transition duration.
         all_red_duration: All-red clearance duration.
         output_dir: Output directory for evaluation results.
+        gui: Enable SUMO graphical user interface (sumo-gui).
+        gui_delay: Step delay in milliseconds for GUI viewing.
 
     Returns:
         Evaluation summary metrics dictionary.
@@ -121,6 +125,8 @@ def evaluate_agent(
         "seed": seed,
         "output_dir": os.path.join(output_dir, f"eval_{scenario_name}_{algo_key}"),
         "use_tripinfo": True,
+        "gui": gui,
+        "gui_delay": gui_delay,
     }
     if "max_queue_scale" in ckpt_params:
         env_kwargs["max_queue_scale"] = ckpt_params["max_queue_scale"]
@@ -244,6 +250,8 @@ if __name__ == "__main__":
     parser.add_argument("--min-green", type=float, default=None, help="Min green duration (default: from checkpoint or 5.0)")
     parser.add_argument("--yellow", type=float, default=None, help="Yellow transition duration (default: from checkpoint or 3.0)")
     parser.add_argument("--all-red", type=float, default=None, help="All-red clearance duration (default: from checkpoint or 0.0)")
+    parser.add_argument("--gui", action="store_true", help="Enable SUMO graphical user interface (sumo-gui)")
+    parser.add_argument("--gui-delay", type=float, default=0.0, help="Delay in milliseconds between simulation steps in SUMO-GUI")
 
     args = parser.parse_args()
     evaluate_agent(
@@ -256,4 +264,6 @@ if __name__ == "__main__":
         min_green=args.min_green,
         yellow_duration=args.yellow,
         all_red_duration=args.all_red,
+        gui=args.gui,
+        gui_delay=args.gui_delay,
     )

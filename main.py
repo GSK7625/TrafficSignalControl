@@ -50,6 +50,12 @@ def main():
         help="Enable SUMO graphical user interface (sumo-gui)",
     )
     parser.add_argument(
+        "--gui-delay",
+        type=float,
+        default=0.0,
+        help="Delay in milliseconds between simulation steps in SUMO-GUI (e.g. 50 or 100) to observe traffic comfortably (default: 0.0)",
+    )
+    parser.add_argument(
         "--steps",
         type=int,
         default=None,
@@ -276,6 +282,7 @@ def main():
     cfg = get_scenario_config(
         dataset_name=args.dataset,
         gui=args.gui,
+        gui_delay=args.gui_delay,
         step_length=args.step_len,
         yellow_duration=effective_yellow_dur,
         all_red_duration=effective_all_red_dur,

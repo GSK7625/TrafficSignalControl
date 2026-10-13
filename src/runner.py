@@ -179,6 +179,8 @@ class SimulationRunner:
 
         if self.config.gui:
             cmd.extend(["--start", "--quit-on-end"])
+            if getattr(self.config, "gui_delay", 0.0) > 0:
+                cmd.extend(["--delay", str(self.config.gui_delay)])
 
         return cmd
 
