@@ -1,6 +1,6 @@
 # RESCO Benchmark Datasets - Data Provenance & Documentation
 
-Tài liệu này ghi nhận nguồn gốc, giấy phép và thông tin chi tiết về các bộ dữ liệu giao thông được sử dụng trong dự án, thu thập từ repository RESCO phục vụ nghiên cứu và phát triển các thuật toán điều khiển tín hiệu đèn giao thông (Fixed-Time, Max-Pressure, Q-Learning, DQN).
+Tài liệu này ghi nhận nguồn gốc, giấy phép và thông tin chi tiết về các bộ dữ liệu giao thông được sử dụng trong dự án, thu thập từ repository RESCO phục vụ nghiên cứu và phát triển các thuật toán điều khiển tín hiệu đèn giao thông (Fixed-Time, Max-Pressure, Tabular Q-Learning).
 
 ---
 
@@ -33,7 +33,7 @@ Tài liệu này ghi nhận nguồn gốc, giấy phép và thông tin chi tiế
 
 1. **cologne1 & ingolstadt1** (Kịch bản đơn nút giao - Core Benchmarks):
    - Cấu trúc gọn nhẹ gồm các tệp mạng (`.net.xml`), tuyến đường (`.rou.xml`), cấu hình mô phỏng (`.sumocfg`) và tệp bản quyền (`LICENSE`).
-   - Phục vụ làm kịch bản chuẩn cho huấn luyện RL (DQN, Tabular Q-Learning) và đánh giá đối chuẩn đa thuật toán.
+   - Phục vụ làm kịch bản chuẩn cho huấn luyện RL (Tabular Q-Learning) và đánh giá đối chuẩn đa thuật toán.
 
 2. **cologne3** (Kịch bản đa nút giao nhỏ - 3 nút giao):
    - Mạng lưới gồm 3 cụm đèn tín hiệu thực tế thuộc Cologne TAPAS.

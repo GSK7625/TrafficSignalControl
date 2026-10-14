@@ -1,7 +1,7 @@
 """Automated Experiment Runner for Phase 6 benchmarking.
 
-Executes, validates, and aggregates benchmarks across all 4 traffic signal control
-algorithms (Fixed-Time, Max-Pressure, Q-Learning, DQN)
+Executes, validates, and aggregates benchmarks across all 3 traffic signal control
+algorithms (Fixed-Time, Max-Pressure, Q-Learning)
 under strictly standardized, reproducible experimental conditions.
 """
 
@@ -44,7 +44,7 @@ SCENARIO_DEMAND = {
 class ExperimentConfig:
     """Configuration for a single benchmark evaluation run."""
     scenario_name: str
-    algorithm: str  # 'Fixed-Time', 'Max-Pressure', 'Q-Learning', 'DQN'
+    algorithm: str  # 'Fixed-Time', 'Max-Pressure', 'Q-Learning'
     seed: int = 42
     training_seed: int = 42
     steps: Optional[int] = None  # None = full horizon (3600s)
@@ -65,14 +65,14 @@ def resolve_effective_decision_interval(
 
     Baselines (Fixed-Time, Max-Pressure) default to 1.0s to ensure exact phase timings
     and prevent phase green time elongation (e.g. 30s turning into 32s).
-    RL algorithms (Q-Learning, DQN) default to checkpoint values if present, or 5.0s.
+    RL algorithms (Q-Learning) default to checkpoint values if present, or 5.0s.
     An explicit cfg.decision_interval always overrides defaults.
     """
     if cfg.decision_interval is not None:
         return float(cfg.decision_interval)
 
     algo_key = cfg.algorithm.lower().replace(" ", "_").replace("-", "_")
-    if algo_key in ("q_learning", "qlearning", "dqn", "deep_q_network"):
+    if algo_key in ("q_learning", "qlearning"):
         if ckpt_params and "decision_interval" in ckpt_params:
             return float(ckpt_params["decision_interval"])
         return 5.0
@@ -87,8 +87,6 @@ def resolve_model_path(cfg: ExperimentConfig) -> Optional[str]:
     algo_key = cfg.algorithm.lower().replace(" ", "_").replace("-", "_")
     if algo_key in ("q_learning", "qlearning"):
         return f"models/q_learning/q_learning_{cfg.scenario_name}_best.json"
-    elif algo_key in ("dqn", "deep_q_network"):
-        return f"models/dqn/dqn_{cfg.scenario_name}_best.pt"
     return None
 
 
@@ -323,8 +321,6 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     if model_path is None:
         if algo_key in ("q_learning", "qlearning"):
             model_path = f"models/q_learning/q_learning_{cfg.scenario_name}_best.json"
-        elif algo_key in ("dqn", "deep_q_network"):
-            model_path = f"models/dqn/dqn_{cfg.scenario_name}_best.pt"
 
     summary: Dict[str, Any] = {}
     episode_reward: Optional[float] = None
@@ -337,7 +333,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     effective_yellow_duration = float(cfg.yellow_duration)
     effective_all_red_duration = float(cfg.all_red_duration)
     try:
-        if algo_key in ("q_learning", "qlearning", "dqn", "deep_q_network"):
+        if algo_key in ("q_learning", "qlearning"):
             if scenario_info.tls_count > 1:
                 raise ValueError(
                     f"RL algorithm '{cfg.algorithm}' currently requires a single-intersection scenario, "
@@ -388,32 +384,17 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
             env = TrafficSignalRLEnv(**env_kwargs)
 
-            if algo_key in ("q_learning", "qlearning"):
-                agent = QLearningController(
-                    num_actions=env.num_actions,
-                    discretizer=env.state_discretizer,
-                    seed=cfg.seed,
-                    eval_mode=True,
-                )
-                if not os.path.isfile(model_path):
-                    raise FileNotFoundError(f"Q-Learning model checkpoint not found: {model_path}")
-                agent.load(model_path)
-                agent.eval_mode = True
-                agent.epsilon = 0.0  # Strict zero exploration
-            else:
-                from src.controllers.dqn import DQNController
-                agent = DQNController(
-                    observation_dim=env.observation_dim,
-                    action_dim=env.num_actions,
-                    obs_builder=env.obs_builder,
-                    seed=cfg.seed,
-                    eval_mode=True,
-                )
-                if not os.path.isfile(model_path):
-                    raise FileNotFoundError(f"DQN model checkpoint not found: {model_path}")
-                agent.load(model_path)
-                agent.eval_mode = True
-                agent.epsilon = 0.0  # Strict zero exploration
+            agent = QLearningController(
+                num_actions=env.num_actions,
+                discretizer=env.state_discretizer,
+                seed=cfg.seed,
+                eval_mode=True,
+            )
+            if not os.path.isfile(model_path):
+                raise FileNotFoundError(f"Q-Learning model checkpoint not found: {model_path}")
+            agent.load(model_path)
+            agent.eval_mode = True
+            agent.epsilon = 0.0  # Strict zero exploration
 
             obs_vec, info = env.reset(seed=cfg.seed)
             valid_actions = info["valid_actions"]
@@ -423,10 +404,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             step_count = 0
 
             while True:
-                if algo_key in ("q_learning", "qlearning"):
-                    act = agent.select_action_for_state(discrete_state, valid_actions=valid_actions)
-                else:
-                    act = agent.select_action_for_state(obs_vec, valid_actions=valid_actions)
+                act = agent.select_action_for_state(discrete_state, valid_actions=valid_actions)
 
                 next_obs, reward, terminated, truncated, next_info = env.step(act)
                 accumulated_reward += reward
@@ -455,7 +433,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 raise ValueError(
                     f"Unknown algorithm: {cfg.algorithm}. "
                     "Benchmark evaluation only compares traffic signal control algorithms "
-                    "(Fixed-Time, Max-Pressure, Q-Learning, DQN)."
+                    "(Fixed-Time, Max-Pressure, Q-Learning)."
                 )
 
             sim_cfg = get_scenario_config(
@@ -781,7 +759,7 @@ def run_full_benchmark_matrix(
     if scenarios is None:
         scenarios = ["ingolstadt1", "cologne1"]
     if algorithms is None:
-        algorithms = ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"]
+        algorithms = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
     if seeds is None:
         seeds = [42, 101, 2024]
 
@@ -873,8 +851,6 @@ ALGO_NAME_MAP = {
     "ql": "Q-Learning",
     "q-learning": "Q-Learning",
     "q_learning": "Q-Learning",
-    "dqn": "DQN",
-    "deep_q_network": "DQN",
 }
 
 

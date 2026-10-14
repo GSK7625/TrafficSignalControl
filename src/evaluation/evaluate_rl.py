@@ -1,4 +1,4 @@
-"""Evaluation pipeline for trained Q-Learning and DQN agents."""
+"""Evaluation pipeline for trained Q-Learning agents."""
 
 import argparse
 import json
@@ -46,26 +46,6 @@ def load_checkpoint_env_params(model_path: Optional[str]) -> Dict[str, Any]:
                     serving_queue_thresholds=params.get("serving_queue_thresholds", (1.0, 5.0)),
                     waiting_queue_thresholds=params.get("waiting_queue_thresholds", (1.0, 6.0, 15.0)),
                 )
-        elif model_path.endswith(".pt") or model_path.endswith(".pth"):
-            import torch
-            ckpt = torch.load(model_path, map_location="cpu")
-            cfg = ckpt.get("config", {})
-            if "decision_interval" in cfg:
-                params["decision_interval"] = float(cfg["decision_interval"])
-            if "yellow_duration" in cfg:
-                params["yellow_duration"] = float(cfg["yellow_duration"])
-            if "all_red_duration" in cfg:
-                params["all_red_duration"] = float(cfg["all_red_duration"])
-            if "min_green" in cfg:
-                params["min_green"] = float(cfg["min_green"])
-            obs_cfg = cfg.get("obs_builder_config", {})
-            if obs_cfg:
-                if "max_queue_scale" in obs_cfg:
-                    params["max_queue_scale"] = float(obs_cfg["max_queue_scale"])
-                if "max_time_scale" in obs_cfg:
-                    params["max_time_scale"] = float(obs_cfg["max_time_scale"])
-                if "min_green" in obs_cfg:
-                    params["min_green"] = float(obs_cfg["min_green"])
     except Exception:
         pass
     return params
@@ -89,8 +69,8 @@ def evaluate_agent(
 
     Args:
         scenario_name: 'cologne1' or 'ingolstadt1'.
-        algorithm: 'q_learning' or 'dqn'.
-        model_path: Path to model checkpoint file (.json for Q-Learning, .pt for DQN).
+        algorithm: 'q_learning'.
+        model_path: Path to model checkpoint file (.json for Q-Learning).
         seed: Random seed (matches baseline benchmarks).
         steps: Total steps to evaluate (default: 3600s).
         decision_interval: Decision interval in seconds.
@@ -149,18 +129,6 @@ def evaluate_agent(
             agent.load(model_path)
             agent.eval_mode = True
             agent.epsilon = 0.0  # Zero exploration
-        elif algo_key in ("dqn", "deep_q_network"):
-            from src.controllers.dqn import DQNController
-            agent = DQNController(
-                observation_dim=env.observation_dim,
-                action_dim=env.num_actions,
-                obs_builder=env.obs_builder,
-                seed=seed,
-                eval_mode=True,
-            )
-            agent.load(model_path)
-            agent.eval_mode = True
-            agent.epsilon = 0.0  # Zero exploration
         else:
             raise ValueError(f"Unsupported RL algorithm: {algorithm}")
 
@@ -173,10 +141,7 @@ def evaluate_agent(
         step_count = 0
 
         while True:
-            if algo_key in ("q_learning", "qlearning"):
-                action = agent.select_action_for_state(discrete_state, valid_actions=valid_actions)
-            else:
-                action = agent.select_action_for_state(obs_vec, valid_actions=valid_actions)
+            action = agent.select_action_for_state(discrete_state, valid_actions=valid_actions)
 
             next_obs, reward, terminated, truncated, next_info = env.step(action)
             total_reward += reward
@@ -194,7 +159,7 @@ def evaluate_agent(
 
         eval_result = {
             "scenario_name": scenario_name,
-            "algorithm": "Q-Learning" if algo_key in ("q_learning", "qlearning") else "DQN",
+            "algorithm": "Q-Learning",
             "model_path": model_path,
             "seed": seed,
             "total_steps": summary.get("total_steps", step_count * int(dec_int)),
@@ -242,7 +207,7 @@ def evaluate_agent(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate trained RL controller.")
     parser.add_argument("--dataset", type=str, required=True, choices=["cologne1", "ingolstadt1"])
-    parser.add_argument("--algo", type=str, required=True, choices=["q_learning", "dqn"])
+    parser.add_argument("--algo", type=str, default="q_learning", choices=["q_learning"])
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--steps", type=int, default=3600)

@@ -1,9 +1,9 @@
 """Comprehensive visualization and publication-quality chart generator for Phase 6.
 
-Generates all 15 required benchmark charts across Groups A, B, and C:
+Generates benchmark charts across Groups A, B, and C:
 - Group A: Algorithm Comparisons (Waiting Time, Queue Length, Throughput, Time Loss, Completion Rate, Improvement %)
 - Group B: Traffic Dynamics Over Time (Queue over time, Running vehicles, Cumulative completed, Green time allocation)
-- Group C: Reinforcement Learning Dynamics (Q-Learning reward, DQN reward, Huber Loss, Epsilon decay, RL Convergence)
+- Group C: Reinforcement Learning Dynamics (Q-Learning reward, Epsilon decay, RL Convergence)
 """
 
 import json
@@ -29,7 +29,6 @@ ALGO_COLORS = {
     "Fixed-Time": "#1f77b4",     # Steel Blue
     "Max-Pressure": "#2ca02c",   # Forest Green
     "Q-Learning": "#ff7f0e",     # Amber Orange
-    "DQN": "#d62728",            # Crimson Red
 }
 
 
@@ -54,7 +53,7 @@ def plot_group_a_comparisons(
 
     generated = []
     scenarios = [s for s in ["cologne1", "ingolstadt1"] if s in data]
-    algos_order = ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"]
+    algos_order = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
 
     for scen in scenarios:
         scen_data = data[scen]
@@ -178,8 +177,7 @@ def plot_group_b_dynamics(
     scenarios = ["cologne1", "ingolstadt1"]
 
     for scen in scenarios:
-        # Pick seed 42 run for each algorithm in this scenario
-        allowed_algos = {"Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"}
+        allowed_algos = {"Fixed-Time", "Max-Pressure", "Q-Learning"}
         scen_runs = [
             r for r in runs
             if r.get("scenario_name") == scen
@@ -300,35 +298,21 @@ def plot_group_c_rl(
 
     for scen in ["cologne1", "ingolstadt1"]:
         ql_file = os.path.join(log_dir, f"q_learning_{scen}_log.json")
-        dqn_file = os.path.join(log_dir, f"dqn_{scen}_log.json")
-
         ql_data = load_json(ql_file)
-        dqn_data = load_json(dqn_file)
 
-        # 11 & 12. Individual and Comparison Rewards
-        if ql_data or dqn_data:
-            ql_hist = ql_data.get("history", []) if ql_data else []
-            dqn_hist = dqn_data.get("history", []) if dqn_data else []
-            if ql_hist or dqn_hist:
+        # 11. RL Training Reward Progression
+        if ql_data:
+            ql_hist = ql_data.get("history", [])
+            if ql_hist:
                 fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-                if ql_hist:
-                    ax.plot(
-                        [h["episode"] for h in ql_hist],
-                        [h["reward"] for h in ql_hist],
-                        marker="o",
-                        color=ALGO_COLORS["Q-Learning"],
-                        label="Q-Learning (Tabular)",
-                        linewidth=2.0,
-                    )
-                if dqn_hist:
-                    ax.plot(
-                        [h["episode"] for h in dqn_hist],
-                        [h["reward"] for h in dqn_hist],
-                        marker="s",
-                        color=ALGO_COLORS["DQN"],
-                        label="DQN (Neural Network)",
-                        linewidth=2.0,
-                    )
+                ax.plot(
+                    [h["episode"] for h in ql_hist],
+                    [h["reward"] for h in ql_hist],
+                    marker="o",
+                    color=ALGO_COLORS["Q-Learning"],
+                    label="Q-Learning (Tabular)",
+                    linewidth=2.0,
+                )
                 ax.set_title(f"RL Training Reward Progression — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
                 ax.set_xlabel("Training Episode", fontsize=11)
                 ax.set_ylabel("Episode Cumulative Reward (- Queue)", fontsize=11)
@@ -339,24 +323,6 @@ def plot_group_c_rl(
                 plt.savefig(p11)
                 plt.close(fig)
                 generated.append(p11)
-
-        # 13. DQN Huber Loss
-        if dqn_data and "history" in dqn_data:
-            dqn_hist = dqn_data["history"]
-            fig, ax = plt.subplots(figsize=(8, 4.5), dpi=300)
-            losses = [h.get("mean_loss", 0.0) for h in dqn_hist]
-            eps = [h["episode"] for h in dqn_hist]
-            ax.plot(eps, losses, marker="^", color=ALGO_COLORS["DQN"], linewidth=2.0, label="Huber Loss")
-            ax.set_title(f"DQN Huber Loss Convergence — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
-            ax.set_xlabel("Training Episode", fontsize=11)
-            ax.set_ylabel("Mean Loss per Episode", fontsize=11)
-            ax.grid(True)
-            ax.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
-            plt.tight_layout()
-            p13 = os.path.join(output_dir, f"{scen}_dqn_loss.png")
-            plt.savefig(p13)
-            plt.close(fig)
-            generated.append(p13)
 
         # 14. Epsilon Decay Schedule
         if ql_data and "history" in ql_data:

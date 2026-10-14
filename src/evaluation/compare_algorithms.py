@@ -29,7 +29,7 @@ def generate_comparison_report(
         for scen, algos in p6_data.items():
             combined_results[scen] = {}
             for algo, metrics in algos.items():
-                if "(" in algo:  # skip duplicate cohort labels like 'Fixed-Time (fp: ...)'
+                if algo not in ("Fixed-Time", "Max-Pressure", "Q-Learning"):
                     continue
                 # Flatten stats for reporting
                 flat_entry: Dict[str, Any] = {
@@ -63,11 +63,6 @@ def generate_comparison_report(
             if ql_data:
                 combined_results[scen]["Q-Learning"] = ql_data
 
-            dqn_file = os.path.join(eval_dir, f"{scen}_dqn_eval.json")
-            dqn_data = load_json(dqn_file)
-            if dqn_data:
-                combined_results[scen]["DQN"] = dqn_data
-
     # Generate Markdown Report
     lines = [
         "# BÁO CÁO TIẾN ĐỘ & SO SÁNH CÁC PHƯƠNG PHÁP ĐIỀU KHIỂN TÍN HIỆU GIAO THÔNG",
@@ -88,7 +83,7 @@ def generate_comparison_report(
         lines.append("| Thuật toán | Waiting Time (s) | Queue Length (xe) | Throughput (xe) | Completion Rate (%) | Time Loss (s) |")
         lines.append("|---|---|---|---|---|---|")
 
-        algos_display = ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"]
+        algos_display = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
         for algo in algos_display:
             if algo in scen_res:
                 r = scen_res[algo]

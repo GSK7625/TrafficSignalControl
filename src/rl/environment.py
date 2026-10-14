@@ -16,7 +16,7 @@ from src.runner import SimulationRunner
 class TrafficSignalRLEnv:
     """Gymnasium-compatible Traffic Signal Control Environment.
 
-    Shared by Tabular Q-Learning and Deep Q-Network (DQN).
+    Designed for Tabular Q-Learning and reinforcement learning controllers.
 
     Key Characteristics:
     - Wraps SimulationRunner, SafePhaseManager, and MetricsCollector without duplicating logic.

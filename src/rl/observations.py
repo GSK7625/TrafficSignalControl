@@ -1,4 +1,4 @@
-"""Observation vector building and feature extraction for Deep Q-Network (DQN)."""
+"""Observation vector building and feature extraction for continuous RL observations."""
 
 from typing import Any, Dict, List, Sequence
 import numpy as np
@@ -6,7 +6,7 @@ from src.controllers.base import IntersectionObservation
 
 
 class ObservationBuilder:
-    """Builds normalized, fixed-length continuous observation vectors for DQN.
+    """Builds normalized, fixed-length continuous observation vectors for RL.
 
     Vector Structure:
     1. Normalized incoming lane queues: [q_1 / max_queue_scale, ..., q_N / max_queue_scale]

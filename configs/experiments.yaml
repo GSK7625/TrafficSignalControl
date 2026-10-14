@@ -7,7 +7,6 @@ algorithms:
   - Fixed-Time
   - Max-Pressure
   - Q-Learning
-  - DQN
 
 simulation:
   steps: 3600

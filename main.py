@@ -74,14 +74,14 @@ def main():
         dest="controller",
         type=str,
         default="none",
-        choices=["none", "fixed-time", "max-pressure", "q-learning", "dqn"],
-        help="Traffic controller algorithm: 'fixed-time', 'max-pressure', 'q-learning', 'dqn', or 'none' (uses --mode)",
+        choices=["none", "fixed-time", "max-pressure", "q-learning"],
+        help="Traffic controller algorithm: 'fixed-time', 'max-pressure', 'q-learning', or 'none' (uses --mode)",
     )
     parser.add_argument(
         "--model",
         type=str,
         default=None,
-        help="Path to trained model checkpoint for Q-Learning (.json) or DQN (.pt)",
+        help="Path to trained model checkpoint for Q-Learning (.json)",
     )
     parser.add_argument(
         "--fixed-time-green",
@@ -156,7 +156,7 @@ def main():
     parser.add_argument(
         "--allow-untrained",
         action="store_true",
-        help="Allow running RL controllers (q-learning, dqn) without a trained checkpoint",
+        help="Allow running Q-Learning controller without a trained checkpoint",
     )
 
     args = parser.parse_args()
@@ -210,52 +210,6 @@ def main():
                 sys.exit(1)
             print(f"[WARN] Q-Learning model '{model_path}' not found, using untrained agent (--allow-untrained supplied).")
         effective_mode = "agent"
-    elif args.controller == "dqn":
-        try:
-            from src.controllers.dqn import DQNController
-            from src.rl.observations import ObservationBuilder
-        except ImportError as exc:
-            print(
-                f"[ERROR] PyTorch is required to run DQN controller, but failed to import: {exc}\n"
-                "Please activate the virtual environment where PyTorch is installed:\n"
-                "  .\\.venv\\Scripts\\Activate.ps1\n"
-                "Or run directly using:\n"
-                "  .\\.venv\\Scripts\\python main.py --controller dqn ...\n"
-                "Or install torch via: pip install torch"
-            )
-            sys.exit(1)
-
-        from src.runner import extract_green_phases
-        info = inspect_scenario(args.dataset, data_dir="data")
-        tl_id = info.tls_ids[0]
-        green_phases = extract_green_phases(args.dataset, tl_id, info.phases_per_tls[tl_id])
-        in_lanes = info.controlled_lanes_per_tls.get(tl_id, [])
-        model_path = args.model or f"models/dqn/dqn_{args.dataset}_best.pt"
-        if os.path.isfile(model_path):
-            from src.evaluation.evaluate_rl import load_checkpoint_env_params
-            ckpt_params = load_checkpoint_env_params(model_path)
-        effective_min_green = args.min_green if args.min_green is not None else ckpt_params.get("min_green", 5.0)
-        builder = ObservationBuilder(incoming_lanes=in_lanes, num_green_phases=len(green_phases), min_green=effective_min_green)
-        controller = DQNController(
-            observation_dim=builder.observation_dim,
-            action_dim=len(green_phases),
-            obs_builder=builder,
-            target_tls_id=tl_id,
-            seed=args.seed,
-            eval_mode=True,
-        )
-        if os.path.isfile(model_path):
-            controller.load(model_path)
-            print(f"[INFO] Loaded DQN model from '{model_path}'")
-        else:
-            if not args.allow_untrained:
-                print(
-                    f"[ERROR] DQN model checkpoint '{model_path}' not found!\n"
-                    "To evaluate with an untrained agent, explicitly pass '--allow-untrained'."
-                )
-                sys.exit(1)
-            print(f"[WARN] DQN model '{model_path}' not found, using untrained agent (--allow-untrained supplied).")
-        effective_mode = "agent"
     else:
         effective_mode = args.mode
 
@@ -266,7 +220,7 @@ def main():
     effective_dec_interval = (
         args.decision_interval
         if args.decision_interval is not None
-        else ckpt_params.get("decision_interval", 5.0 if ctrl_norm in ("dqn", "q_learning") else 1.0)
+        else ckpt_params.get("decision_interval", 5.0 if ctrl_norm == "q_learning" else 1.0)
     )
 
     print(f"\n[INFO] Initializing simulation for dataset: '{args.dataset}'")

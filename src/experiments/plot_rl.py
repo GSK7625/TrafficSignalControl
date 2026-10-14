@@ -1,4 +1,4 @@
-"""Generates publication-quality charts for RL training progress and 4-algorithm benchmark comparisons."""
+"""Generates publication-quality charts for RL training progress and 3-algorithm benchmark comparisons."""
 
 import json
 import os
@@ -21,7 +21,7 @@ def plot_training_curves(
     log_dir: str = "results/training",
     figures_dir: str = "results/figures",
 ):
-    """Plots training reward, loss, and epsilon curves for Q-Learning and DQN."""
+    """Plots training reward and epsilon curves for Q-Learning."""
     os.makedirs(figures_dir, exist_ok=True)
     set_plot_style()
 
@@ -29,32 +29,21 @@ def plot_training_curves(
 
     for scen in scenarios:
         ql_file = os.path.join(log_dir, f"q_learning_{scen}_log.json")
-        dqn_file = os.path.join(log_dir, f"dqn_{scen}_log.json")
-
         ql_data = {}
-        dqn_data = {}
 
         if os.path.isfile(ql_file):
             with open(ql_file, "r", encoding="utf-8") as f:
                 ql_data = json.load(f)
-        if os.path.isfile(dqn_file):
-            with open(dqn_file, "r", encoding="utf-8") as f:
-                dqn_data = json.load(f)
 
-        if not ql_data and not dqn_data:
+        if not ql_data:
             continue
 
-        # 1. Training Reward Comparison
+        # 1. Training Reward
         fig, ax = plt.subplots(figsize=(8, 5), dpi=300)
-        if ql_data and "history" in ql_data:
+        if "history" in ql_data:
             eps = [h["episode"] for h in ql_data["history"]]
             rews = [h["reward"] for h in ql_data["history"]]
             ax.plot(eps, rews, marker="o", color="#2ca02c", linewidth=2.0, label="Q-Learning")
-
-        if dqn_data and "history" in dqn_data:
-            eps_d = [h["episode"] for h in dqn_data["history"]]
-            rews_d = [h["reward"] for h in dqn_data["history"]]
-            ax.plot(eps_d, rews_d, marker="s", color="#1f77b4", linewidth=2.0, label="DQN")
 
         ax.set_title(f"Episode Reward Progression — {scen.upper()}", fontsize=13, fontweight="bold", pad=12)
         ax.set_xlabel("Training Episode", fontsize=11)
@@ -65,23 +54,8 @@ def plot_training_curves(
         plt.savefig(os.path.join(figures_dir, f"reward_progression_{scen}.png"))
         plt.close(fig)
 
-        # 2. DQN Training Loss
-        if dqn_data and "history" in dqn_data:
-            eps_d = [h["episode"] for h in dqn_data["history"]]
-            losses = [h.get("mean_loss", 0.0) for h in dqn_data["history"]]
-            fig, ax = plt.subplots(figsize=(8, 4.5), dpi=300)
-            ax.plot(eps_d, losses, marker="^", color="#d62728", linewidth=2.0, label="DQN Huber Loss")
-            ax.set_title(f"DQN Training Loss per Episode — {scen.upper()}", fontsize=13, fontweight="bold", pad=12)
-            ax.set_xlabel("Training Episode", fontsize=11)
-            ax.set_ylabel("Mean Huber Loss", fontsize=11)
-            ax.grid(True)
-            ax.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
-            plt.tight_layout()
-            plt.savefig(os.path.join(figures_dir, f"dqn_loss_{scen}.png"))
-            plt.close(fig)
-
-        # 3. Epsilon Exploration Schedule
-        if ql_data and "history" in ql_data:
+        # 2. Epsilon Exploration Schedule
+        if "history" in ql_data:
             eps = [h["episode"] for h in ql_data["history"]]
             epsilons = [h.get("epsilon", 0.0) for h in ql_data["history"]]
             fig, ax = plt.subplots(figsize=(7, 4), dpi=300)
@@ -111,8 +85,8 @@ def plot_comparison_metrics(
     os.makedirs(figures_dir, exist_ok=True)
     set_plot_style()
 
-    algo_order = ["Fixed-Time", "Max-Pressure", "Q-Learning", "DQN"]
-    algo_colors = ["#7f7f7f", "#ff7f0e", "#2ca02c", "#1f77b4"]
+    algo_order = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
+    algo_colors = ["#7f7f7f", "#ff7f0e", "#2ca02c"]
 
     metrics_config = [
         ("mean_waiting_time", "Average Waiting Time (seconds)", "waiting_time_comparison.png"),
@@ -155,14 +129,14 @@ def plot_comparison_metrics(
         # Plot Improvement % over Fixed-Time
         if "Fixed-Time" in algos_dict:
             ft_wait = algos_dict["Fixed-Time"].get("mean_waiting_time", 1.0)
-            comp_algos = [a for a in ["Max-Pressure", "Q-Learning", "DQN"] if a in algos_dict]
+            comp_algos = [a for a in ["Max-Pressure", "Q-Learning"] if a in algos_dict]
             impr_vals = [
                 ((ft_wait - algos_dict[a].get("mean_waiting_time", ft_wait)) / max(1e-6, ft_wait)) * 100.0
                 for a in comp_algos
             ]
 
             fig, ax = plt.subplots(figsize=(7, 4), dpi=300)
-            impr_colors = ["#ff7f0e", "#2ca02c", "#1f77b4"][:len(comp_algos)]
+            impr_colors = ["#ff7f0e", "#2ca02c"][:len(comp_algos)]
             bars = ax.bar(comp_algos, impr_vals, color=impr_colors, width=0.5, edgecolor="#333333")
 
             for bar in bars:

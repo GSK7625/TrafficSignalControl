@@ -12,22 +12,14 @@ from src.rl.discretization import StateDiscretizer
 
 
 class QLearningController(BaseTrafficController):
-    """Tabular Q-Learning agent for traffic signal control.
+    """Tác tử Tabular Q-Learning dùng cho điều khiển tín hiệu đèn giao thông.
 
-    Formulation:
+    Công thức cập nhật:
         Q(s, a) <- Q(s, a) + alpha * [r + gamma * max_{a'} Q(s', a') - Q(s, a)]
-        For terminal states (done=True):
+        Đối với các trạng thái kết thúc (done=True):
         Q(s, a) <- Q(s, a) + alpha * [r - Q(s, a)]
-
-    Features:
-    - Tabular Q-table backed by a dictionary of numpy arrays (allocated on-demand).
-    - Epsilon-greedy exploration with exponential decay.
-    - Strict action masking during action selection and Bellman target calculation.
-    - Zero bootstrapping at terminal states.
-    - Configurable state discretization.
-    - Model persistence (save/load) preserving all learned Q-values and hyperparameters.
-    - Full evaluation mode (exploration and updates disabled).
     """
+
 
     def __init__(
         self,
