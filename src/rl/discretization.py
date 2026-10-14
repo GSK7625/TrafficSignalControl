@@ -1,6 +1,6 @@
 """State discretization module for Tabular Q-Learning in traffic signal control."""
 
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, Set, Tuple
 from src.controllers.base import IntersectionObservation
 
 
@@ -83,6 +83,9 @@ class StateDiscretizer:
                 serving_q += q
             else:
                 waiting_q += q
+
+        # Account for pending uninserted vehicles in waiting queue (anti-bottleneck awareness)
+        waiting_q += float(getattr(obs, "pending_vehicles", 0))
 
         serving_bin = self._bin_value(serving_q, self.serving_thresholds)
         waiting_bin = self._bin_value(waiting_q, self.waiting_thresholds)

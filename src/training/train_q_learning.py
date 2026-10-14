@@ -21,12 +21,18 @@ def evaluate_greedy_q_learning(
     min_green: float = 5.0,
     yellow_duration: float = 3.0,
     all_red_duration: float = 0.0,
+    max_green: Optional[float] = 60.0,
     reward_fn: Optional[BaseRewardFunction] = None,
     state_discretizer: Optional[StateDiscretizer] = None,
     max_steps: Optional[int] = 3600,
     seed: int = 42,
-) -> float:
-    """Evaluates the Q-Learning agent deterministically (epsilon=0, eval_mode=True) with RNG state isolation."""
+) -> Dict[str, Any]:
+    """Evaluates the Q-Learning agent deterministically (epsilon=0, eval_mode=True) with RNG state isolation.
+
+    Returns:
+        Dict containing reward, completed_vehicles, completion_rate, collisions, teleports,
+        mean_waiting_time, system_mean_delay, and raw summary.
+    """
     import random
     prev_py_state = random.getstate()
     prev_np_state = np.random.get_state()
@@ -37,6 +43,7 @@ def evaluate_greedy_q_learning(
         scenario_name=scenario_name,
         decision_interval=decision_interval,
         min_green=min_green,
+        max_green=max_green,
         yellow_duration=yellow_duration,
         all_red_duration=all_red_duration,
         reward_fn=reward_fn,
@@ -70,7 +77,28 @@ def evaluate_greedy_q_learning(
         random.setstate(prev_py_state)
         np.random.set_state(prev_np_state)
 
-    return total_reward
+    summary = val_env.get_summary() or {}
+    completed = summary.get("total_completed_vehicles", summary.get("tripinfo_completed_vehicles", 0))
+    running = summary.get("running_vehicles_at_end", 0)
+    pending = summary.get("pending_insertion_vehicles", 0)
+    total_demand = completed + running + pending
+    completion_rate = (completed / total_demand) if total_demand > 0 else 1.0
+    collisions = summary.get("collision_count", summary.get("collision_incidents", 0))
+    teleports = summary.get("teleport_count", 0)
+    mean_wait = summary.get("mean_waiting_time", 0.0)
+    sys_delay = summary.get("system_mean_delay", 0.0)
+
+    return {
+        "reward": round(total_reward, 2),
+        "completed_vehicles": completed,
+        "total_demand": total_demand,
+        "completion_rate": round(completion_rate, 4),
+        "collisions": collisions,
+        "teleports": teleports,
+        "mean_waiting_time": round(mean_wait, 2),
+        "system_mean_delay": round(sys_delay, 2),
+        "summary": summary,
+    }
 
 
 def train_q_learning(
@@ -84,10 +112,13 @@ def train_q_learning(
     epsilon_decay: Optional[float] = None,
     decision_interval: Optional[float] = None,
     min_green: Optional[float] = None,
+    max_green: Optional[float] = None,
     yellow_duration: Optional[float] = None,
     all_red_duration: Optional[float] = None,
     max_steps_per_episode: Optional[int] = None,
     val_interval: Optional[int] = None,
+    val_seeds: Optional[List[int]] = None,
+    min_val_completion: float = 0.95,
     config_path: Optional[str] = None,
     model_dir: str = "models/q_learning",
     log_dir: str = "results/training",
@@ -103,11 +134,13 @@ def train_q_learning(
     epsilon_decay_val = 0.85
     decision_interval_val = 5.0
     min_green_val = 5.0
+    max_green_val = 60.0
     yellow_dur = 3.0
     all_red_dur = 0.0
     max_steps_val = 3600
     val_interval_val = 5
     reward_scale = 1.0
+    pending_weight_val = 1.0
     max_effective_green = 25.0
     serving_thresholds = (1.0, 5.0)
     waiting_thresholds = (1.0, 6.0, 15.0)
@@ -134,6 +167,10 @@ def train_q_learning(
             decision_interval_val = float(cfg["decision_interval"])
         if "min_green" in cfg:
             min_green_val = float(cfg["min_green"])
+        if "max_green" in cfg:
+            max_green_val = float(cfg["max_green"])
+        elif "max_green" in hp:
+            max_green_val = float(hp["max_green"])
         if "yellow_duration" in cfg:
             yellow_dur = float(cfg["yellow_duration"])
         if "all_red_duration" in cfg:
@@ -146,6 +183,8 @@ def train_q_learning(
         reward_cfg = cfg.get("reward", {})
         if "scale" in reward_cfg or "reward_scale" in cfg:
             reward_scale = float(reward_cfg.get("scale", cfg.get("reward_scale", reward_scale)))
+        if "pending_weight" in reward_cfg:
+            pending_weight_val = float(reward_cfg["pending_weight"])
 
         disc_cfg = cfg.get("discretization", {})
         if "max_effective_green" in disc_cfg:
@@ -174,6 +213,8 @@ def train_q_learning(
         decision_interval_val = float(decision_interval)
     if min_green is not None:
         min_green_val = float(min_green)
+    if max_green is not None:
+        max_green_val = float(max_green)
     if yellow_duration is not None:
         yellow_dur = float(yellow_duration)
     if all_red_duration is not None:
@@ -193,10 +234,12 @@ def train_q_learning(
     epsilon_decay = epsilon_decay_val
     decision_interval = decision_interval_val
     min_green = min_green_val
+    max_green = max_green_val
     max_steps_per_episode = max_steps_val
     val_interval = val_interval_val
+    pending_weight = pending_weight_val
 
-    reward_fn = NegativeAverageQueueReward(scale=reward_scale)
+    reward_fn = NegativeAverageQueueReward(scale=reward_scale, pending_weight=pending_weight)
     state_discretizer = StateDiscretizer(
         min_green=min_green,
         max_effective_green=max_effective_green,
@@ -210,7 +253,7 @@ def train_q_learning(
     print(f"\n========================================================")
     print(f"Starting Q-Learning Training on [{scenario_name.upper()}]")
     print(f"Episodes: {num_episodes} | LR: {learning_rate} | Gamma: {gamma} | Decay: {epsilon_decay}")
-    print(f"Decision Interval: {decision_interval}s | Seed: {seed} | Yellow: {yellow_dur}s | All-Red: {all_red_dur}s")
+    print(f"Decision Interval: {decision_interval}s | Seed: {seed} | Yellow: {yellow_dur}s | All-Red: {all_red_dur}s | Max Green: {max_green}s")
     print(f"========================================================")
 
     # Initialize environment to query intersection parameters
@@ -218,6 +261,7 @@ def train_q_learning(
         scenario_name=scenario_name,
         decision_interval=decision_interval,
         min_green=min_green,
+        max_green=max_green,
         yellow_duration=yellow_dur,
         all_red_duration=all_red_dur,
         reward_fn=reward_fn,
@@ -238,6 +282,7 @@ def train_q_learning(
         discretizer=state_discretizer,
         decision_interval=decision_interval,
         min_green=min_green,
+        max_green=max_green,
         yellow_duration=yellow_dur,
         all_red_duration=all_red_dur,
         seed=seed,
@@ -246,6 +291,7 @@ def train_q_learning(
 
     history: List[Dict[str, Any]] = []
     best_reward = -float("inf")
+    best_is_viable = False
     start_total_time = time.time()
 
     try:
@@ -326,27 +372,69 @@ def train_q_learning(
 
             # Save checkpoint based on greedy evaluation or periodic interval
             if val_interval > 0 and (ep % val_interval == 0 or ep == num_episodes):
-                val_reward = evaluate_greedy_q_learning(
-                    agent=agent,
-                    scenario_name=scenario_name,
-                    decision_interval=decision_interval,
-                    min_green=min_green,
-                    yellow_duration=yellow_dur,
-                    all_red_duration=all_red_dur,
-                    reward_fn=NegativeAverageQueueReward(scale=reward_scale),
-                    state_discretizer=state_discretizer,
-                    max_steps=max_steps_per_episode,
-                    seed=seed + 9999,
+                target_val_seeds = list(val_seeds) if val_seeds is not None else [seed + 9999, seed + 10000]
+                val_results = []
+                for v_seed in target_val_seeds:
+                    res = evaluate_greedy_q_learning(
+                        agent=agent,
+                        scenario_name=scenario_name,
+                        decision_interval=decision_interval,
+                        min_green=min_green,
+                        max_green=max_green,
+                        yellow_duration=yellow_dur,
+                        all_red_duration=all_red_dur,
+                        reward_fn=NegativeAverageQueueReward(scale=reward_scale, pending_weight=pending_weight),
+                        state_discretizer=state_discretizer,
+                        max_steps=max_steps_per_episode,
+                        seed=v_seed,
+                    )
+                    val_results.append(res)
+
+                avg_val_reward = float(np.mean([r["reward"] for r in val_results]))
+                min_val_comp = float(min(r["completion_rate"] for r in val_results))
+                avg_val_comp = float(np.mean([r["completion_rate"] for r in val_results]))
+                total_val_colls = int(sum(r["collisions"] for r in val_results))
+                total_val_teleports = int(sum(r["teleports"] for r in val_results))
+                avg_sys_delay = float(np.mean([r["system_mean_delay"] for r in val_results]))
+
+                is_viable = (
+                    total_val_colls == 0
+                    and total_val_teleports == 0
+                    and min_val_comp >= min_val_completion
                 )
-                print(f"    --> [Greedy Eval] Ep {ep} Validation Reward: {val_reward:8.1f} (Best: {best_reward:8.1f})")
-                if val_reward > best_reward:
-                    best_reward = val_reward
-                    best_path = os.path.join(model_dir, f"q_learning_{scenario_name}_best.json")
-                    agent.save(best_path)
-                    print(f"    --> [NEW BEST CHECKPOINT] Saved to {best_path}")
+
+                print(
+                    f"    --> [Greedy Eval] Ep {ep} | Seeds: {target_val_seeds} | "
+                    f"Mean Rew: {avg_val_reward:8.1f} | Min Comp: {min_val_comp:6.1%} | "
+                    f"Colls: {total_val_colls} | Teleports: {total_val_teleports} | "
+                    f"Delay: {avg_sys_delay:5.2f}s | Viable: {is_viable}"
+                )
+
+                if is_viable:
+                    if (not best_is_viable) or (avg_val_reward > best_reward):
+                        best_reward = avg_val_reward
+                        best_is_viable = True
+                        best_path = os.path.join(model_dir, f"q_learning_{scenario_name}_best.json")
+                        agent.save(best_path)
+                        print(f"    --> [NEW BEST CHECKPOINT] Saved to {best_path} (Rew: {avg_val_reward:.1f}, Comp: {avg_val_comp:.1%})")
+                else:
+                    reasons = []
+                    if total_val_colls > 0:
+                        reasons.append(f"{total_val_colls} collisions")
+                    if total_val_teleports > 0:
+                        reasons.append(f"{total_val_teleports} teleports")
+                    if min_val_comp < min_val_completion:
+                        reasons.append(f"low completion {min_val_comp:.1%} < {min_val_completion:.1%}")
+                    print(f"    --> [CHECKPOINT REJECTED] Ep {ep} policy is degenerate ({', '.join(reasons)}). Not saved as best checkpoint.")
             elif val_interval <= 0:
-                if ep_reward > best_reward:
+                summary = env.get_summary() or {}
+                total_d = completed_vehs + summary.get("running_vehicles_at_end", 0) + summary.get("pending_insertion_vehicles", 0)
+                comp = (completed_vehs / max(1, total_d))
+                colls = summary.get("collision_count", summary.get("collision_incidents", 0))
+                is_viable = (colls == 0 and comp >= min_val_completion)
+                if is_viable and ((not best_is_viable) or (ep_reward > best_reward)):
                     best_reward = ep_reward
+                    best_is_viable = True
                     best_path = os.path.join(model_dir, f"q_learning_{scenario_name}_best.json")
                     agent.save(best_path)
 
@@ -380,11 +468,15 @@ def train_q_learning(
             "epsilon_decay": epsilon_decay,
             "decision_interval": decision_interval,
             "min_green": min_green,
+            "max_green": max_green,
+            "pending_weight": pending_weight,
+            "min_val_completion": min_val_completion,
         },
         "total_wall_clock_seconds": round(total_wall_time, 2),
         "history": history,
         "final_q_table_size": len(agent.q_table),
         "best_reward": round(best_reward, 2),
+        "best_is_viable": best_is_viable,
     }
 
     with open(log_file, "w", encoding="utf-8") as f:
@@ -406,6 +498,8 @@ if __name__ == "__main__":
     parser.add_argument("--decay", type=float, default=None)
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--max-green", type=float, default=None, help="Maximum consecutive green duration")
+    parser.add_argument("--min-completion", type=float, default=0.95, help="Minimum validation completion rate for best checkpoint")
     parser.add_argument("--config", type=str, default=None, help="Path to YAML configuration file")
     parser.add_argument("--val-interval", type=int, default=None, help="Interval of episodes for greedy evaluation")
 
@@ -418,6 +512,8 @@ if __name__ == "__main__":
         epsilon_decay=args.decay,
         max_steps_per_episode=args.steps,
         seed=args.seed,
+        max_green=args.max_green,
+        min_val_completion=args.min_completion,
         config_path=args.config,
         val_interval=args.val_interval,
     )

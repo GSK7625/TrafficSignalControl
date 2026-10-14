@@ -2,7 +2,6 @@
 
 from datetime import datetime
 import os
-import sys
 from typing import Any, Dict, List, Optional
 
 try:
@@ -10,7 +9,7 @@ try:
 except ImportError:
     traci = None
 
-from src.config import SimulationConfig, get_scenario_config
+from src.config import SimulationConfig
 from src.controllers.base import ControlledLink, IntersectionObservation
 from src.data_inspector import PhaseInfo, ScenarioInfo, inspect_scenario
 from src.metrics import MetricsCollector, StepMetrics
@@ -105,7 +104,12 @@ class SimulationRunner:
                 yellow_duration=self.config.yellow_duration,
                 all_red_duration=self.config.all_red_duration,
                 min_green=self.config.min_green,
+                max_green=getattr(self.config, "max_green", 60.0),
             )
+
+        # Validate controller compatibility against safety constraints and scenario phases
+        if hasattr(self.controller, "validate_compatibility"):
+            self._validate_controller_compatibility(self.controller)
 
         # Unique temporary tripinfo path if enabled
         self.tripinfo_path: Optional[str] = None
@@ -148,6 +152,38 @@ class SimulationRunner:
         self.total_collision_steps: int = 0
         self.total_collision_vehicle_involvements: int = 0
         self.has_run: bool = False
+
+    def _validate_controller_compatibility(self, controller: Any) -> None:
+        """Validates controller configuration against runner safety constraints and scenario phases."""
+        num_phases_per_tls = {
+            tl_id: len(mgr.green_phases) for tl_id, mgr in self.tls_managers.items()
+        }
+        max_green = getattr(self.config, "max_green", 60.0)
+        min_green = getattr(self.config, "min_green", 5.0)
+
+        errors = controller.validate_compatibility(
+            min_green=min_green,
+            max_green=max_green,
+            num_phases_per_tls=num_phases_per_tls,
+        )
+        if errors:
+            ctrl_name = getattr(controller, "name", "Controller")
+            raise ValueError(
+                f"Incompatible controller configuration for {ctrl_name}: {'; '.join(errors)}"
+            )
+
+    def set_controller(self, controller: Any) -> None:
+        """Attaches and validates a new controller for the simulation runner."""
+        self.controller = controller
+        self.control_mode = "agent"
+        self._active_control_engaged = True
+        if hasattr(self.controller, "validate_compatibility"):
+            self._validate_controller_compatibility(self.controller)
+        if getattr(self.controller, "target_tls_id", None) is not None:
+            self._controlled_tls_ids = {self.controller.target_tls_id}
+        else:
+            self._controlled_tls_ids = set(self.tls_managers.keys())
+        self.controller.reset()
 
     def build_sumo_cmd(self) -> List[str]:
         """Constructs the command arguments for starting SUMO via TraCI."""
@@ -289,6 +325,13 @@ class SimulationRunner:
                         f"Step {self.current_step} outgoing lane {lane_id} getLastStepVehicleNumber error: {e}"
                     )
 
+            pending_cnt = 0
+            if traci is not None:
+                try:
+                    pending_cnt = int(traci.simulation.getPendingVehiclesNumber())
+                except Exception:
+                    pending_cnt = 0
+
             obs[tl_id] = IntersectionObservation(
                 tls_id=tl_id,
                 current_phase=mgr.get_current_phase(),
@@ -302,6 +345,7 @@ class SimulationRunner:
                 out_lane_vehicles=out_vehs,
                 sim_time=self.sim_time,
                 step=self.current_step,
+                pending_vehicles=pending_cnt,
             )
         return obs
 
@@ -346,7 +390,16 @@ class SimulationRunner:
             self._active_control_engaged = True
             for tls_id, target_phase in actions.items():
                 if tls_id in self.tls_managers:
-                    self.tls_managers[tls_id].request_phase(target_phase)
+                    mgr = self.tls_managers[tls_id]
+                    accepted = mgr.request_phase(target_phase)
+                    if (
+                        not accepted
+                        and mgr.is_max_green_exceeded()
+                        and not mgr.is_in_transition()
+                        and len(mgr.green_phases) > 1
+                    ):
+                        forced_p = (mgr.get_current_phase() + 1) % len(mgr.green_phases)
+                        mgr.request_phase(forced_p)
                     self._controlled_tls_ids.add(tls_id)
         elif self.control_mode == "cyclic":
             self._active_control_engaged = True
@@ -482,14 +535,7 @@ class SimulationRunner:
             Dictionary containing the summary of the simulation run.
         """
         if controller is not None:
-            self.controller = controller
-            self.control_mode = "agent"
-            self._active_control_engaged = True
-            if getattr(self.controller, "target_tls_id", None) is not None:
-                self._controlled_tls_ids = {self.controller.target_tls_id}
-            else:
-                self._controlled_tls_ids = set(self.tls_managers.keys())
-            self.controller.reset()
+            self.set_controller(controller)
 
         max_steps = num_steps if num_steps is not None else self.config.max_steps
 

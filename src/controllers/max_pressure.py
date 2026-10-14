@@ -92,12 +92,14 @@ class MaxPressureController(BaseTrafficController):
     def __init__(
         self,
         min_green: Optional[float] = 5.0,
+        max_green: Optional[float] = 60.0,
         pressure_metric: str = "queue",
     ):
         """Initializes MaxPressureController.
 
         Args:
             min_green: Minimum duration in seconds a green phase must be held before switching.
+            max_green: Maximum duration in seconds a green phase can be held before forced switch.
             pressure_metric: Metric to compute pressure ('queue' for halting vehicles, 'vehicle_count' for all vehicles).
         """
         super().__init__(name="MaxPressure")
@@ -105,10 +107,13 @@ class MaxPressureController(BaseTrafficController):
             min_green = 5.0
         if min_green < 0:
             raise ValueError(f"min_green must be non-negative, got {min_green}")
+        if max_green is not None and max_green < min_green:
+            raise ValueError(f"max_green ({max_green}) cannot be less than min_green ({min_green})")
         if pressure_metric not in ("queue", "vehicle_count"):
             raise ValueError(f"Unknown pressure_metric '{pressure_metric}', must be 'queue' or 'vehicle_count'")
 
         self.min_green = float(min_green)
+        self.max_green = float(max_green) if max_green is not None else None
         self.pressure_metric = pressure_metric
         self._target_phases: Dict[str, int] = {}
         self.reset()
@@ -157,10 +162,18 @@ class MaxPressureController(BaseTrafficController):
                     out_lane_metrics=out_metrics,
                 )
 
-            max_p = max(pressures.values())
+            # If max_green is exceeded and alternative phases exist, exclude current_phase to prevent starvation
+            if self.max_green is not None and obs.time_in_phase >= self.max_green and len(green_phases) > 1:
+                candidate_pressures = {p_idx: p_val for p_idx, p_val in pressures.items() if p_idx != current_phase}
+                if not candidate_pressures:
+                    candidate_pressures = pressures
+            else:
+                candidate_pressures = pressures
+
+            max_p = max(candidate_pressures.values())
             # Find all phases that achieve maximum pressure (within floating tolerance)
             max_candidates = [
-                idx for idx, p_val in pressures.items() if abs(p_val - max_p) <= 1e-6
+                idx for idx, p_val in candidate_pressures.items() if abs(p_val - max_p) <= 1e-6
             ]
 
             # Tie-breaking rule:
@@ -196,5 +209,6 @@ class MaxPressureController(BaseTrafficController):
         return {
             "name": self.name,
             "min_green": self.min_green,
+            "max_green": self.max_green,
             "pressure_metric": self.pressure_metric,
         }

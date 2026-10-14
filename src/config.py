@@ -1,6 +1,6 @@
 """Simulation configuration module for RESCO datasets and SUMO/TraCI execution."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import os
 import shutil
 from typing import Optional
@@ -24,6 +24,7 @@ class SimulationConfig:
     yellow_duration: float = 3.0
     all_red_duration: float = 0.0
     min_green: float = 5.0
+    max_green: Optional[float] = 60.0
     max_steps: Optional[int] = None
     seed: Optional[int] = 42
     output_dir: str = "results"
@@ -49,6 +50,8 @@ class SimulationConfig:
             raise ValueError(f"all_red_duration must be non-negative, got {self.all_red_duration}")
         if self.min_green < 0:
             raise ValueError(f"min_green must be non-negative, got {self.min_green}")
+        if self.max_green is not None and self.max_green < self.min_green:
+            raise ValueError(f"max_green ({self.max_green}) cannot be less than min_green ({self.min_green})")
 
         # Resolve paths
         self.scenario_dir = os.path.abspath(os.path.join(self.data_dir, self.dataset_name))
@@ -110,6 +113,7 @@ def get_scenario_config(
     yellow_duration: float = 3.0,
     all_red_duration: float = 0.0,
     min_green: float = 5.0,
+    max_green: Optional[float] = 60.0,
     max_steps: Optional[int] = None,
     seed: Optional[int] = 42,
     output_dir: str = "results",
@@ -136,6 +140,7 @@ def get_scenario_config(
         yellow_duration=yellow_duration,
         all_red_duration=all_red_duration,
         min_green=min_green,
+        max_green=kwargs.get("max_green", max_green),
         max_steps=max_steps,
         seed=seed,
         output_dir=output_dir,

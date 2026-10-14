@@ -5,8 +5,7 @@ and prevents abrupt phase transitions across traffic control algorithms.
 """
 
 from enum import Enum
-from typing import List, Optional, Union
-import warnings
+from typing import List, Optional
 
 
 class PhaseState(Enum):
@@ -31,14 +30,18 @@ def build_yellow_state(current_state: str, target_state: str) -> str:
 
     yellow_chars = []
     for c_curr, c_targ in zip(current_state, target_state):
-        if c_curr in ("G", "g") and c_targ in ("r", "s", "u", "O", "o"):
-            yellow_chars.append("y")
+        if c_curr in ("G", "g", "s") and c_targ in ("r", "u", "O", "o", "s"):
+            if c_curr == "s" and c_targ == "s":
+                yellow_chars.append("s")
+            else:
+                yellow_chars.append("y")
         elif c_curr in ("G", "g") and c_targ in ("G", "g"):
             yellow_chars.append(c_curr)
         elif c_curr == "y":
             yellow_chars.append("y")
         else:
-            yellow_chars.append(c_targ if c_targ in ("r", "s", "u", "O", "o") else "r")
+            # Crucial for safety: red links must remain red during yellow transition
+            yellow_chars.append("r")
 
     return "".join(yellow_chars)
 
@@ -53,6 +56,7 @@ class SafePhaseManager:
         yellow_duration: float = 3.0,
         all_red_duration: float = 0.0,
         min_green: float = 5.0,
+        max_green: Optional[float] = None,
         initial_phase: int = 0,
     ):
         """Initializes SafePhaseManager.
@@ -63,6 +67,7 @@ class SafePhaseManager:
             yellow_duration: Clearance yellow time in seconds.
             all_red_duration: Optional clearance all-red time in seconds (default: 0.0).
             min_green: Minimum required green duration before a switch can occur.
+            max_green: Maximum green duration allowed before a phase switch is forced.
             initial_phase: Starting green phase index.
         """
         if not green_phases:
@@ -73,6 +78,8 @@ class SafePhaseManager:
             raise ValueError("all_red_duration must be non-negative")
         if min_green < 0:
             raise ValueError("min_green must be non-negative")
+        if max_green is not None and max_green < min_green:
+            raise ValueError(f"max_green ({max_green}) cannot be less than min_green ({min_green})")
         if initial_phase < 0 or initial_phase >= len(green_phases):
             raise IndexError(f"initial_phase {initial_phase} out of bounds [0, {len(green_phases)-1}]")
 
@@ -81,6 +88,7 @@ class SafePhaseManager:
         self.yellow_duration = yellow_duration
         self.all_red_duration = all_red_duration
         self.min_green = min_green
+        self.max_green = float(max_green) if max_green is not None else None
 
         self._current_phase: int = initial_phase
         self._target_phase: int = initial_phase
@@ -173,27 +181,43 @@ class SafePhaseManager:
                 self.actual_yellow_time += step_duration
                 self._time_in_phase += step_duration
 
+    def is_max_green_exceeded(self) -> bool:
+        """Returns True if the current green phase has reached or exceeded max_green."""
+        if self.max_green is not None and self._state_type == PhaseState.GREEN:
+            return self._time_in_phase >= self.max_green
+        return False
+
     def request_phase(self, target_phase_idx: int) -> bool:
         """Requests switching to a new green phase index.
 
         Returns:
             True if request was accepted (either already in that phase, or yellow transition initiated).
-            False if rejected (due to min_green not met, or currently in transition).
+            False if rejected (due to min_green not met, currently in transition, or max_green exceeded when staying).
         """
         if target_phase_idx < 0 or target_phase_idx >= len(self.green_phases):
             raise IndexError(
                 f"Target phase index {target_phase_idx} out of range [0, {len(self.green_phases)-1}]"
             )
 
-        # If already in the target phase and not transitioning, accept immediately
-        if target_phase_idx == self._current_phase and self._state_type == PhaseState.GREEN:
-            return True
-
         # If currently transitioning, cannot accept new change
         if self._state_type in (PhaseState.YELLOW, PhaseState.ALL_RED):
             return False
 
-        # If min green constraint not met, reject change
+        # If requesting to maintain the current phase:
+        if target_phase_idx == self._current_phase:
+            if self._state_type == PhaseState.GREEN:
+                # Anti-starvation / max-green: if max_green is exceeded and alternative phases exist,
+                # reject holding the phase to force serving other approaches
+                if (
+                    self.max_green is not None
+                    and self._time_in_phase >= self.max_green
+                    and len(self.green_phases) > 1
+                ):
+                    return False
+                return True
+            return False
+
+        # If requesting to switch to a DIFFERENT phase, min green must have elapsed
         if self._time_in_phase < self.min_green:
             return False
 

@@ -2,9 +2,7 @@
 
 import json
 import os
-from typing import Any, Dict, List, Optional
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 def set_plot_style():
@@ -74,7 +72,7 @@ def plot_comparison_metrics(
     eval_json: str = "results/evaluation/benchmark_comparison.json",
     figures_dir: str = "results/figures",
 ):
-    """Plots comparative bar charts across 4 algorithms for each scenario."""
+    """Plots comparative bar charts across 3 algorithms for each scenario."""
     if not os.path.isfile(eval_json):
         print(f"Comparison data not found at: {eval_json}")
         return

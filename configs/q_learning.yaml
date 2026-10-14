@@ -2,8 +2,9 @@
 algorithm: QLearning
 decision_interval: 5.0
 min_green: 5.0
+max_green: 60.0
 yellow_duration: 3.0
-all_red_duration: 0.0
+all_red_duration: 1.0
 
 hyperparameters:
   learning_rate: 0.1

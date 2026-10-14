@@ -1,7 +1,7 @@
 """Base classes and data models for traffic signal controllers."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 
@@ -29,6 +29,7 @@ class IntersectionObservation:
     out_lane_vehicles: Dict[str, float]
     sim_time: float
     step: int
+    pending_vehicles: int = 0
 
 
 class BaseTrafficController(ABC):

@@ -33,6 +33,7 @@ class TrafficSignalRLEnv:
         min_green: float = 5.0,
         yellow_duration: float = 3.0,
         all_red_duration: float = 0.0,
+        max_green: Optional[float] = 60.0,
         max_steps: Optional[int] = None,
         seed: int = 42,
         reward_fn: Optional[BaseRewardFunction] = None,
@@ -66,6 +67,7 @@ class TrafficSignalRLEnv:
             )
         self.decision_interval = d_int
         self.min_green = float(min_green)
+        self.max_green = float(max_green) if max_green is not None else None
         self.yellow_duration = float(yellow_duration)
         self.all_red_duration = float(all_red_duration)
         self.max_steps = max_steps
@@ -84,6 +86,7 @@ class TrafficSignalRLEnv:
             yellow_duration=yellow_duration,
             all_red_duration=all_red_duration,
             min_green=min_green,
+            max_green=max_green,
             max_steps=max_steps,
             seed=seed,
             output_dir=output_dir,
@@ -210,6 +213,14 @@ class TrafficSignalRLEnv:
         if mgr.time_in_current_phase() < self.min_green:
             return [curr_phase]
 
+        # Anti-starvation guard: if max green has elapsed, must switch away from current phase
+        if (
+            self.max_green is not None
+            and mgr.time_in_current_phase() >= self.max_green
+            and self.num_actions > 1
+        ):
+            return [a for a in range(self.num_actions) if a != curr_phase]
+
         # Otherwise, all valid green phases are eligible for selection
         return list(range(self.num_actions))
 
@@ -246,9 +257,25 @@ class TrafficSignalRLEnv:
         action_accepted = False
         if is_valid:
             action_accepted = mgr.request_phase(action)
+            if (
+                not action_accepted
+                and mgr.is_max_green_exceeded()
+                and not mgr.is_in_transition()
+                and len(self.green_phases) > 1
+            ):
+                forced_phase = (mgr.get_current_phase() + 1) % len(self.green_phases)
+                action_accepted = mgr.request_phase(forced_phase)
         else:
-            # Action invalid according to constraints: held safely by manager
-            action_accepted = False
+            # Action invalid according to constraints
+            if (
+                mgr.is_max_green_exceeded()
+                and not mgr.is_in_transition()
+                and len(self.green_phases) > 1
+            ):
+                forced_phase = (mgr.get_current_phase() + 1) % len(self.green_phases)
+                action_accepted = mgr.request_phase(forced_phase)
+            else:
+                action_accepted = False
 
         # Reset reward accumulator for this decision interval
         self.reward_fn.reset()
@@ -275,7 +302,8 @@ class TrafficSignalRLEnv:
             # Accumulate queue metrics for reward calculation
             raw_obs = self.runner.get_observation()
             tls_obs = raw_obs[self.tls_id]
-            self.reward_fn.record_step(tls_obs.in_lane_queues)
+            pending_count = getattr(step_metrics, "pending_vehicles", 0) if step_metrics else 0
+            self.reward_fn.record_step(tls_obs.in_lane_queues, pending_vehicles=pending_count)
 
         # Calculate interval reward
         reward = self.reward_fn.calculate_reward()

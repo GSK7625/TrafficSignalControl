@@ -8,9 +8,8 @@ Generates benchmark charts across Groups A, B, and C:
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 
@@ -177,11 +176,10 @@ def plot_group_b_dynamics(
     scenarios = ["cologne1", "ingolstadt1"]
 
     for scen in scenarios:
-        allowed_algos = {"Fixed-Time", "Max-Pressure", "Q-Learning"}
+        allowed_algos = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
         scen_runs = [
             r for r in runs
             if r.get("scenario_name") == scen
-            and r.get("seed") == 42
             and r.get("is_valid", False)
             and r.get("algorithm") in allowed_algos
         ]
@@ -191,38 +189,75 @@ def plot_group_b_dynamics(
         fig_q, ax_q = plt.subplots(figsize=(10, 5), dpi=300)
         fig_r, ax_r = plt.subplots(figsize=(10, 5), dpi=300)
         fig_c, ax_c = plt.subplots(figsize=(10, 5), dpi=300)
+        fig_pending, ax_pending = plt.subplots(figsize=(10, 5), dpi=300)
 
-        for r in scen_runs:
-            algo = r["algorithm"]
-            r_dir = r.get("output_dir", "")
-            csv_path = os.path.join(r_dir, "step_metrics.csv")
-            if not os.path.isfile(csv_path):
-                for root, _, files in os.walk(r_dir):
-                    if "step_metrics.csv" in files:
-                        csv_path = os.path.join(root, "step_metrics.csv")
-                        break
-
-            if not os.path.isfile(csv_path):
+        for algo in allowed_algos:
+            algo_runs = [r for r in scen_runs if r.get("algorithm") == algo]
+            if not algo_runs:
                 continue
 
-            df = pd.read_csv(csv_path)
             color = ALGO_COLORS.get(algo, "#333333")
+            dfs = []
+            for r in algo_runs:
+                r_dir = r.get("output_dir", "")
+                csv_path = os.path.join(r_dir, "step_metrics.csv")
+                if not os.path.isfile(csv_path):
+                    for root, _, files in os.walk(r_dir):
+                        if "step_metrics.csv" in files:
+                            csv_path = os.path.join(root, "step_metrics.csv")
+                            break
 
-            # Downsample step curve for smooth rendering (step every 30s)
-            df_sampled = df.iloc[::15, :] if len(df) > 100 else df
-            times = df_sampled["sim_time"]
+                if os.path.isfile(csv_path):
+                    try:
+                        df_single = pd.read_csv(csv_path)
+                        dfs.append(df_single)
+                    except Exception:
+                        pass
 
-            # Queue length over time
-            ax_q.plot(times, df_sampled["queue_length"], label=algo, color=color, linewidth=1.5, alpha=0.85)
+            if not dfs:
+                continue
 
-            # Running vehicles over time
-            ax_r.plot(times, df_sampled["running_vehicles"], label=algo, color=color, linewidth=1.5, alpha=0.85)
+            combined = pd.concat(dfs, ignore_index=True)
+            steps_unique = sorted(combined["step"].unique())
+            sampled_steps = steps_unique[::15] if len(steps_unique) > 100 else steps_unique
+            combined_sampled = combined[combined["step"].isin(sampled_steps)]
 
-            # Cumulative completed vehicles over time
-            ax_c.plot(times, df_sampled["cumulative_completed_vehicles"], label=algo, color=color, linewidth=1.8, alpha=0.85)
+            grouped = combined_sampled.groupby("step").agg({
+                "sim_time": "mean",
+                "queue_length": ["mean", "std"],
+                "running_vehicles": ["mean", "std"],
+                "cumulative_completed_vehicles": ["mean", "std"],
+                "pending_vehicles": ["mean", "std"],
+            })
+
+            times = grouped["sim_time"]["mean"]
+
+            # Queue length
+            q_m = grouped["queue_length"]["mean"]
+            q_s = grouped["queue_length"]["std"].fillna(0)
+            ax_q.plot(times, q_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
+            ax_q.fill_between(times, (q_m - q_s).clip(lower=0), q_m + q_s, color=color, alpha=0.15)
+
+            # Running vehicles
+            r_m = grouped["running_vehicles"]["mean"]
+            r_s = grouped["running_vehicles"]["std"].fillna(0)
+            ax_r.plot(times, r_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
+            ax_r.fill_between(times, (r_m - r_s).clip(lower=0), r_m + r_s, color=color, alpha=0.15)
+
+            # Cumulative completed
+            c_m = grouped["cumulative_completed_vehicles"]["mean"]
+            c_s = grouped["cumulative_completed_vehicles"]["std"].fillna(0)
+            ax_c.plot(times, c_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
+            ax_c.fill_between(times, (c_m - c_s).clip(lower=0), c_m + c_s, color=color, alpha=0.15)
+
+            # Pending vehicles
+            p_m = grouped["pending_vehicles"]["mean"]
+            p_s = grouped["pending_vehicles"]["std"].fillna(0)
+            ax_pending.plot(times, p_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
+            ax_pending.fill_between(times, (p_m - p_s).clip(lower=0), p_m + p_s, color=color, alpha=0.15)
 
         # 7. Queue Length over Time
-        ax_q.set_title(f"Queue Length Trajectory Over Time — {scen.upper()} (Seed 42)", fontsize=12, fontweight="bold", pad=12)
+        ax_q.set_title(f"Queue Length Trajectory Over Time — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
         ax_q.set_xlabel("Simulation Time (seconds)", fontsize=11)
         ax_q.set_ylabel("Total Queue Length (vehicles)", fontsize=11)
         ax_q.grid(True)
@@ -234,7 +269,7 @@ def plot_group_b_dynamics(
         generated.append(p7)
 
         # 8. Running Vehicles over Time
-        ax_r.set_title(f"Active Running Vehicles in Network — {scen.upper()} (Seed 42)", fontsize=12, fontweight="bold", pad=12)
+        ax_r.set_title(f"Active Running Vehicles in Network — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
         ax_r.set_xlabel("Simulation Time (seconds)", fontsize=11)
         ax_r.set_ylabel("Running Vehicles", fontsize=11)
         ax_r.grid(True)
@@ -246,7 +281,7 @@ def plot_group_b_dynamics(
         generated.append(p8)
 
         # 9. Cumulative Completed Vehicles over Time
-        ax_c.set_title(f"Cumulative Completed Vehicles — {scen.upper()} (Seed 42)", fontsize=12, fontweight="bold", pad=12)
+        ax_c.set_title(f"Cumulative Completed Vehicles — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
         ax_c.set_xlabel("Simulation Time (seconds)", fontsize=11)
         ax_c.set_ylabel("Completed Vehicles", fontsize=11)
         ax_c.grid(True)
@@ -256,6 +291,18 @@ def plot_group_b_dynamics(
         fig_c.savefig(p9)
         plt.close(fig_c)
         generated.append(p9)
+
+        # 10. Pending Vehicles over Time
+        ax_pending.set_title(f"Pending Uninserted Vehicles — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
+        ax_pending.set_xlabel("Simulation Time (seconds)", fontsize=11)
+        ax_pending.set_ylabel("Pending Vehicles", fontsize=11)
+        ax_pending.grid(True)
+        ax_pending.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
+        fig_pending.tight_layout()
+        p_pending = os.path.join(output_dir, f"{scen}_pending_vehicles_over_time.png")
+        fig_pending.savefig(p_pending)
+        plt.close(fig_pending)
+        generated.append(p_pending)
 
         # 10. Green Time Allocation per Phase
         for r in scen_runs:
@@ -347,7 +394,7 @@ def plot_group_c_rl(
 
 
 def generate_all_phase6_charts(output_dir: str = "results/figures") -> List[str]:
-    """Generates all 15 required charts for Phase 6."""
+    """Generates all required benchmark charts for Phase 6."""
     all_charts = []
     all_charts.extend(plot_group_a_comparisons(output_dir=output_dir))
     all_charts.extend(plot_group_b_dynamics(output_dir=output_dir))

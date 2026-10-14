@@ -5,27 +5,25 @@ algorithms (Fixed-Time, Max-Pressure, Q-Learning)
 under strictly standardized, reproducible experimental conditions.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
 import math
 import os
 import platform
-import shutil
 import subprocess
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
-from src.config import SimulationConfig, get_scenario_config
+from src.config import get_scenario_config
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
 from src.controllers.q_learning import QLearningController
 from src.data_inspector import inspect_scenario
-from src.metrics import MetricsCollector
 from src.rl.environment import TrafficSignalRLEnv
-from src.runner import SimulationRunner, extract_green_phases
+from src.runner import SimulationRunner
 from src.evaluation.evaluate_rl import load_checkpoint_env_params
 
 
@@ -51,11 +49,23 @@ class ExperimentConfig:
     model_path: Optional[str] = None
     output_dir: str = "results/evaluation"
     yellow_duration: float = 3.0
-    all_red_duration: float = 0.0
+    all_red_duration: float = 1.0  # Matches configs/experiments.yaml
     min_green: float = 5.0
+    max_green: Optional[float] = 60.0
     fixed_time_green: float = 30.0
     pressure_metric: str = "queue"
     decision_interval: Optional[float] = None
+
+
+def load_experiments_yaml(config_path: str = "configs/experiments.yaml") -> Dict[str, Any]:
+    """Loads benchmark parameters from experiments YAML file if present."""
+    if os.path.isfile(config_path):
+        try:
+            from src.config import load_yaml_config
+            return load_yaml_config(config_path)
+        except Exception as e:
+            print(f"[WARN] Failed to load experiments YAML from '{config_path}': {e}")
+    return {}
 
 
 def resolve_effective_decision_interval(
@@ -86,7 +96,13 @@ def resolve_model_path(cfg: ExperimentConfig) -> Optional[str]:
         return cfg.model_path
     algo_key = cfg.algorithm.lower().replace(" ", "_").replace("-", "_")
     if algo_key in ("q_learning", "qlearning"):
-        return f"models/q_learning/q_learning_{cfg.scenario_name}_best.json"
+        best_p = f"models/q_learning/q_learning_{cfg.scenario_name}_best.json"
+        if os.path.isfile(best_p):
+            return best_p
+        final_p = f"models/q_learning/q_learning_{cfg.scenario_name}_final.json"
+        if os.path.isfile(final_p):
+            return final_p
+        return best_p
     return None
 
 
@@ -95,15 +111,19 @@ def get_sumo_version() -> str:
     import re
     try:
         out = subprocess.check_output(["sumo", "--version"], text=True, stderr=subprocess.STDOUT)
-        match = re.search(r"version\s+([vV]?\d+[\.\d\w_-]*)", out, re.IGNORECASE)
+        first_line = out.strip().splitlines()[0] if out.strip() else ""
+        match = re.search(r"(?:sumo(?:\.exe)?|version)\s+([vV]?\d+[\.\d\w_-]*)", first_line, re.IGNORECASE)
+        if not match:
+            match = re.search(r"(\d+\.\d+(?:\.\d+)?[\w_-]*)", first_line)
         if match:
             return match.group(1).lstrip("vV")
     except Exception:
         pass
     try:
         import traci
-        ver = traci.getVersion()
-        return f"{ver[0]}.{ver[1]}"
+        if hasattr(traci, "isLoaded") and traci.isLoaded():
+            ver = traci.getVersion()
+            return f"{ver[0]}.{ver[1]}"
     except Exception:
         pass
     return "unknown"
@@ -136,6 +156,7 @@ def compute_run_fingerprint(cfg: ExperimentConfig, checkpoint_path: Optional[str
         "yellow_duration": cfg.yellow_duration,
         "all_red_duration": cfg.all_red_duration,
         "min_green": cfg.min_green,
+        "max_green": cfg.max_green,
         "fixed_time_green": cfg.fixed_time_green,
         "pressure_metric": cfg.pressure_metric,
         "decision_interval": cfg.decision_interval,
@@ -165,6 +186,7 @@ def compute_cohort_fingerprint(cfg: ExperimentConfig, checkpoint_path: Optional[
         "yellow_duration": cfg.yellow_duration,
         "all_red_duration": cfg.all_red_duration,
         "min_green": cfg.min_green,
+        "max_green": cfg.max_green,
         "fixed_time_green": cfg.fixed_time_green,
         "pressure_metric": cfg.pressure_metric,
         "decision_interval": cfg.decision_interval,
@@ -199,7 +221,13 @@ def compute_improvement(baseline_val: float, algo_val: float, higher_is_better: 
         return 0.0
 
     if abs(baseline_val) < 1e-9:
-        return 0.0
+        if abs(algo_val) < 1e-9:
+            return 0.0
+        if higher_is_better:
+            return 100.0 if algo_val > 0 else -100.0
+        else:
+            # Baseline was ideal (0.0), algorithm produced positive degradation (e.g. collisions)
+            return -100.0 * algo_val if algo_val > 0 else 0.0
 
     if higher_is_better:
         return ((algo_val - baseline_val) / abs(baseline_val)) * 100.0
@@ -367,6 +395,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "scenario_name": cfg.scenario_name,
                 "decision_interval": effective_decision_interval,
                 "min_green": effective_min_green,
+                "max_green": cfg.max_green,
                 "yellow_duration": effective_yellow_duration,
                 "all_red_duration": effective_all_red_duration,
                 "max_steps": cfg.steps,
@@ -387,6 +416,8 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             agent = QLearningController(
                 num_actions=env.num_actions,
                 discretizer=env.state_discretizer,
+                min_green=effective_min_green,
+                max_green=cfg.max_green,
                 seed=cfg.seed,
                 eval_mode=True,
             )
@@ -427,7 +458,11 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 controller = FixedTimeController(default_green_time=cfg.fixed_time_green)
                 control_mode = "agent"
             elif cfg.algorithm == "Max-Pressure":
-                controller = MaxPressureController(min_green=cfg.min_green, pressure_metric=cfg.pressure_metric)
+                controller = MaxPressureController(
+                    min_green=cfg.min_green,
+                    max_green=cfg.max_green,
+                    pressure_metric=cfg.pressure_metric,
+                )
                 control_mode = "agent"
             else:
                 raise ValueError(
@@ -443,6 +478,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 yellow_duration=effective_yellow_duration,
                 all_red_duration=effective_all_red_duration,
                 min_green=effective_min_green,
+                max_green=cfg.max_green,
                 max_steps=cfg.steps,
                 seed=cfg.seed,
                 output_dir=run_dir,
@@ -618,11 +654,14 @@ def aggregate_benchmark_statistics(
     """Computes comprehensive mean, std, min, max, and percentage improvements across runs."""
     # Group by (scenario, algorithm, cohort_key)
     cohort_groups: Dict[str, Dict[str, Dict[str, List[Dict[str, Any]]]]] = {}
+    failed_groups: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+
     for r in run_records:
-        if not r.get("is_valid", False):
+        scen = r.get("scenario_name", "unknown")
+        algo = r.get("algorithm", "unknown")
+        if not r.get("is_valid", False) or r.get("status") == "FAILED":
+            failed_groups.setdefault(scen, {}).setdefault(algo, []).append(r)
             continue
-        scen = r["scenario_name"]
-        algo = r["algorithm"]
         c_key = get_run_cohort_key(r)
         cohort_groups.setdefault(scen, {}).setdefault(algo, {}).setdefault(c_key, []).append(r)
 
@@ -645,18 +684,19 @@ def aggregate_benchmark_statistics(
     ]
 
     summary_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
-
     run_order = {id(r): idx for idx, r in enumerate(run_records)}
 
-    for scen, algos in cohort_groups.items():
+    # Ensure all scenarios present in run_records exist in summary_stats
+    all_scenarios = sorted(list(set(list(cohort_groups.keys()) + list(failed_groups.keys()))))
+    for scen in all_scenarios:
         summary_stats[scen] = {}
 
+    for scen, algos in cohort_groups.items():
         # 1. Compute stats for each algorithm and its cohorts
         for algo, cohorts in algos.items():
             cohort_stat_list: List[Dict[str, Any]] = []
 
             for c_key, runs in cohorts.items():
-                # Deduplicate by seed within this specific cohort (keep latest run for each unique seed)
                 seed_map: Dict[int, Dict[str, Any]] = {}
                 for r in runs:
                     seed_map[r["seed"]] = r
@@ -672,19 +712,27 @@ def aggregate_benchmark_statistics(
                     "fingerprint": deduped_runs[-1].get("fingerprint"),
                     "checkpoint_id": deduped_runs[-1].get("checkpoint_id"),
                     "total_steps": int(deduped_runs[-1].get("total_steps", 3600)),
+                    "status": "SUCCESS",
+                    "is_valid": True,
                 }
                 for key, _ in metrics_keys:
                     vals = [float(r.get(key, 0.0)) for r in deduped_runs]
                     if vals:
                         std_val = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
-                        cohort_stats[key] = {
+                        entry = {
                             "mean": round(float(np.mean(vals)), 2),
                             "std": round(std_val, 2),
                             "min": round(float(np.min(vals)), 2),
                             "max": round(float(np.max(vals)), 2),
                         }
+                        if key in ("collision_count", "teleport_count"):
+                            entry["sum"] = int(np.sum(vals))
+                        cohort_stats[key] = entry
                     else:
-                        cohort_stats[key] = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+                        entry = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+                        if key in ("collision_count", "teleport_count"):
+                            entry["sum"] = 0
+                        cohort_stats[key] = entry
 
                 safety_counts: Dict[str, int] = {}
                 service_counts: Dict[str, int] = {}
@@ -707,6 +755,13 @@ def aggregate_benchmark_statistics(
                         "max": round(float(np.max(rewards)), 2),
                     }
 
+                # Attach failed run details if any seed failed
+                if algo in failed_groups.get(scen, {}):
+                    f_runs = failed_groups[scen][algo]
+                    cohort_stats["failed_count"] = len(f_runs)
+                    err_msgs = [fr.get("error_message") or (fr.get("anomalies")[0] if fr.get("anomalies") else "Simulation failed") for fr in f_runs]
+                    cohort_stats["error_messages"] = list(dict.fromkeys(err_msgs))
+
                 cohort_stat_list.append(cohort_stats)
 
             # The primary cohort represents the algorithm: picked by most recent run in history
@@ -726,10 +781,10 @@ def aggregate_benchmark_statistics(
 
         # 2. Compute improvements relative to baseline
         baseline_stats = summary_stats[scen].get(baseline_algo)
-        if baseline_stats:
+        if baseline_stats and baseline_stats.get("is_valid", False):
             b_steps = baseline_stats.get("total_steps")
             for algo_key, stats in summary_stats[scen].items():
-                if algo_key == baseline_algo:
+                if algo_key == baseline_algo or not stats.get("is_valid", False):
                     continue
                 a_steps = stats.get("total_steps")
                 if b_steps and a_steps and b_steps != a_steps:
@@ -745,6 +800,21 @@ def aggregate_benchmark_statistics(
                         improvements[f"{key}_improvement_pct"] = round(imp, 2)
                 stats["improvements_vs_baseline"] = improvements
 
+    # Record algorithms where ALL runs failed
+    for scen, f_algos in failed_groups.items():
+        summary_stats.setdefault(scen, {})
+        for algo, f_runs in f_algos.items():
+            if algo not in summary_stats[scen]:
+                err_msgs = [fr.get("error_message") or (fr.get("anomalies")[0] if fr.get("anomalies") else "Simulation failed") for fr in f_runs]
+                summary_stats[scen][algo] = {
+                    "run_count": len(f_runs),
+                    "failed_count": len(f_runs),
+                    "seeds": sorted([fr.get("seed", 0) for fr in f_runs]),
+                    "status": "FAILED",
+                    "is_valid": False,
+                    "error_messages": list(dict.fromkeys(err_msgs)),
+                }
+
     return summary_stats
 
 
@@ -752,16 +822,26 @@ def run_full_benchmark_matrix(
     scenarios: Optional[List[str]] = None,
     algorithms: Optional[List[str]] = None,
     seeds: Optional[List[int]] = None,
+    config_file: str = "configs/experiments.yaml",
     output_dir: str = "results/evaluation",
     resume: bool = True,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Runs full evaluation benchmark across all scenarios, algorithms, and seeds."""
+    yaml_cfg = load_experiments_yaml(config_file)
+    sim_yaml = yaml_cfg.get("simulation", {})
+
     if scenarios is None:
-        scenarios = ["ingolstadt1", "cologne1"]
+        scenarios = yaml_cfg.get("scenarios", ["cologne1", "ingolstadt1"])
     if algorithms is None:
-        algorithms = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
+        algorithms = yaml_cfg.get("algorithms", ["Fixed-Time", "Max-Pressure", "Q-Learning"])
     if seeds is None:
         seeds = [42, 101, 2024]
+
+    default_yellow = float(sim_yaml.get("yellow_duration", 3.0))
+    default_all_red = float(sim_yaml.get("all_red_duration", 1.0))
+    default_min_green = float(sim_yaml.get("min_green", 5.0))
+    default_max_green = float(sim_yaml.get("max_green", 60.0))
+    default_steps = int(sim_yaml.get("steps", 3600)) if "steps" in sim_yaml else None
 
     os.makedirs(output_dir, exist_ok=True)
     master_records_file = os.path.join(output_dir, "benchmark_runs.json")
@@ -790,6 +870,7 @@ def run_full_benchmark_matrix(
     print(f"Scenarios: {scenarios}")
     print(f"Algorithms: {algorithms}")
     print(f"Evaluation Seeds: {seeds} (Total Tasks: {total_tasks})")
+    print(f"Config: all_red={default_all_red}s, yellow={default_yellow}s, min_green={default_min_green}s, max_green={default_max_green}s")
     print(f"================================================================================")
 
     for scen in scenarios:
@@ -802,6 +883,11 @@ def run_full_benchmark_matrix(
                     seed=s,
                     training_seed=42,
                     output_dir=output_dir,
+                    yellow_duration=default_yellow,
+                    all_red_duration=default_all_red,
+                    min_green=default_min_green,
+                    max_green=default_max_green,
+                    steps=default_steps,
                 )
                 model_p = resolve_model_path(cfg)
                 cfg.model_path = model_p
@@ -869,6 +955,7 @@ if __name__ == "__main__":
     parser.add_argument("--algorithms", type=str, default=None, help="Comma-separated algorithms/aliases (e.g. 'ft,mp,ql' or 'Fixed-Time,Max-Pressure,Q-Learning')")
     parser.add_argument("--seed", type=int, default=42, help="Single seed (default: 42)")
     parser.add_argument("--seeds", type=str, default=None, help="Comma-separated seeds (e.g. '42' or '42,101,2024')")
+    parser.add_argument("--config", type=str, default="configs/experiments.yaml", help="Path to YAML configuration file")
     parser.add_argument("--run-all", action="store_true", help="Run full benchmark matrix (all scenarios, algorithms, seeds)")
     parser.add_argument("--fresh", action="store_true", help="Start fresh without loading existing benchmark_runs.json")
     args = parser.parse_args()
@@ -896,10 +983,22 @@ if __name__ == "__main__":
             scenarios=scenarios_list,
             algorithms=algorithms_list,
             seeds=seeds_list,
+            config_file=args.config,
             resume=not args.fresh,
         )
     else:
         norm_algo = normalize_algo_name(args.algorithm)
-        cfg = ExperimentConfig(scenario_name=args.scenario, algorithm=norm_algo, seed=args.seed)
+        yaml_cfg = load_experiments_yaml(args.config)
+        sim_yaml = yaml_cfg.get("simulation", {})
+        cfg = ExperimentConfig(
+            scenario_name=args.scenario,
+            algorithm=norm_algo,
+            seed=args.seed,
+            yellow_duration=float(sim_yaml.get("yellow_duration", 3.0)),
+            all_red_duration=float(sim_yaml.get("all_red_duration", 1.0)),
+            min_green=float(sim_yaml.get("min_green", 5.0)),
+            max_green=float(sim_yaml.get("max_green", 60.0)),
+            steps=int(sim_yaml.get("steps", 3600)) if "steps" in sim_yaml else None,
+        )
         run_single_experiment(cfg)
 

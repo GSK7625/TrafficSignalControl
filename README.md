@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![SUMO](https://img.shields.io/badge/Eclipse%20SUMO-1.28.0+-00599C?style=flat)](https://eclipse.dev/sumo/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat&logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Tests](https://img.shields.io/badge/pytest-174%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
+[![Tests](https://img.shields.io/badge/pytest-76%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thuật toán điều khiển tín hiệu đèn giao thông thích ứng (**Adaptive Traffic Signal Control - ATSC**) trên môi trường **Eclipse SUMO** (Simulation of Urban MObility) thông qua giao thức **TraCI**, tích hợp các kịch bản chuẩn thuộc bộ dữ liệu **RESCO** (Reinforcement Learning Benchmarks for Traffic Signal Control).
@@ -322,7 +322,7 @@ Module [`src.evaluation.experiment_runner`](file:///src/evaluation/experiment_ru
 - **Thống kê mẫu chuẩn**: Tính trung bình và độ lệch chuẩn mẫu với bậc tự do $ddof=1$.
 
 ```powershell
-# Chạy toàn bộ ma trận 24 thực nghiệm (tự động bỏ qua lượt đã có)
+# Chạy toàn bộ ma trận 18 thực nghiệm (tự động bỏ qua lượt đã có)
 python -m src.evaluation.experiment_runner --run-all
 
 # Chạy mới từ đầu, không nạp lại kết quả cũ
@@ -432,11 +432,13 @@ pytest -v
 pytest tests/test_runner.py tests/test_phase_manager.py
 ```
 
-### Các nhóm kiểm thử chính:
-- **Phase Manager & Safety Constraints**: Kiểm tra quy tắc sinh pha vàng (`build_yellow_state`), khóa thời gian xanh tối thiểu, xử lý chu kỳ pha an toàn.
-- **Controllers**: Kiểm tra tính đúng đắn của giải thuật Fixed-Time, tính toán áp lực của Max-Pressure và bảng tra cứu Q-Learning.
-- **RL Environment & Components**: Kiểm tra chuẩn Gymnasium, Observation Builder, State Discretizer và hàm Reward.
-- **Audit & Regression Test Suites (`v2` đến `v13`)**: Bảo đảm tính tương thích ngược, phân tách nhịp điều khiển 1.0s vs 5.0s, xác thực tham số checkpoint và bắt lỗi CLI an toàn.
+### Các nhóm kiểm thử chính (76 unit tests):
+- **Phase Manager & Safety Constraints (`tests/test_phase_manager.py`)**: Kiểm tra quy tắc sinh pha vàng (`build_yellow_state`), khóa thời gian xanh tối thiểu (`min_green`), chu kỳ dọn nút an toàn (vàng và all-red), đồng bộ hóa pha bên ngoài và giao tiếp TraCI.
+- **Controllers (`tests/test_controllers.py`)**: Kiểm tra giải thuật Fixed-Time (chu kỳ, sequence, offset), tính toán áp lực Max-Pressure (tránh đếm lặp, chống rung giật pha), và tác tử Tabular Q-Learning (quyết định $\varepsilon$-greedy, cập nhật Bellman, serialization save/load).
+- **RL Environment & Components (`tests/test_rl_components.py`)**: Kiểm tra State Discretizer (phân nhóm hàng đợi và thời gian), Observation Builder (chuẩn hóa vector đặc trưng), và hàm tích lũy phần thưởng âm hàng đợi.
+- **Metrics & TripInfo (`tests/test_metrics.py`)**: Kiểm tra thu thập số liệu trễ/hàng đợi từng bước, phân tích dữ liệu gốc từ XML `--tripinfo-output`, tính toán thống kê tổng hợp và kiểm tra an toàn thư mục xuất dữ liệu.
+- **Simulation Config & Dataset Inspector (`tests/test_config_and_inspector.py`)**: Kiểm tra xác thực tham số cấu hình, nạp tệp YAML, trích xuất cấu trúc mạng lưới (`.net.xml`, `.rou.xml`) và kịch bản chuẩn RESCO.
+- **Simulation Runner & Lifecycle (`tests/test_runner.py`)**: Kiểm tra hàm lọc pha xanh hợp lệ (`extract_green_phases`), sinh câu lệnh khởi chạy SUMO (Headless / GUI delay), và bảo đảm an toàn vòng đời TraCI.
 
 ---
 

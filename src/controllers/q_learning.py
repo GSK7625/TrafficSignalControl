@@ -2,7 +2,6 @@
 
 import json
 import os
-import pickle
 import random
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
@@ -33,6 +32,7 @@ class QLearningController(BaseTrafficController):
         target_tls_id: Optional[str] = None,
         decision_interval: float = 5.0,
         min_green: float = 5.0,
+        max_green: Optional[float] = 60.0,
         yellow_duration: float = 3.0,
         all_red_duration: float = 0.0,
         seed: Optional[int] = None,
@@ -57,6 +57,7 @@ class QLearningController(BaseTrafficController):
         self.target_tls_id = target_tls_id
         self.decision_interval = float(decision_interval)
         self.min_green = float(min_green)
+        self.max_green = float(max_green) if max_green is not None else None
         self.yellow_duration = float(yellow_duration)
         self.all_red_duration = float(all_red_duration)
         self.eval_mode = bool(eval_mode)
@@ -204,6 +205,13 @@ class QLearningController(BaseTrafficController):
                 valid_actions = [obs.current_phase]
             elif obs.time_in_phase < self.discretizer.min_green:
                 valid_actions = [obs.current_phase]
+            elif (
+                getattr(self, "max_green", None) is not None
+                and obs.time_in_phase >= self.max_green
+                and len(obs.green_phases) > 1
+            ):
+                # Anti-starvation guard: force switching away from current phase
+                valid_actions = [a for a in range(len(obs.green_phases)) if a != obs.current_phase]
             else:
                 valid_actions = list(range(len(obs.green_phases)))
 
@@ -237,6 +245,7 @@ class QLearningController(BaseTrafficController):
             "target_tls_id": self.target_tls_id,
             "decision_interval": self.decision_interval,
             "min_green": self.min_green,
+            "max_green": self.max_green,
             "yellow_duration": self.yellow_duration,
             "all_red_duration": self.all_red_duration,
             "tie_break_strategy": self.tie_break_strategy,
@@ -274,6 +283,7 @@ class QLearningController(BaseTrafficController):
         self.epsilon_decay = cfg["epsilon_decay"]
         self.decision_interval = cfg.get("decision_interval", getattr(self, "decision_interval", 5.0))
         self.min_green = cfg.get("min_green", getattr(self, "min_green", 5.0))
+        self.max_green = cfg.get("max_green", getattr(self, "max_green", 60.0))
         self.yellow_duration = cfg.get("yellow_duration", getattr(self, "yellow_duration", 3.0))
         self.all_red_duration = cfg.get("all_red_duration", getattr(self, "all_red_duration", 0.0))
         self.tie_break_strategy = cfg.get("tie_break_strategy", getattr(self, "tie_break_strategy", "random"))
