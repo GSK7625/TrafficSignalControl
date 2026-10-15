@@ -95,12 +95,14 @@ class QLearningController(BaseTrafficController):
         self,
         state: Tuple[int, int, int, int],
         valid_actions: Optional[Sequence[int]] = None,
+        current_phase: Optional[int] = None,
     ) -> int:
         """Selects an action using epsilon-greedy exploration respecting valid actions.
 
         Args:
             state: Discrete state tuple.
             valid_actions: Optional list of eligible actions. If None, all actions are valid.
+            current_phase: Optional active green phase index for anti-chatter tie breaking.
 
         Returns:
             Selected action index.
@@ -121,8 +123,11 @@ class QLearningController(BaseTrafficController):
             best_candidates = [
                 a for a, q in zip(candidates, candidate_q) if abs(q - max_q) <= 1e-8
             ]
-            if self.eval_mode and self.tie_break_strategy == "first":
-                chosen_action = best_candidates[0]
+            # Anti-chatter inertia: if current phase is in best candidates, maintain current phase
+            if current_phase is not None and current_phase in best_candidates:
+                chosen_action = current_phase
+            elif self.eval_mode or self.tie_break_strategy == "first":
+                chosen_action = min(best_candidates)
             else:
                 chosen_action = random.choice(best_candidates)
         else:
@@ -215,7 +220,9 @@ class QLearningController(BaseTrafficController):
             else:
                 valid_actions = list(range(len(obs.green_phases)))
 
-            act = self.select_action_for_state(state, valid_actions=valid_actions)
+            act = self.select_action_for_state(
+                state, valid_actions=valid_actions, current_phase=obs.current_phase
+            )
             actions[tls_id] = act
 
             self.log_decision(

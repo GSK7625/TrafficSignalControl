@@ -45,14 +45,14 @@ def compute_phase_pressure(
             if link.to_lane:
                 total_out_per_in[link.from_lane].add(link.to_lane)
 
-    # 2. Identify links served in this phase (signal character in 'G' or 'g')
+    # 2. Identify links served in this phase (signal character in 'G', 'g', or 's')
     active_in_lanes: Dict[str, Set[str]] = {}
     active_out_lanes: Set[str] = set()
 
     state_len = len(phase_state)
     for link in controlled_links:
         idx = link.signal_index
-        if 0 <= idx < state_len and phase_state[idx] in ("G", "g"):
+        if 0 <= idx < state_len and phase_state[idx] in ("G", "g", "s"):
             from_l = link.from_lane
             to_l = link.to_lane
 

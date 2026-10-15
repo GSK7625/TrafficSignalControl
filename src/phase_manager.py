@@ -18,10 +18,12 @@ def build_yellow_state(current_state: str, target_state: str) -> str:
     """Builds an intermediate yellow clearance state between current and target signal states.
 
     Rules:
-    - Any link that is currently Green ('G', 'g') and will become Red ('r', 's', 'u')
+    - Any link that is currently Green ('G', 'g') or Stop-and-Go ('s') and will become Red ('r', 'u', 'O', 'o')
       must switch to Yellow ('y').
-    - Any link that remains Green retains its green state ('G', 'g').
-    - All other links remain as they are or switch to Red.
+    - Any link currently Green ('G', 'g') that will become Stop-and-Go ('s') must switch to Yellow ('y').
+    - Any link currently Stop-and-Go ('s') that stays 's' or becomes Green ('G', 'g') retains 's' during yellow.
+    - Any link that remains Green retains green; if transitioning between 'G' and 'g', the safer permissive 'g' is held during yellow.
+    - Red links ('r') must strictly remain Red ('r') during clearance.
     """
     if len(current_state) != len(target_state):
         raise ValueError(
@@ -30,17 +32,23 @@ def build_yellow_state(current_state: str, target_state: str) -> str:
 
     yellow_chars = []
     for c_curr, c_targ in zip(current_state, target_state):
-        if c_curr in ("G", "g", "s") and c_targ in ("r", "u", "O", "o", "s"):
-            if c_curr == "s" and c_targ == "s":
-                yellow_chars.append("s")
-            else:
-                yellow_chars.append("y")
+        # 1. Any movement losing right-of-way to red must display yellow
+        if c_curr in ("G", "g", "s") and c_targ in ("r", "u", "O", "o"):
+            yellow_chars.append("y")
+        # 2. Protected/permissive green transitioning to stop-and-go requires yellow clearance
+        elif c_curr in ("G", "g") and c_targ == "s":
+            yellow_chars.append("y")
+        # 3. Stop-and-go ('s') holding 's' or upgrading to green ('G', 'g') safely holds 's' during clearance
+        elif c_curr == "s" and c_targ in ("G", "g", "s"):
+            yellow_chars.append("s")
+        # 4. Links remaining green retain green; if priority changes, hold safer permissive 'g' during transition
         elif c_curr in ("G", "g") and c_targ in ("G", "g"):
-            yellow_chars.append(c_curr)
+            yellow_chars.append("g" if "g" in (c_curr, c_targ) else "G")
+        # 5. Existing yellow retained
         elif c_curr == "y":
             yellow_chars.append("y")
+        # 6. All other links (including red links) must remain red during clearance
         else:
-            # Crucial for safety: red links must remain red during yellow transition
             yellow_chars.append("r")
 
     return "".join(yellow_chars)

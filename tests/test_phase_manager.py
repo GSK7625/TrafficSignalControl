@@ -47,6 +47,31 @@ class TestBuildYellowState:
         yellow = build_yellow_state(curr, target)
         assert yellow == "ryr"
 
+        # When current is 's' and target is 'G' or 'g', it holds 's' during yellow transition
+        curr = "sGr"
+        target = "GGr"
+        yellow = build_yellow_state(curr, target)
+        assert yellow == "sGr"
+
+        # When current is 'G' and target is 's', it transitions through yellow 'y'
+        curr = "GGr"
+        target = "sGr"
+        yellow = build_yellow_state(curr, target)
+        assert yellow == "yGr"
+
+    def test_g_and_G_priority_transitions(self):
+        # When transitioning g -> G, holds safer permissive 'g' during yellow
+        curr = "gGr"
+        target = "GGr"
+        yellow = build_yellow_state(curr, target)
+        assert yellow == "gGr"
+
+        # When transitioning G -> g, holds safer permissive 'g' during yellow
+        curr = "GGr"
+        target = "gGr"
+        yellow = build_yellow_state(curr, target)
+        assert yellow == "gGr"
+
 
 class TestSafePhaseManager:
     """Test suite for SafePhaseManager class."""

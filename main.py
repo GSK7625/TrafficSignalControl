@@ -5,7 +5,7 @@ import json
 import os
 import sys
 
-from src.config import get_scenario_config
+from src.config import DEFAULT_SAFETY_CONFIG, get_scenario_config
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
 from src.controllers.q_learning import QLearningController
@@ -106,7 +106,7 @@ def main():
         "--all-red-dur",
         type=float,
         default=None,
-        help="All-red clearance duration in seconds (default: checkpoint value or 0.0)",
+        help="All-red clearance duration in seconds (default: checkpoint value or 1.0)",
     )
     parser.add_argument(
         "--min-green",
@@ -158,6 +158,12 @@ def main():
         action="store_true",
         help="Allow running Q-Learning controller without a trained checkpoint",
     )
+    parser.add_argument(
+        "--target-tls",
+        type=str,
+        default=None,
+        help="Target traffic light ID to control for single-agent RL in multi-intersection networks",
+    )
 
     args = parser.parse_args()
 
@@ -187,7 +193,17 @@ def main():
     elif args.controller == "q-learning":
         from src.runner import extract_green_phases
         info = inspect_scenario(args.dataset, data_dir="data")
-        tl_id = info.tls_ids[0]
+        if info.tls_count > 1 and not args.target_tls:
+            print(
+                f"[ERROR] Scenario '{args.dataset}' contains {info.tls_count} traffic light intersections ({info.tls_ids}).\n"
+                f"Single-agent Tabular Q-Learning requires a single-intersection scenario (e.g. cologne1, ingolstadt1) "
+                f"or an explicit target intersection via '--target-tls <tls_id>'."
+            )
+            sys.exit(1)
+        tl_id = args.target_tls if args.target_tls else info.tls_ids[0]
+        if tl_id not in info.phases_per_tls:
+            print(f"[ERROR] Target TLS '{tl_id}' not found in scenario '{args.dataset}'. Available: {info.tls_ids}")
+            sys.exit(1)
         green_phases = extract_green_phases(args.dataset, tl_id, info.phases_per_tls[tl_id])
         controller = QLearningController(
             num_actions=len(green_phases),
@@ -213,9 +229,9 @@ def main():
     else:
         effective_mode = args.mode
 
-    effective_min_green = args.min_green if args.min_green is not None else ckpt_params.get("min_green", 5.0)
-    effective_yellow_dur = args.yellow_dur if args.yellow_dur is not None else ckpt_params.get("yellow_duration", 3.0)
-    effective_all_red_dur = args.all_red_dur if args.all_red_dur is not None else ckpt_params.get("all_red_duration", 0.0)
+    effective_min_green = args.min_green if args.min_green is not None else ckpt_params.get("min_green", DEFAULT_SAFETY_CONFIG["min_green"])
+    effective_yellow_dur = args.yellow_dur if args.yellow_dur is not None else ckpt_params.get("yellow_duration", DEFAULT_SAFETY_CONFIG["yellow_duration"])
+    effective_all_red_dur = args.all_red_dur if args.all_red_dur is not None else ckpt_params.get("all_red_duration", DEFAULT_SAFETY_CONFIG["all_red_duration"])
     ctrl_norm = (args.controller or "").lower().replace("-", "_")
     effective_dec_interval = (
         args.decision_interval

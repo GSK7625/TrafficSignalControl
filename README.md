@@ -2,8 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![SUMO](https://img.shields.io/badge/Eclipse%20SUMO-1.28.0+-00599C?style=flat)](https://eclipse.dev/sumo/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat&logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Tests](https://img.shields.io/badge/pytest-76%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
+[![Tests](https://img.shields.io/badge/pytest-79%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thuật toán điều khiển tín hiệu đèn giao thông thích ứng (**Adaptive Traffic Signal Control - ATSC**) trên môi trường **Eclipse SUMO** (Simulation of Urban MObility) thông qua giao thức **TraCI**, tích hợp các kịch bản chuẩn thuộc bộ dữ liệu **RESCO** (Reinforcement Learning Benchmarks for Traffic Signal Control).
@@ -144,9 +143,6 @@ TrafficSignalControl/
 │   │   ├── evaluate_rl.py       # Đánh giá agent RL độc lập
 │   │   ├── experiment_runner.py # Trình thực thi benchmark ma trận đa seed (Phase 6)
 │   │   └── plot_comparison.py   # Bộ sinh biểu đồ trực quan hóa học thuật
-│   ├── experiments/             # Module thí nghiệm baseline (Phase 4)
-│   │   ├── plot_metrics.py      # Vẽ biểu đồ chuỗi thời gian metric
-│   │   └── run_experiments.py   # Chạy thực nghiệm tự động cho baseline
 │   ├── rl/                      # Thành phần môi trường Học tăng cường
 │   │   ├── discretization.py    # Rời rạc hóa không gian trạng thái
 │   │   ├── environment.py       # Môi trường Gymnasium-compatible RL Env
@@ -379,7 +375,7 @@ algorithm: QLearning
 decision_interval: 5.0      # Khoảng thời gian giữa các bước ra quyết định (giây)
 min_green: 5.0              # Thời gian đèn xanh tối thiểu (giây)
 yellow_duration: 3.0        # Thời gian pha vàng chuyển tiếp (giây)
-all_red_duration: 0.0       # Thời gian toàn đỏ dọn nút (giây)
+all_red_duration: 1.0       # Thời gian toàn đỏ dọn nút (giây)
 
 hyperparameters:
   learning_rate: 0.1         # Tốc độ học alpha
@@ -432,7 +428,7 @@ pytest -v
 pytest tests/test_runner.py tests/test_phase_manager.py
 ```
 
-### Các nhóm kiểm thử chính (76 unit tests):
+### Các nhóm kiểm thử chính (79 unit tests):
 - **Phase Manager & Safety Constraints (`tests/test_phase_manager.py`)**: Kiểm tra quy tắc sinh pha vàng (`build_yellow_state`), khóa thời gian xanh tối thiểu (`min_green`), chu kỳ dọn nút an toàn (vàng và all-red), đồng bộ hóa pha bên ngoài và giao tiếp TraCI.
 - **Controllers (`tests/test_controllers.py`)**: Kiểm tra giải thuật Fixed-Time (chu kỳ, sequence, offset), tính toán áp lực Max-Pressure (tránh đếm lặp, chống rung giật pha), và tác tử Tabular Q-Learning (quyết định $\varepsilon$-greedy, cập nhật Bellman, serialization save/load).
 - **RL Environment & Components (`tests/test_rl_components.py`)**: Kiểm tra State Discretizer (phân nhóm hàng đợi và thời gian), Observation Builder (chuẩn hóa vector đặc trưng), và hàm tích lũy phần thưởng âm hàng đợi.

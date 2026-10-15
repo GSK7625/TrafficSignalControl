@@ -110,7 +110,7 @@ def generate_comparison_report(
             continue
         lines.append(f"## Kịch bản mạng lưới: `{scen.upper()}`")
         lines.append("")
-        lines.append("| Thuật toán | Waiting Time (s) | System Delay (s) | Queue (xe) | Throughput (xe) | Completion (%) | Va chạm / Teleport | Trạng thái |")
+        lines.append("| Thuật toán | Completed Wait Time (s)* | System Delay (s) | Queue (xe) | Throughput (xe) | Completion (%) | Va chạm / Teleport | Trạng thái |")
         lines.append("|---|---|---|---|---|---|---|---|")
 
         scenario_warnings = []
@@ -169,6 +169,10 @@ def generate_comparison_report(
             lines.append(
                 f"| **{algo}** | {wt:.2f} ± {wt_std:.2f} | {sys_d:.2f} ± {sys_d_std:.2f} | {ql:.2f} ± {ql_std:.2f} | {tp} | {cr_str} | {col_str} | {status_badge} |"
             )
+
+        lines.append("")
+        lines.append("> [!NOTE]")
+        lines.append("> [*] **Lưu ý về Survivorship Bias:** Completed Wait Time chỉ tính trên các xe đã về đích. Khi Completion (%) < 98%, chỉ số này có thể thấp phiến diện do bỏ qua các xe đang kẹt trong mạng; System Delay và Throughput phản ánh khách quan toàn bộ nhu cầu giao thông.")
 
         if scenario_warnings:
             lines.append("")

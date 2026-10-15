@@ -27,17 +27,6 @@ from src.runner import SimulationRunner
 from src.evaluation.evaluate_rl import load_checkpoint_env_params
 
 
-# RESCO Known Scenario Ground Truth Demand (total vehicles in .rou.xml)
-SCENARIO_DEMAND = {
-    "cologne1": 2015,
-    "ingolstadt1": 1716,
-    "cologne3": 4494,
-    "cologne8": 2046,
-    "ingolstadt7": 3031,
-    "ingolstadt21": 4283,
-}
-
-
 @dataclass
 class ExperimentConfig:
     """Configuration for a single benchmark evaluation run."""
@@ -330,7 +319,7 @@ def validate_run_metrics(
 def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     """Executes a single experiment run under standardized evaluation protocol."""
     scenario_info = inspect_scenario(cfg.scenario_name, data_dir="data")
-    total_demand = SCENARIO_DEMAND.get(cfg.scenario_name, scenario_info.trips_or_vehicles_count)
+    total_demand = scenario_info.trips_or_vehicles_count
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = f"{cfg.scenario_name}_{cfg.algorithm.lower().replace(' ', '_').replace('-', '_')}_s{cfg.seed}_{timestamp}"
@@ -435,7 +424,9 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             step_count = 0
 
             while True:
-                act = agent.select_action_for_state(discrete_state, valid_actions=valid_actions)
+                act = agent.select_action_for_state(
+                    discrete_state, valid_actions=valid_actions, current_phase=discrete_state[0]
+                )
 
                 next_obs, reward, terminated, truncated, next_info = env.step(act)
                 accumulated_reward += reward

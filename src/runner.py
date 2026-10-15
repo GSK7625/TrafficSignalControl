@@ -587,6 +587,7 @@ class SimulationRunner:
                 "total_transition_time": round(sum(mgr.total_transition_time for mgr in self.tls_managers.values()), 2),
                 "actual_yellow_time": round(sum(mgr.actual_yellow_time for mgr in self.tls_managers.values()), 2),
                 "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.tls_managers.items()},
+                "total_scenario_demand": getattr(self.scenario_info, "trips_or_vehicles_count", 0),
             }
             if self.controller is not None:
                 metadata["controller_name"] = self.controller.name

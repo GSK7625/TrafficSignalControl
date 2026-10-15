@@ -45,11 +45,11 @@ class NegativeAverageQueueReward(BaseRewardFunction):
         - InLanes: All incoming controlled lanes for the intersection.
         - queue(l, m): Number of halting vehicles (speed < 0.1 m/s) on lane l at step m.
         - pending(m): Number of vehicles waiting to enter the network at step m.
-        - pending_weight: Penalty weighting factor for uninserted vehicles (default: 1.0).
+        - pending_weight: Penalty weighting factor for uninserted vehicles (default: 0.0).
         - scale: Optional scaling factor (default: 1.0).
     """
 
-    def __init__(self, scale: float = 1.0, pending_weight: float = 1.0):
+    def __init__(self, scale: float = 1.0, pending_weight: float = 0.0):
         if scale <= 0:
             raise ValueError(f"scale must be positive, got {scale}")
         if pending_weight < 0:

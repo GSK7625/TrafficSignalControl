@@ -12,6 +12,13 @@ except ImportError:
 
 from src.data_inspector import inspect_scenario
 
+DEFAULT_SAFETY_CONFIG = {
+    "yellow_duration": 3.0,
+    "all_red_duration": 1.0,
+    "min_green": 5.0,
+    "max_green": 60.0,
+}
+
 
 @dataclass
 class SimulationConfig:
@@ -21,10 +28,10 @@ class SimulationConfig:
     gui: bool = False
     gui_delay: float = 0.0
     step_length: float = 1.0
-    yellow_duration: float = 3.0
-    all_red_duration: float = 0.0
-    min_green: float = 5.0
-    max_green: Optional[float] = 60.0
+    yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"]
+    all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"]
+    min_green: float = DEFAULT_SAFETY_CONFIG["min_green"]
+    max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"]
     max_steps: Optional[int] = None
     seed: Optional[int] = 42
     output_dir: str = "results"
@@ -110,10 +117,10 @@ def get_scenario_config(
     gui: bool = False,
     gui_delay: float = 0.0,
     step_length: float = 1.0,
-    yellow_duration: float = 3.0,
-    all_red_duration: float = 0.0,
-    min_green: float = 5.0,
-    max_green: Optional[float] = 60.0,
+    yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"],
+    all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"],
+    min_green: float = DEFAULT_SAFETY_CONFIG["min_green"],
+    max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"],
     max_steps: Optional[int] = None,
     seed: Optional[int] = 42,
     output_dir: str = "results",

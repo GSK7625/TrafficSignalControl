@@ -331,8 +331,12 @@ class MetricsCollector:
         total_network_wait = completed_wait + running_wait
 
         system_total_delay = total_network_wait + self.total_pending_delay
-        pending_end = self.pending_vehicles_history[-1] if self.pending_vehicles_history else 0
-        total_vehs_considered = max(1, total_completed + len(self.vehicle_last_waiting_time) + pending_end)
+        scenario_demand = self.run_metadata.get("total_scenario_demand")
+        if scenario_demand and isinstance(scenario_demand, (int, float)) and scenario_demand > 0:
+            total_vehs_considered = float(scenario_demand)
+        else:
+            pending_end = self.pending_vehicles_history[-1] if self.pending_vehicles_history else 0
+            total_vehs_considered = max(1, total_completed + len(self.vehicle_last_waiting_time) + pending_end)
         system_mean_delay = system_total_delay / total_vehs_considered
         completed_mean_wait = (completed_wait / total_completed) if total_completed > 0 else 0.0
 

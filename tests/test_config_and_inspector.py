@@ -17,6 +17,7 @@ class TestSimulationConfig:
         assert cfg.step_length == 1.0
         assert cfg.min_green == 5.0
         assert cfg.yellow_duration == 3.0
+        assert cfg.all_red_duration == 1.0
         assert os.path.isfile(cfg.sumocfg_path)
 
     def test_invalid_step_length(self):

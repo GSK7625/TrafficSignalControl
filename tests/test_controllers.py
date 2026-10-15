@@ -242,6 +242,21 @@ class TestMaxPressureController:
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 0
 
+    def test_compute_phase_pressure_with_s_signal(self):
+        links = [
+            ControlledLink(signal_index=0, from_lane="in_A", to_lane="out_A"),
+            ControlledLink(signal_index=1, from_lane="in_B", to_lane="out_B"),
+        ]
+        in_q = {"in_A": 6.0, "in_B": 8.0}
+        out_q = {"out_A": 1.0, "out_B": 2.0}
+
+        # Signal 's' (permissive right-turn / stop-and-proceed) should be treated as active green flow
+        p_s = compute_phase_pressure("sr", links, in_q, out_q)
+        assert pytest.approx(p_s, 1e-6) == 5.0
+
+        p_G = compute_phase_pressure("Gr", links, in_q, out_q)
+        assert pytest.approx(p_s, 1e-6) == p_G
+
 
 class TestQLearningController:
     """Test suite for QLearningController."""
@@ -269,6 +284,18 @@ class TestQLearningController:
         # Valid action masking: only actions [0, 2] valid
         action_masked = ctrl.select_action_for_state(state, valid_actions=[0, 2])
         assert action_masked == 2  # Among 0 (0.5) and 2 (1.0), 2 is higher
+
+    def test_tie_breaking_prefers_current_phase(self):
+        ctrl = QLearningController(num_actions=3, epsilon=0.0, eval_mode=True)
+        state = (1, 0, 0, 1)
+        ctrl.q_table[state] = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+
+        # Anti-chatter inertia keeps active phase when tied
+        assert ctrl.select_action_for_state(state, current_phase=1) == 1
+        assert ctrl.select_action_for_state(state, current_phase=2) == 2
+
+        # In eval_mode with no current phase, deterministic min index is picked
+        assert ctrl.select_action_for_state(state, current_phase=None) == 0
 
     def test_bellman_update(self):
         ctrl = QLearningController(num_actions=2, learning_rate=0.5, gamma=0.9, epsilon=0.0)

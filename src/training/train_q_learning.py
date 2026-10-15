@@ -7,7 +7,7 @@ import time
 from typing import Any, Dict, List, Optional
 import numpy as np
 
-from src.config import load_yaml_config
+from src.config import DEFAULT_SAFETY_CONFIG, load_yaml_config
 from src.controllers.q_learning import QLearningController
 from src.rl.discretization import StateDiscretizer
 from src.rl.environment import TrafficSignalRLEnv
@@ -18,10 +18,10 @@ def evaluate_greedy_q_learning(
     agent: QLearningController,
     scenario_name: str,
     decision_interval: float = 5.0,
-    min_green: float = 5.0,
-    yellow_duration: float = 3.0,
-    all_red_duration: float = 0.0,
-    max_green: Optional[float] = 60.0,
+    min_green: float = DEFAULT_SAFETY_CONFIG["min_green"],
+    yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"],
+    all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"],
+    max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"],
     reward_fn: Optional[BaseRewardFunction] = None,
     state_discretizer: Optional[StateDiscretizer] = None,
     max_steps: Optional[int] = 3600,
@@ -63,7 +63,9 @@ def evaluate_greedy_q_learning(
         discrete_state = info["discrete_state"]
         valid_actions = info["valid_actions"]
         while True:
-            action = agent.select_action_for_state(discrete_state, valid_actions=valid_actions)
+            action = agent.select_action_for_state(
+                discrete_state, valid_actions=valid_actions, current_phase=discrete_state[0]
+            )
             next_obs, reward, terminated, truncated, next_info = val_env.step(action)
             total_reward += reward
             discrete_state = next_info["discrete_state"]
@@ -133,14 +135,14 @@ def train_q_learning(
     epsilon_min_val = 0.05
     epsilon_decay_val = 0.85
     decision_interval_val = 5.0
-    min_green_val = 5.0
-    max_green_val = 60.0
-    yellow_dur = 3.0
-    all_red_dur = 0.0
+    min_green_val = DEFAULT_SAFETY_CONFIG["min_green"]
+    max_green_val = DEFAULT_SAFETY_CONFIG["max_green"]
+    yellow_dur = DEFAULT_SAFETY_CONFIG["yellow_duration"]
+    all_red_dur = DEFAULT_SAFETY_CONFIG["all_red_duration"]
     max_steps_val = 3600
     val_interval_val = 5
     reward_scale = 1.0
-    pending_weight_val = 1.0
+    pending_weight_val = 0.0
     max_effective_green = 25.0
     serving_thresholds = (1.0, 5.0)
     waiting_thresholds = (1.0, 6.0, 15.0)
@@ -309,7 +311,9 @@ def train_q_learning(
 
             while True:
                 action = agent.select_action_for_state(
-                    discrete_state, valid_actions=valid_actions
+                    discrete_state,
+                    valid_actions=valid_actions,
+                    current_phase=discrete_state[0],
                 )
 
                 next_obs, reward, terminated, truncated, next_info = env.step(action)

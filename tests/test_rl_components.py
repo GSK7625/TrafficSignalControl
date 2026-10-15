@@ -58,6 +58,11 @@ class TestStateDiscretizer:
         state = disc.discretize(sample_observation)
         assert state == (0, 1, 2, 1)
 
+        # Pending vehicles must NOT pollute local waiting queue discretization
+        sample_observation.pending_vehicles = 100
+        state_with_pending = disc.discretize(sample_observation)
+        assert state_with_pending == (0, 1, 2, 1)
+
     def test_discretize_time_bins(self, sample_observation):
         disc = StateDiscretizer(min_green=5.0, max_effective_green=25.0)
 

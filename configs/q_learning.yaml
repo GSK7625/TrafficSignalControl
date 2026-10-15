@@ -23,3 +23,4 @@ discretization:
 reward:
   name: NegativeAverageQueueReward
   scale: 1.0
+  pending_weight: 0.0
