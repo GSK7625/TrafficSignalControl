@@ -32,6 +32,14 @@ def compute_phase_pressure(
            deterring the selection of phases that spill back into already congested exits.
         3. Boundary-safe: exit lanes leaving the network or untracked have q_out = 0.
         4. Handles multi-link connections and varying signal state lengths.
+
+    Methodological Scope & Limitations:
+        - This implementation is a lane-based heuristic approximation of the Max-Pressure principle
+          (Varaiya 2013).
+        - It assumes uniform turning movement distribution across available outgoing lanes
+          and does not measure dynamic turning movement ratios or saturation flow rates.
+        - As a heuristic approximation, classical theoretical guarantees (e.g. strict throughput
+          optimality and starvation-free guarantees under arbitrary demand) are not claimed.
     """
     if not phase_state or not controlled_links:
         return 0.0

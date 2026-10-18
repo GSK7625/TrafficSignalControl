@@ -115,6 +115,12 @@ def main():
         help="Minimum green time constraint in seconds (default: checkpoint value or 5.0)",
     )
     parser.add_argument(
+        "--max-green",
+        type=float,
+        default=None,
+        help="Maximum green time constraint in seconds (default: checkpoint value or 60.0)",
+    )
+    parser.add_argument(
         "--step-len",
         type=float,
         default=1.0,
@@ -183,12 +189,20 @@ def main():
 
     controller = None
     ckpt_params = {}
+    if args.target_tls:
+        info = inspect_scenario(args.dataset, data_dir="data")
+        if args.target_tls not in info.tls_ids:
+            parser.error(f"Target TLS '{args.target_tls}' not found in scenario '{args.dataset}'. Available: {info.tls_ids}")
     if args.controller == "fixed-time":
         controller = FixedTimeController(default_green_time=args.fixed_time_green)
         effective_mode = "agent"
     elif args.controller == "max-pressure":
         effective_min_green = args.min_green if args.min_green is not None else 5.0
-        controller = MaxPressureController(min_green=effective_min_green, pressure_metric=args.pressure_metric)
+        controller = MaxPressureController(
+            min_green=effective_min_green,
+            max_green=args.max_green if args.max_green is not None else DEFAULT_SAFETY_CONFIG["max_green"],
+            pressure_metric=args.pressure_metric,
+        )
         effective_mode = "agent"
     elif args.controller == "q-learning":
         from src.runner import extract_green_phases
@@ -215,6 +229,18 @@ def main():
         if os.path.isfile(model_path):
             from src.evaluation.evaluate_rl import load_checkpoint_env_params
             ckpt_params = load_checkpoint_env_params(model_path)
+            if "num_actions" in ckpt_params and ckpt_params["num_actions"] != len(green_phases):
+                print(
+                    f"[ERROR] Action space mismatch: checkpoint expects {ckpt_params['num_actions']} actions, "
+                    f"but target TLS '{tl_id}' in scenario '{args.dataset}' has {len(green_phases)} green phases."
+                )
+                sys.exit(1)
+            if "target_tls_id" in ckpt_params and ckpt_params["target_tls_id"] and ckpt_params["target_tls_id"] != tl_id:
+                print(
+                    f"[ERROR] Target TLS mismatch: checkpoint targets '{ckpt_params['target_tls_id']}', "
+                    f"but CLI selected '{tl_id}'."
+                )
+                sys.exit(1)
             controller.load(model_path)
             print(f"[INFO] Loaded Q-Learning model from '{model_path}'")
         else:
@@ -225,11 +251,14 @@ def main():
                 )
                 sys.exit(1)
             print(f"[WARN] Q-Learning model '{model_path}' not found, using untrained agent (--allow-untrained supplied).")
+        controller.eval_mode = True
+        controller.epsilon = 0.0
         effective_mode = "agent"
     else:
         effective_mode = args.mode
 
     effective_min_green = args.min_green if args.min_green is not None else ckpt_params.get("min_green", DEFAULT_SAFETY_CONFIG["min_green"])
+    effective_max_green = args.max_green if args.max_green is not None else ckpt_params.get("max_green", DEFAULT_SAFETY_CONFIG["max_green"])
     effective_yellow_dur = args.yellow_dur if args.yellow_dur is not None else ckpt_params.get("yellow_duration", DEFAULT_SAFETY_CONFIG["yellow_duration"])
     effective_all_red_dur = args.all_red_dur if args.all_red_dur is not None else ckpt_params.get("all_red_duration", DEFAULT_SAFETY_CONFIG["all_red_duration"])
     ctrl_norm = (args.controller or "").lower().replace("-", "_")
@@ -239,14 +268,28 @@ def main():
         else ckpt_params.get("decision_interval", 5.0 if ctrl_norm == "q_learning" else 1.0)
     )
 
+    # CLI timing overrides are explicit and apply to both runner and controller.
+    overrides = {}
+    for field, value in {
+        "min_green": effective_min_green, "max_green": effective_max_green,
+        "yellow_duration": effective_yellow_dur, "all_red_duration": effective_all_red_dur,
+        "decision_interval": effective_dec_interval,
+    }.items():
+        if field in ckpt_params and value != ckpt_params[field]:
+            overrides[field] = {"checkpoint": ckpt_params[field], "override": value}
+        if isinstance(controller, QLearningController):
+            setattr(controller, field, value)
+    if overrides:
+        print(f"[INFO] Configuration overrides: {json.dumps(overrides, sort_keys=True)}")
+
     print(f"\n[INFO] Initializing simulation for dataset: '{args.dataset}'")
     ctrl_desc = f"Controller: '{controller.name}'" if controller else f"Control Mode: '{effective_mode}'"
     print(f"[INFO] Mode: {'GUI (sumo-gui)' if args.gui else 'Headless (sumo)'} | {ctrl_desc}")
 
     print(
-        f"[INFO] Min Green: {effective_min_green}s | Yellow: {effective_yellow_dur}s | "
-        f"All-Red: {effective_all_red_dur}s | Step Length: {args.step_len}s | "
-        f"Decision Interval: {effective_dec_interval}s"
+        f"[INFO] Min Green: {effective_min_green}s | Max Green: {effective_max_green}s | "
+        f"Yellow: {effective_yellow_dur}s | All-Red: {effective_all_red_dur}s | "
+        f"Step Length: {args.step_len}s | Decision Interval: {effective_dec_interval}s"
     )
 
     cfg = get_scenario_config(
@@ -257,6 +300,8 @@ def main():
         yellow_duration=effective_yellow_dur,
         all_red_duration=effective_all_red_dur,
         min_green=effective_min_green,
+        max_green=effective_max_green,
+        target_tls_id=args.target_tls or getattr(controller, "target_tls_id", None),
         max_steps=args.steps,
         seed=args.seed,
         output_dir=args.output_dir,
@@ -272,6 +317,12 @@ def main():
 
     print("[INFO] Starting simulation...")
     summary = runner.run(num_steps=args.steps)
+
+    # Preserve the explicit precedence record alongside the real CLI output.
+    summary["configuration_overrides"] = overrides
+    if summary.get("output_json"):
+        with open(summary["output_json"], "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2)
 
     print("\n================ SIMULATION RESULTS ================")
     print(json.dumps(summary, indent=2))

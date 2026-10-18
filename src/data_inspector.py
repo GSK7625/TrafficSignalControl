@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass, field
 import os
-from typing import Dict, List, Optional, Tuple
+import math
+from typing import Any, Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 
@@ -34,6 +35,7 @@ class ScenarioInfo:
     trips_or_vehicles_count: int = 0
     vehicle_depart_range: Optional[Tuple[float, float]] = None
     auxiliary_files: List[str] = field(default_factory=list)
+    rou_files: List[str] = field(default_factory=list)
 
 
 def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo:
@@ -151,37 +153,8 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
 
             flows = rou_root.findall("flow")
             for flow in flows:
-                if flow.get("number") is not None:
-                    try:
-                        demand_count += int(flow.get("number"))
-                    except ValueError:
-                        demand_count += 1
-                elif flow.get("period") is not None:
-                    try:
-                        b = float(flow.get("begin", 0.0))
-                        e = float(flow.get("end", 3600.0))
-                        p = float(flow.get("period"))
-                        demand_count += max(0, int((e - b) / p))
-                    except (ValueError, ZeroDivisionError):
-                        demand_count += 1
-                elif flow.get("vehsPerHour") is not None:
-                    try:
-                        b = float(flow.get("begin", 0.0))
-                        e = float(flow.get("end", 3600.0))
-                        vph = float(flow.get("vehsPerHour"))
-                        demand_count += max(0, int((e - b) * (vph / 3600.0)))
-                    except ValueError:
-                        demand_count += 1
-                elif flow.get("probability") is not None:
-                    try:
-                        b = float(flow.get("begin", 0.0))
-                        e = float(flow.get("end", 3600.0))
-                        prob = float(flow.get("probability"))
-                        demand_count += max(0, int((e - b) * prob))
-                    except ValueError:
-                        demand_count += 1
-                else:
-                    demand_count += 1
+                total, _, _ = _flow_demand(flow, float('-inf'), float('inf'))
+                demand_count += total
 
             for item in trips_and_vehs + flows:
                 d = item.get("depart") or item.get("begin")
@@ -217,7 +190,152 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
         trips_or_vehicles_count=demand_count,
         vehicle_depart_range=depart_range,
         auxiliary_files=aux,
+        rou_files=rou_files,
     )
+
+
+def _flow_demand(flow, window_begin, window_end):
+    """Half-open deterministic periodic schedule; stochastic demand stays expected."""
+    begin = float(flow.get("begin", 0))
+    end = float(flow.get("end", 86400))
+    if not math.isfinite(begin) or not math.isfinite(end) or end < begin:
+        raise ValueError("Invalid flow begin/end")
+    if flow.get("period") is not None or flow.get("vehsPerHour") is not None:
+        if flow.get("period") is not None:
+            period = float(flow.get("period"))
+        else:
+            rate = float(flow.get("vehsPerHour"))
+            if not math.isfinite(rate) or rate <= 0:
+                raise ValueError("Invalid vehsPerHour")
+            period = 3600 / rate
+        if not math.isfinite(period) or period <= 0:
+            raise ValueError("Flow period must be finite and positive")
+        total = max(0, math.ceil((end - begin) / period))
+        if flow.get("number") is not None:
+            number = int(flow.get("number"))
+            if number < 0:
+                raise ValueError("Invalid flow number")
+            total = min(total, number)
+        lo = max(0, math.ceil((max(begin, window_begin) - begin) / period))
+        hi = min(total, max(0, math.ceil((min(end, window_end) - begin) / period)))
+        return total, max(0, hi-lo), "exact"
+    overlap = max(0, min(end, window_end) - max(begin, window_begin))
+    if flow.get("probability") is not None:
+        probability = float(flow.get("probability"))
+        if not math.isfinite(probability) or not 0 <= probability <= 1:
+            raise ValueError("Invalid flow probability")
+        return (end-begin)*probability, overlap*probability, "expected"
+    if flow.get("number") is not None:
+        number = int(flow.get("number"))
+        if number < 0:
+            raise ValueError("Invalid flow number")
+        return number, number*overlap/(end-begin) if end > begin else 0, "expected"
+    return 0, 0, "unknown"
+
+
+def get_window_demand(
+    scenario_name_or_info: Any,
+    window_begin: float,
+    window_end: float,
+    data_dir: str = "data",
+) -> Dict[str, Any]:
+    """Calculates scheduled traffic demand within the observation window [window_begin, window_end).
+
+    Distinguishes exact vehicle/trip departures from approximate/expected flow departures
+    and unknown departure modes.
+
+    Args:
+        scenario_name_or_info: Scenario name string or ScenarioInfo instance.
+        window_begin: Start timestamp of observation window in seconds.
+        window_end: Effective end timestamp of observation window in seconds.
+        data_dir: Path to root data directory.
+
+    Returns:
+        Dict with keys:
+            scheduled_demand_in_window: int count of vehicles scheduled in window
+            demand_counting_mode: "exact" | "expected" | "unknown"
+            window_begin: float
+            window_end: float
+            window_duration: float
+            total_route_demand: int total vehicles/trips in route file
+    """
+    if isinstance(scenario_name_or_info, ScenarioInfo):
+        info = scenario_name_or_info
+    else:
+        info = inspect_scenario(scenario_name_or_info, data_dir=data_dir)
+
+    rou_files = getattr(info, "rou_files", []) or ([info.rou_path] if info.rou_path else [])
+
+    total_count = 0
+    window_count = 0
+    has_expected = False
+    has_unknown = False
+    has_flows = False
+    before_window = 0
+    scheduled_ids = []
+
+    w_b = float(window_begin)
+    w_e = float(window_end)
+
+    for r_file in rou_files:
+        if not os.path.isfile(r_file):
+            has_unknown = True
+            continue
+        try:
+            tree = ET.parse(r_file)
+            root = tree.getroot()
+        except Exception:
+            has_unknown = True
+            continue
+
+        # 1. Exact trips and vehicles
+        items = root.findall("trip") + root.findall("vehicle")
+        for item in items:
+            total_count += 1
+            d_val = item.get("depart")
+            if d_val is not None:
+                try:
+                    d = float(d_val)
+                    if not math.isfinite(d):
+                        raise ValueError("Nonfinite departure")
+                    if w_b <= d < w_e:
+                        window_count += 1
+                        scheduled_ids.append(item.get("id"))
+                    elif d < w_b:
+                        before_window += 1
+                except ValueError:
+                    has_unknown = True
+            else:
+                has_unknown = True
+
+        # 2. Flow schedules share the same counting implementation as inspection.
+        for flow in root.findall("flow"):
+            has_flows = True
+            _, pre_window, _ = _flow_demand(flow, float("-inf"), w_b)
+            before_window += pre_window
+            total, window, mode = _flow_demand(flow, w_b, w_e)
+            total_count += total
+            window_count += window
+            has_expected |= mode == "expected"
+            has_unknown |= mode == "unknown"
+
+    if has_unknown:
+        mode = "unknown"
+    elif has_expected:
+        mode = "expected"
+    else:
+        mode = "exact"
+
+    return {
+        "scheduled_demand_in_window": None if mode == "unknown" else window_count,
+        "demand_counting_mode": mode,
+        "window_begin": w_b,
+        "window_end": w_e,
+        "window_duration": max(0.0, w_e - w_b),
+        "total_route_demand": total_count,
+        "scheduled_before_window": before_window,
+        "scheduled_vehicle_ids": scheduled_ids if mode == "exact" and not has_flows else None,
+    }
 
 
 def inspect_all_scenarios(data_dir: str = "data") -> Dict[str, ScenarioInfo]:

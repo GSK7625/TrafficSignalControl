@@ -34,10 +34,10 @@ class QLearningController(BaseTrafficController):
         min_green: float = 5.0,
         max_green: Optional[float] = 60.0,
         yellow_duration: float = 3.0,
-        all_red_duration: float = 0.0,
+        all_red_duration: float = 1.0,
         seed: Optional[int] = None,
         eval_mode: bool = False,
-        tie_break_strategy: str = "random",
+        tie_break_strategy: str = "first",
     ):
         super().__init__(name="QLearning")
         if num_actions <= 0:
@@ -289,11 +289,12 @@ class QLearningController(BaseTrafficController):
         self.epsilon_min = cfg["epsilon_min"]
         self.epsilon_decay = cfg["epsilon_decay"]
         self.decision_interval = cfg.get("decision_interval", getattr(self, "decision_interval", 5.0))
-        self.min_green = cfg.get("min_green", getattr(self, "min_green", 5.0))
-        self.max_green = cfg.get("max_green", getattr(self, "max_green", 60.0))
-        self.yellow_duration = cfg.get("yellow_duration", getattr(self, "yellow_duration", 3.0))
-        self.all_red_duration = cfg.get("all_red_duration", getattr(self, "all_red_duration", 0.0))
-        self.tie_break_strategy = cfg.get("tie_break_strategy", getattr(self, "tie_break_strategy", "random"))
+        self.min_green = float(cfg.get("min_green", getattr(self, "min_green", 5.0)))
+        # Legacy missing field uses the platform default; explicit null disables it.
+        self.max_green = (float(cfg["max_green"]) if cfg["max_green"] is not None else None) if "max_green" in cfg else 60.0
+        self.yellow_duration = float(cfg.get("yellow_duration", getattr(self, "yellow_duration", 3.0)))
+        self.all_red_duration = float(cfg.get("all_red_duration", getattr(self, "all_red_duration", 1.0)))
+        self.tie_break_strategy = cfg.get("tie_break_strategy", getattr(self, "tie_break_strategy", "first"))
 
         # Restore discretizer if config present
         if "discretizer_config" in cfg:

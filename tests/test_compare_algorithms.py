@@ -1,6 +1,4 @@
-import os
 import json
-import pytest
 from src.evaluation.compare_algorithms import generate_comparison_report
 
 
@@ -90,7 +88,7 @@ def test_generate_comparison_report_handles_failed_and_total_collisions(tmp_path
     report_path = tmp_path / "benchmark_comparison.md"
     eval_dir = str(tmp_path)
 
-    res = generate_comparison_report(
+    generate_comparison_report(
         eval_dir=eval_dir,
         phase6_summary=str(summary_path),
         output_report=str(report_path),

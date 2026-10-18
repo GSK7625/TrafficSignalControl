@@ -2,7 +2,8 @@
 
 from datetime import datetime
 import os
-from typing import Any, Dict, List, Optional
+import re
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 try:
     import traci
@@ -12,7 +13,7 @@ except ImportError:
 from src.config import SimulationConfig
 from src.controllers.base import ControlledLink, IntersectionObservation
 from src.data_inspector import PhaseInfo, ScenarioInfo, inspect_scenario
-from src.metrics import MetricsCollector, StepMetrics
+from src.metrics import MetricsCollector, StepMetrics, build_vehicle_accounting
 from src.phase_manager import SafePhaseManager
 
 
@@ -31,18 +32,15 @@ def extract_green_phases(scenario_name: str, tl_id: str, phases: List[PhaseInfo]
                 green_states.append(p.state)
 
     if not green_states:
-        # Fallback: take phases that have any green and strictly fewer yellow than green
-        green_states = [
-            p.state for p in phases
-            if any(c in ("G", "g") for c in p.state)
-            and p.state.count("y") < p.state.count("G")
-        ]
+        # Fallback: if all phases contain yellow, keep phases where green signals outnumber yellow
+        for p in phases:
+            num_green = sum(1 for c in p.state if c in ("G", "g"))
+            num_yellow = sum(1 for c in p.state if c in ("y", "Y"))
+            if num_green > num_yellow and p.state not in green_states:
+                green_states.append(p.state)
+
     if not green_states:
-        # Extreme fallback: take all phases that have any green signal
-        green_states = [p.state for p in phases if any(c in ("G", "g") for c in p.state)]
-    if not green_states:
-        # Final fallback
-        green_states = [p.state for p in phases]
+        raise ValueError(f"Dataset '{scenario_name}' TLS '{tl_id}' has no selectable pure-green phase (yellow/all-red are not actions)")
 
     return green_states
 
@@ -75,7 +73,28 @@ class SimulationRunner:
 
         self.has_run: bool = False
         self.tls_controlled_links: Dict[str, List[ControlledLink]] = {}
+        self.target_tls_id: Optional[str] = self.config.target_tls_id
+        self.controlled_tls_ids: Optional[List[str]] = (
+            list(self.config.controlled_tls_ids) if self.config.controlled_tls_ids is not None else None
+        )
         self.reset()
+
+    def get_controlled_tls_ids(self) -> Set[str]:
+        """Returns the set of actively controlled traffic light IDs."""
+        return set(self._controlled_tls_ids)
+
+    def set_controlled_tls_ids(self, tls_ids: Union[str, Sequence[str]]) -> None:
+        """Sets the active traffic light IDs to control, persisting across simulation resets."""
+        if isinstance(tls_ids, str):
+            ids = [tls_ids]
+        else:
+            ids = list(tls_ids)
+        self.config.controlled_tls_ids = ids
+        if len(ids) == 1:
+            self.config.target_tls_id = ids[0]
+            self.target_tls_id = ids[0]
+        self.controlled_tls_ids = ids
+        self._controlled_tls_ids = set(ids)
 
     def reset(self) -> None:
         """Resets the runner to initial state, generating fresh run_id, metrics collector,
@@ -119,6 +138,11 @@ class SimulationRunner:
                 tempfile.gettempdir(), f"tripinfo_{self.run_folder_name}.xml"
             )
 
+        import tempfile
+        self.sumo_log_path: str = os.path.join(
+            tempfile.gettempdir(), f"sumo_{self.run_folder_name}.log"
+        )
+
         # Initialize fresh metrics collector
         self.metrics_collector = MetricsCollector(
             scenario_name=self.config.dataset_name,
@@ -133,7 +157,11 @@ class SimulationRunner:
         if self.control_mode == "cyclic":
             self._controlled_tls_ids = set(self.tls_managers.keys())
         elif self.control_mode == "agent":
-            if self.controller is not None and getattr(self.controller, "target_tls_id", None) is not None:
+            if self.config.controlled_tls_ids is not None:
+                self._controlled_tls_ids = set(self.config.controlled_tls_ids)
+            elif self.config.target_tls_id is not None:
+                self._controlled_tls_ids = {self.config.target_tls_id}
+            elif self.controller is not None and getattr(self.controller, "target_tls_id", None) is not None:
                 self._controlled_tls_ids = {self.controller.target_tls_id}
             elif self.controller is not None:
                 self._controlled_tls_ids = set(self.tls_managers.keys())
@@ -152,6 +180,10 @@ class SimulationRunner:
         self.total_collision_steps: int = 0
         self.total_collision_vehicle_involvements: int = 0
         self.has_run: bool = False
+        self.safety_events: List[Dict[str, Any]] = []
+        self.last_action_results: Dict[str, bool] = {}
+        self.native_program_load_warnings: List[str] = []
+        self._load_warning_capture_phase = "at_start"
 
     def _validate_controller_compatibility(self, controller: Any) -> None:
         """Validates controller configuration against runner safety constraints and scenario phases."""
@@ -204,7 +236,9 @@ class SimulationRunner:
             "--time-to-teleport",
             "-1",
             "--no-warnings",
-            "true",
+            "false",
+            "--log",
+            self.sumo_log_path,
         ]
 
         if self.tripinfo_path:
@@ -236,6 +270,14 @@ class SimulationRunner:
         self.is_running = True
         self.current_step = 0
         self.sim_time = self.config.begin_time
+
+        # SUMO loads its native programs before any external state is applied.
+        # Preserve load-time warning provenance; these are not custom transitions.
+        if os.path.isfile(self.sumo_log_path):
+            with open(self.sumo_log_path, encoding="utf-8", errors="replace") as log:
+                self.native_program_load_warnings = [
+                    line.strip() for line in log if "warning" in line.lower()
+                ]
 
         # Query controlled links from TraCI for each traffic light
         for tl_id in self.tls_managers:
@@ -325,12 +367,16 @@ class SimulationRunner:
                         f"Step {self.current_step} outgoing lane {lane_id} getLastStepVehicleNumber error: {e}"
                     )
 
-            pending_cnt = 0
+            pending_cnt: Optional[int] = 0
             if traci is not None:
                 try:
-                    pending_cnt = int(traci.simulation.getPendingVehiclesNumber())
-                except Exception:
-                    pending_cnt = 0
+                    pending_ids = traci.simulation.getPendingVehicles()
+                    pending_cnt = len(pending_ids) if pending_ids is not None else 0
+                except Exception as e:
+                    self.metrics_collector.record_error(
+                        f"Step {self.current_step} getPendingVehicles error: {e}"
+                    )
+                    pending_cnt = None
 
             obs[tl_id] = IntersectionObservation(
                 tls_id=tl_id,
@@ -354,7 +400,7 @@ class SimulationRunner:
 
         Args:
             actions: Optional mapping of {tls_id: target_phase_idx} for phase change requests.
-                     If an empty dict {} is passed, active control is engaged but current phases are held.
+                     None/{} hold only while safety permits; max-green is enforced each step.
                      If None is passed, behavior depends on control_mode:
                        - 'original': native SUMO traffic light logic runs without TraCI override.
                        - 'cyclic': cycles to next green phase after 30 seconds.
@@ -381,6 +427,7 @@ class SimulationRunner:
             self._last_selected_actions = actions
             self._steps_since_last_decision = 1
 
+        self.last_action_results = {}
         if actions is not None:
             if self.control_mode == "original":
                 raise ValueError(
@@ -391,15 +438,14 @@ class SimulationRunner:
             for tls_id, target_phase in actions.items():
                 if tls_id in self.tls_managers:
                     mgr = self.tls_managers[tls_id]
+                    source_phase = mgr.get_current_phase()
                     accepted = mgr.request_phase(target_phase)
-                    if (
-                        not accepted
-                        and mgr.is_max_green_exceeded()
-                        and not mgr.is_in_transition()
-                        and len(mgr.green_phases) > 1
-                    ):
-                        forced_p = (mgr.get_current_phase() + 1) % len(mgr.green_phases)
-                        mgr.request_phase(forced_p)
+                    self.last_action_results[tls_id] = accepted
+                    reason = ("accepted" if accepted else "clearance_locked" if mgr.is_in_transition()
+                              else "max_green_hold_rejected" if mgr.is_max_green_exceeded() else "min_green")
+                    self._record_safety_event(tls_id, source_phase, target_phase, reason,
+                                              requested_action=target_phase, accepted=accepted, forced=False,
+                                              accepted_action=target_phase if accepted else None, forced_action=None)
                     self._controlled_tls_ids.add(tls_id)
         elif self.control_mode == "cyclic":
             self._active_control_engaged = True
@@ -412,7 +458,24 @@ class SimulationRunner:
                     and len(manager.green_phases) > 1
                 ):
                     next_p = (manager.get_current_phase() + 1) % len(manager.green_phases)
-                    manager.request_phase(next_p)
+                    source = manager.get_current_phase()
+                    accepted = manager.request_phase(next_p)
+                    self._record_safety_event(manager.tls_id, source, next_p, "cyclic_30s_request",
+                                              requested_action=next_p, accepted=accepted, forced=False,
+                                              accepted_action=next_p if accepted else None, forced_action=None)
+
+        # One owner: enforce at the boundary BEFORE the next simulation interval.
+        # Completed green at its cap must not enter another green interval.
+        # Clearance keeps its committed target. Single-phase and None are exempt.
+        for tls_id in sorted(self._controlled_tls_ids):
+            mgr = self.tls_managers[tls_id]
+            if mgr.is_max_green_exceeded() and len(mgr.green_phases) > 1:
+                source_phase = mgr.get_current_phase()
+                forced_p = (source_phase + 1) % len(mgr.green_phases)
+                accepted = mgr.request_phase(forced_p)
+                self._record_safety_event(tls_id, source_phase, forced_p, "max_green_cyclic_fallback",
+                                          requested_action=None, accepted=accepted, forced=True,
+                                          accepted_action=forced_p if accepted else None, forced_action=forced_p)
 
         # 2. Apply current signal strings to TraCI for actively controlled intersections
         if self._active_control_engaged:
@@ -520,6 +583,33 @@ class SimulationRunner:
 
         return metrics
 
+    def _record_safety_event(self, tls_id, source, target, reason, **details):
+        self.safety_events.append({
+            "tls_id": tls_id, "sim_time": self.sim_time,
+            "source": source, "target": target, "reason": reason,
+            **details,
+        })
+
+    def safety_metadata(self) -> Dict[str, Any]:
+        """Protocol and warning provenance shared by CLI and RL exports."""
+        return {
+            "max_green": self.config.max_green,
+            "safety_events": self.safety_events,
+            "native_program_load_warnings": self.native_program_load_warnings,
+            "native_program_load_warning_provenance": {
+                "source": "SUMO native program load before external overrides",
+                "sim_time": self.config.begin_time,
+                "log_path": self.sumo_log_path,
+                "capture_phase": self._load_warning_capture_phase,
+                "buffered_recovery_rule": "Only native (non-online) Missing yellow phase in tlLogic program-validation diagnostics; other runtime warnings are not attributed to load",
+            },
+            "max_green_exemptions": {
+                tls: "disabled" if mgr.max_green is None else "single_selectable_phase"
+                for tls, mgr in self.tls_managers.items()
+                if tls in self._controlled_tls_ids and (mgr.max_green is None or len(mgr.green_phases) == 1)
+            },
+        }
+
     def run(
         self,
         num_steps: Optional[int] = None,
@@ -568,6 +658,20 @@ class SimulationRunner:
                         f"End-of-run getPendingVehicles error: {e}"
                     )
 
+            accounting_meta = build_vehicle_accounting(
+                scenario_name=getattr(self.config, "dataset_name", getattr(self.config, "scenario_name", "")),
+                window_begin=self.config.begin_time,
+                window_end=self.sim_time,
+                step_length=self.config.step_length,
+                total_completed=self.metrics_collector._cumulative_completed,
+                running_vehs=running_vehs,
+                pending_vehs=pending_vehs,
+                total_teleports=self.total_teleports,
+                total_collisions=self.total_collision_incidents,
+                scenario_info=self.scenario_info,
+                population=self.metrics_collector.population_snapshot(),
+            )
+
             metadata = {
                 "control_mode": self.control_mode,
                 "seed": self.config.seed,
@@ -575,9 +679,6 @@ class SimulationRunner:
                 "yellow_duration": self.config.yellow_duration,
                 "all_red_duration": self.config.all_red_duration,
                 "min_green": self.config.min_green,
-                "running_vehicles_at_end": running_vehs,
-                "pending_insertion_vehicles": pending_vehs,
-                "teleport_count": self.total_teleports,
                 "collision_count": self.total_collision_incidents,
                 "collision_incidents": self.total_collision_incidents,
                 "collision_steps": self.total_collision_steps,
@@ -587,19 +688,51 @@ class SimulationRunner:
                 "total_transition_time": round(sum(mgr.total_transition_time for mgr in self.tls_managers.values()), 2),
                 "actual_yellow_time": round(sum(mgr.actual_yellow_time for mgr in self.tls_managers.values()), 2),
                 "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.tls_managers.items()},
-                "total_scenario_demand": getattr(self.scenario_info, "trips_or_vehicles_count", 0),
             }
+            metadata.update(accounting_meta)
+            metadata.update(self.safety_metadata())
             if self.controller is not None:
                 metadata["controller_name"] = self.controller.name
                 metadata["controller_config"] = self.controller.get_config()
 
-            self.metrics_collector.set_run_metadata(metadata)
+            # Close TraCI and terminate SUMO process so all log buffers are flushed to disk
             self.close()
+            metadata.update(self.safety_metadata())
             self.has_run = True
+
+            sumo_warnings = []
+            if hasattr(self, "sumo_log_path") and self.sumo_log_path and os.path.isfile(self.sumo_log_path):
+                try:
+                    with open(self.sumo_log_path, "r", encoding="utf-8", errors="replace") as f:
+                        for line in f:
+                            sline = line.strip()
+                            if sline.startswith("Warning:") or "warning" in sline.lower():
+                                sumo_warnings.append(sline)
+                except Exception:
+                    pass
+
+            metadata["sumo_warnings_count"] = len(sumo_warnings)
+            metadata["sumo_warnings"] = sumo_warnings[:50]
+            metadata["safety_protocol"] = (
+                "native_sumo (uncontrolled external program; does not guarantee project clearance intervals)"
+                if self.control_mode in ("sumo", "original")
+                else "custom_safe_phase_manager (enforces yellow clearance, min_green, all_red, per-step max_green)"
+            )
+
+            self.metrics_collector.set_run_metadata(metadata)
 
         # Export metrics into unique run folder
         run_folder = os.path.join(self.config.output_dir, self.run_folder_name)
         os.makedirs(run_folder, exist_ok=True)
+
+        if hasattr(self, "sumo_log_path") and self.sumo_log_path and os.path.isfile(self.sumo_log_path):
+            import shutil
+            final_sumo_log = os.path.join(run_folder, "sumo_warnings.log")
+            try:
+                shutil.copy2(self.sumo_log_path, final_sumo_log)
+                os.remove(self.sumo_log_path)
+            except Exception:
+                pass
 
         if self.tripinfo_path and os.path.isfile(self.tripinfo_path):
             import shutil
@@ -616,6 +749,9 @@ class SimulationRunner:
         summary = self.metrics_collector.get_summary()
         summary["output_json"] = json_path
         summary["output_csv"] = csv_path
+        summary["output_dir"] = run_folder
+        summary["sumo_warnings_count"] = metadata.get("sumo_warnings_count", 0)
+        summary["safety_protocol"] = metadata.get("safety_protocol", "unknown")
         return summary
 
     def close(self) -> None:
@@ -628,8 +764,29 @@ class SimulationRunner:
             finally:
                 self.is_running = False
                 self.has_run = True
+                self._recover_buffered_native_warnings()
         elif not self.is_running and (self.current_step > 0 or len(self.metrics_collector.step_records) > 0):
             self.has_run = True
+
+    def _recover_buffered_native_warnings(self) -> None:
+        """Recover narrowly identified native validation diagnostics after log flush.
+
+        SUMO may buffer its log until close. Native missing-yellow diagnostics
+        are emitted during program validation at load, confirmed by zero-step
+        load-only probes. We never reload native programs during a run. Exclude
+        the TraCI 'online' program and all generic runtime warnings.
+        """
+        self._load_warning_capture_phase = "after_close"
+        try:
+            if os.path.isfile(self.sumo_log_path):
+                with open(self.sumo_log_path, encoding="utf-8", errors="replace") as log:
+                    for line in log:
+                        if re.search(r"Missing yellow phase in tlLogic '[^']+',? program '(?!online')[^']+' for tl-index \d+ when switching to phase \d+", line):
+                            warning = line.strip()
+                            if warning not in self.native_program_load_warnings:
+                                self.native_program_load_warnings.append(warning)
+        except OSError as exc:
+            self.metrics_collector.record_error(f"Native program warning provenance read failed: {exc}")
 
     def __enter__(self):
         self.start()

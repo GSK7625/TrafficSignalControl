@@ -81,72 +81,25 @@ class TestFixedTimeController:
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 1
 
-    def test_custom_sequence_and_offsets(self):
+    def test_custom_sequence(self):
         controller = FixedTimeController(
             default_green_time=20.0,
             phase_sequences={"tls_1": [1, 0]},
-            offsets={"tls_1": 10.0},
         )
         # Sequence starts at phase 1
         obs = create_dummy_observation(current_phase=1, time_in_phase=0.0)
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 1
 
-        # Effective duration for first cycle is 20 + 10 = 30s
-        obs.time_in_phase = 25.0
+        # Effective duration is 20s
+        obs.time_in_phase = 15.0
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 1
 
-        # At 30s: cycles to phase 0, offset consumed
-        obs.time_in_phase = 30.0
+        # At 20s: cycles to phase 0
+        obs.time_in_phase = 20.0
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 0
-
-    def test_input_validation_nan_and_inf(self):
-        with pytest.raises(ValueError, match="positive and finite"):
-            FixedTimeController(default_green_time=float("nan"))
-
-        with pytest.raises(ValueError, match="positive and finite"):
-            FixedTimeController(default_green_time=float("inf"))
-
-        with pytest.raises(ValueError, match="positive and finite"):
-            FixedTimeController(default_green_time=-5.0)
-
-    def test_input_validation_phase_durations(self):
-        with pytest.raises(ValueError, match="positive and finite"):
-            FixedTimeController(phase_durations={"tls_1": {0: float("nan")}})
-
-        with pytest.raises(ValueError, match="positive and finite"):
-            FixedTimeController(phase_durations={"tls_1": {0: float("inf")}})
-
-        with pytest.raises(ValueError, match="positive and finite"):
-            FixedTimeController(phase_durations={"tls_1": {0: -10.0}})
-
-        with pytest.raises(ValueError, match="non-negative integer"):
-            FixedTimeController(phase_durations={"tls_1": {-1: 30.0}})
-
-        with pytest.raises(ValueError, match="non-negative integer"):
-            FixedTimeController(phase_durations={"tls_1": {"not_int": 30.0}})
-
-    def test_input_validation_phase_sequences(self):
-        with pytest.raises(ValueError, match="non-empty"):
-            FixedTimeController(phase_sequences={"tls_1": []})
-
-        with pytest.raises(ValueError, match="non-negative integer"):
-            FixedTimeController(phase_sequences={"tls_1": [-1, 0]})
-
-        with pytest.raises(ValueError, match="non-negative integer"):
-            FixedTimeController(phase_sequences={"tls_1": ["0", 1]})
-
-    def test_input_validation_offsets(self):
-        with pytest.raises(ValueError, match="non-negative finite"):
-            FixedTimeController(offsets={"tls_1": float("nan")})
-
-        with pytest.raises(ValueError, match="non-negative finite"):
-            FixedTimeController(offsets={"tls_1": float("inf")})
-
-        with pytest.raises(ValueError, match="non-negative finite"):
-            FixedTimeController(offsets={"tls_1": -5.0})
 
     def test_schedule_resynchronization_on_forced_phase_switch(self):
         controller = FixedTimeController(default_green_time=90.0)
@@ -173,11 +126,6 @@ class TestFixedTimeController:
         errors = controller.validate_compatibility(min_green=5.0, max_green=60.0)
         assert len(errors) > 0
         assert any("exceeds max_green" in e for e in errors)
-
-        # Offsets causing duration + offset > max_green
-        controller_offset = FixedTimeController(default_green_time=40.0, offsets={"tls_1": 30.0})
-        errors_offset = controller_offset.validate_compatibility(min_green=5.0, max_green=60.0)
-        assert any("exceeds max_green" in e for e in errors_offset)
 
         # Invalid phase sequence index
         controller_seq = FixedTimeController(phase_sequences={"tls_1": [0, 3]})

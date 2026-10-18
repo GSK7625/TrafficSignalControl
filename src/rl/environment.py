@@ -6,10 +6,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from src.config import SimulationConfig, get_scenario_config
-from src.controllers.base import IntersectionObservation
 from src.rl.discretization import StateDiscretizer
 from src.rl.observations import ObservationBuilder
 from src.rl.rewards import BaseRewardFunction, NegativeAverageQueueReward
+from src.metrics import build_vehicle_accounting
 from src.runner import SimulationRunner
 
 
@@ -106,8 +106,10 @@ class TrafficSignalRLEnv:
         self.tls_id = target_tls_id if target_tls_id is not None else all_tls[0]
         if self.tls_id not in self.runner.tls_managers:
             raise ValueError(f"Target TLS '{self.tls_id}' not found in scenario '{scenario_name}'")
-        # Restrict runner's active control strictly to the controlled intersection
-        self.runner._controlled_tls_ids = {self.tls_id}
+        # Restrict runner's active control strictly and persistently to the controlled intersection
+        self.config.target_tls_id = self.tls_id
+        self.config.controlled_tls_ids = [self.tls_id]
+        self.runner.set_controlled_tls_ids(self.tls_id)
         self.green_phases = self.runner.tls_managers[self.tls_id].green_phases
         self.num_actions = len(self.green_phases)
 
@@ -151,9 +153,7 @@ class TrafficSignalRLEnv:
         self.observation_dim: int = self.obs_builder.observation_dim
         self.action_dim: int = self.num_actions
 
-        self._current_step_count: int = 0
         self._episode_count: int = 0
-        self._last_obs_dict: Dict[str, IntersectionObservation] = {}
         self._last_summary: Optional[Dict[str, Any]] = None
 
     def reset(self, seed: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -169,16 +169,19 @@ class TrafficSignalRLEnv:
         # Ensure previous simulation is cleanly closed
         self.close()
 
+        # Re-assert persistent target TLS in runner config before reset
+        self.config.target_tls_id = self.tls_id
+        self.config.controlled_tls_ids = [self.tls_id]
+
         # Reset runner and initialize fresh run
         self.runner.reset()
+        self.runner.set_controlled_tls_ids(self.tls_id)
         self.runner.start()
 
-        self._current_step_count = 0
         self._episode_count += 1
         self.reward_fn.reset()
 
         raw_obs = self.runner.get_observation()
-        self._last_obs_dict = raw_obs
         tls_obs = raw_obs[self.tls_id]
 
         obs_vec = self.obs_builder.build_vector(tls_obs)
@@ -213,7 +216,7 @@ class TrafficSignalRLEnv:
         if mgr.time_in_current_phase() < self.min_green:
             return [curr_phase]
 
-        # Anti-starvation guard: if max green has elapsed, must switch away from current phase
+        # Max-green mask (does not guarantee starvation freedom): if max green has elapsed, must switch away from current phase
         if (
             self.max_green is not None
             and mgr.time_in_current_phase() >= self.max_green
@@ -253,29 +256,8 @@ class TrafficSignalRLEnv:
         requested_phase = action
         prev_phase = mgr.get_current_phase()
 
-        # Attempt to apply action through SafePhaseManager
+        # Runner owns requests and per-step safety. Never mutate the manager here.
         action_accepted = False
-        if is_valid:
-            action_accepted = mgr.request_phase(action)
-            if (
-                not action_accepted
-                and mgr.is_max_green_exceeded()
-                and not mgr.is_in_transition()
-                and len(self.green_phases) > 1
-            ):
-                forced_phase = (mgr.get_current_phase() + 1) % len(self.green_phases)
-                action_accepted = mgr.request_phase(forced_phase)
-        else:
-            # Action invalid according to constraints
-            if (
-                mgr.is_max_green_exceeded()
-                and not mgr.is_in_transition()
-                and len(self.green_phases) > 1
-            ):
-                forced_phase = (mgr.get_current_phase() + 1) % len(self.green_phases)
-                action_accepted = mgr.request_phase(forced_phase)
-            else:
-                action_accepted = False
 
         # Reset reward accumulator for this decision interval
         self.reward_fn.reset()
@@ -295,9 +277,11 @@ class TrafficSignalRLEnv:
                 break
 
             # Advance 1 step
-            step_metrics = self.runner.step(actions=None)
+            actions = {self.tls_id: action} if steps_executed == 0 and 0 <= action < self.num_actions else {}
+            step_metrics = self.runner.step(actions=actions)
+            if steps_executed == 0:
+                action_accepted = self.runner.last_action_results.get(self.tls_id, False)
             steps_executed += 1
-            self._current_step_count += 1
 
             # Accumulate queue metrics for reward calculation
             raw_obs = self.runner.get_observation()
@@ -310,7 +294,6 @@ class TrafficSignalRLEnv:
 
         # Query updated observation
         raw_obs = self.runner.get_observation()
-        self._last_obs_dict = raw_obs
         tls_obs = raw_obs[self.tls_id]
 
         obs_vec = self.obs_builder.build_vector(tls_obs)
@@ -356,8 +339,22 @@ class TrafficSignalRLEnv:
             if traci is not None and self.runner.is_running:
                 running_vehs = len(traci.vehicle.getIDList())
                 pending_vehs = len(traci.simulation.getPendingVehicles())
-        except Exception:
-            pass
+        except Exception as exc:
+            self.runner.metrics_collector.record_error(f"End-of-episode population read failed: {exc}")
+
+        accounting_meta = build_vehicle_accounting(
+            scenario_name=getattr(self.config, "dataset_name", getattr(self.config, "scenario_name", "")),
+            window_begin=self.runner.config.begin_time,
+            window_end=self.runner.sim_time,
+            step_length=self.config.step_length,
+            total_completed=self.runner.metrics_collector._cumulative_completed,
+            running_vehs=running_vehs,
+            pending_vehs=pending_vehs,
+            total_teleports=self.runner.total_teleports,
+            total_collisions=self.runner.total_collision_incidents,
+            scenario_info=getattr(self.runner, "scenario_info", None),
+                population=self.runner.metrics_collector.population_snapshot(),
+        )
 
         metadata = {
             "control_mode": "agent",
@@ -367,9 +364,6 @@ class TrafficSignalRLEnv:
             "all_red_duration": self.config.all_red_duration,
             "min_green": self.config.min_green,
             "decision_interval": self.decision_interval,
-            "running_vehicles_at_end": running_vehs,
-            "pending_insertion_vehicles": pending_vehs,
-            "teleport_count": self.runner.total_teleports,
             "collision_count": self.runner.total_collision_incidents,
             "collision_incidents": self.runner.total_collision_incidents,
             "collision_steps": self.runner.total_collision_steps,
@@ -378,15 +372,17 @@ class TrafficSignalRLEnv:
             "phase_change_count": sum(mgr.phase_switch_count for mgr in self.runner.tls_managers.values()),
             "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.runner.tls_managers.items()},
         }
-        self.runner.metrics_collector.set_run_metadata(metadata)
+        metadata.update(accounting_meta)
+        metadata.update(self.runner.safety_metadata())
         self.runner.close()
+        metadata.update(self.runner.safety_metadata())
+        self.runner.metrics_collector.set_run_metadata(metadata)
 
         # Export metrics into unique run folder
         run_folder = os.path.join(self.config.output_dir, self.runner.run_folder_name)
         os.makedirs(run_folder, exist_ok=True)
 
         if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
-            import shutil
             final_tripinfo = os.path.join(run_folder, "tripinfo.xml")
             shutil.copy2(self.runner.tripinfo_path, final_tripinfo)
             try:

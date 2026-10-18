@@ -7,6 +7,7 @@ under strictly standardized, reproducible experimental conditions.
 
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import uuid4
 import hashlib
 import json
 import math
@@ -20,6 +21,8 @@ import numpy as np
 from src.config import get_scenario_config
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
+from src.training.train_q_learning import is_validation_viable, validation_data_errors
+from src.evaluation.eval_audit import snapshot_agent, finish_eval_audit
 from src.controllers.q_learning import QLearningController
 from src.data_inspector import inspect_scenario
 from src.rl.environment import TrafficSignalRLEnv
@@ -118,80 +121,14 @@ def get_sumo_version() -> str:
     return "unknown"
 
 
-def _hash_scenario_inputs(scenario_name: str, hasher) -> None:
-    """Hashes scenario network/route files and runtime SUMO version into the fingerprint."""
-    scenario_dir = os.path.join("data", scenario_name)
-    if os.path.isdir(scenario_dir):
-        for fname in sorted(os.listdir(scenario_dir)):
-            if fname.endswith((".net.xml", ".rou.xml", ".flo.xml", ".sumocfg")):
-                fpath = os.path.join(scenario_dir, fname)
-                try:
-                    with open(fpath, "rb") as df:
-                        hasher.update(df.read())
-                except Exception:
-                    pass
-    hasher.update(get_sumo_version().encode("utf-8"))
+def compute_run_fingerprint(cfg: ExperimentConfig, checkpoint_path=None, root=None) -> str:
+    from src.evaluation.provenance import build_provenance
+    return build_provenance(cfg, checkpoint_path, root)["run_fingerprint"]
 
 
-def compute_run_fingerprint(cfg: ExperimentConfig, checkpoint_path: Optional[str] = None) -> str:
-    """Computes a deterministic SHA-256 fingerprint of the experiment configuration and model artifact."""
-    hasher = hashlib.sha256()
-    payload = {
-        "scenario_name": cfg.scenario_name,
-        "algorithm": cfg.algorithm,
-        "seed": cfg.seed,
-        "training_seed": cfg.training_seed,
-        "steps": cfg.steps,
-        "yellow_duration": cfg.yellow_duration,
-        "all_red_duration": cfg.all_red_duration,
-        "min_green": cfg.min_green,
-        "max_green": cfg.max_green,
-        "fixed_time_green": cfg.fixed_time_green,
-        "pressure_metric": cfg.pressure_metric,
-        "decision_interval": cfg.decision_interval,
-    }
-    hasher.update(json.dumps(payload, sort_keys=True).encode("utf-8"))
-    _hash_scenario_inputs(cfg.scenario_name, hasher)
-
-    target_checkpoint = checkpoint_path or cfg.model_path or resolve_model_path(cfg)
-    if target_checkpoint and os.path.isfile(target_checkpoint):
-        try:
-            with open(target_checkpoint, "rb") as f:
-                hasher.update(f.read())
-        except Exception:
-            pass
-
-    return hasher.hexdigest()
-
-
-def compute_cohort_fingerprint(cfg: ExperimentConfig, checkpoint_path: Optional[str] = None) -> str:
-    """Computes a deterministic SHA-256 fingerprint of configuration and model artifact, EXCLUDING evaluation seed."""
-    hasher = hashlib.sha256()
-    payload = {
-        "scenario_name": cfg.scenario_name,
-        "algorithm": cfg.algorithm,
-        "training_seed": cfg.training_seed,
-        "steps": cfg.steps,
-        "yellow_duration": cfg.yellow_duration,
-        "all_red_duration": cfg.all_red_duration,
-        "min_green": cfg.min_green,
-        "max_green": cfg.max_green,
-        "fixed_time_green": cfg.fixed_time_green,
-        "pressure_metric": cfg.pressure_metric,
-        "decision_interval": cfg.decision_interval,
-    }
-    hasher.update(json.dumps(payload, sort_keys=True).encode("utf-8"))
-    _hash_scenario_inputs(cfg.scenario_name, hasher)
-
-    target_checkpoint = checkpoint_path or cfg.model_path or resolve_model_path(cfg)
-    if target_checkpoint and os.path.isfile(target_checkpoint):
-        try:
-            with open(target_checkpoint, "rb") as f:
-                hasher.update(f.read())
-        except Exception:
-            pass
-
-    return hasher.hexdigest()
+def compute_cohort_fingerprint(cfg: ExperimentConfig, checkpoint_path=None, root=None) -> str:
+    from src.evaluation.provenance import build_provenance
+    return build_provenance(cfg, checkpoint_path, root)["cohort_fingerprint"]
 
 
 def compute_improvement(baseline_val: float, algo_val: float, higher_is_better: bool = False) -> float:
@@ -237,6 +174,14 @@ def validate_run_metrics(
     critical_anomalies: List[str] = []
     other_anomalies: List[str] = []
 
+    if metrics.get("is_valid") is False or metrics.get("measurement_errors", 0):
+        critical_anomalies.append("Collector reports invalid telemetry or measurement errors")
+    if metrics.get("metric_schema_version") == "4.0.0":
+        if metrics.get("accounting_valid") is not True:
+            critical_anomalies.append("Population accounting not confirmed")
+        if metrics.get("tripinfo_required") and metrics.get("tripinfo_reconciliation_status") != "MATCH":
+            critical_anomalies.append("Required tripinfo reconciliation not MATCH")
+
     # Check for NaN / Infinity
     for k, v in metrics.items():
         if isinstance(v, (int, float)):
@@ -246,19 +191,19 @@ def validate_run_metrics(
                 critical_anomalies.append(f"Metric '{k}' has Infinity value")
 
     # Waiting time checks
-    mean_wait = metrics.get("mean_waiting_time", 0.0)
-    trip_wait = metrics.get("tripinfo_mean_waiting_time", mean_wait)
-    if mean_wait < 0.0 or trip_wait < 0.0:
+    mean_wait = metrics.get("mean_waiting_time")
+    trip_wait = metrics.get("tripinfo_mean_waiting_time") if metrics.get("tripinfo_mean_waiting_time") is not None else mean_wait
+    if (mean_wait is not None and mean_wait < 0.0) or (trip_wait is not None and trip_wait < 0.0):
         critical_anomalies.append(f"Negative waiting time detected: mean={mean_wait}, tripinfo={trip_wait}")
 
     # Queue length checks
     queue_len = metrics.get("mean_queue_length", 0.0)
-    if queue_len < 0.0:
+    if queue_len is not None and queue_len < 0.0:
         critical_anomalies.append(f"Negative queue length detected: {queue_len}")
 
     # Travel time / Time loss checks
-    travel_time = metrics.get("mean_travel_time", 0.0)
-    if travel_time < 0.0:
+    travel_time = metrics.get("mean_travel_time")
+    if travel_time is not None and travel_time < 0.0:
         critical_anomalies.append(f"Negative travel time detected: {travel_time}")
 
     time_loss = metrics.get("total_time_loss", 0.0)
@@ -272,8 +217,8 @@ def validate_run_metrics(
 
     # If full horizon run (total_steps >= 1800), having zero completed vehicles is a critical anomaly
     total_steps = metrics.get("total_steps", 0)
-    if total_steps >= 1800 and completed == 0:
-        critical_anomalies.append(f"Abnormal traffic lock: 0 completed vehicles in {total_steps}s")
+    if metrics.get("observation_window_duration", total_steps) >= 1800 and completed == 0:
+        other_anomalies.append(f"Abnormal traffic lock: 0 completed vehicles in {total_steps}s")
 
     # Safety checks
     coll_count = metrics.get("collision_count", 0) or 0
@@ -323,8 +268,9 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = f"{cfg.scenario_name}_{cfg.algorithm.lower().replace(' ', '_').replace('-', '_')}_s{cfg.seed}_{timestamp}"
+    run_id += "_" + uuid4().hex[:10]
     run_dir = os.path.join(cfg.output_dir, "runs", run_id)
-    os.makedirs(run_dir, exist_ok=True)
+    os.makedirs(run_dir, exist_ok=False)
 
     print(f"\n================================================================================")
     print(f"EXPERIMENT RUN: [{cfg.scenario_name.upper()}] | Algorithm: [{cfg.algorithm}] | Seed: {cfg.seed}")
@@ -340,6 +286,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             model_path = f"models/q_learning/q_learning_{cfg.scenario_name}_best.json"
 
     summary: Dict[str, Any] = {}
+    eval_audit = None
     episode_reward: Optional[float] = None
     checkpoint_id: Optional[str] = os.path.basename(model_path) if model_path else None
     env: Optional[TrafficSignalRLEnv] = None
@@ -347,6 +294,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
     effective_decision_interval = resolve_effective_decision_interval(cfg)
     effective_min_green = float(cfg.min_green)
+    effective_max_green = cfg.max_green
     effective_yellow_duration = float(cfg.yellow_duration)
     effective_all_red_duration = float(cfg.all_red_duration)
     try:
@@ -361,10 +309,10 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             ckpt_params = load_checkpoint_env_params(model_path)
             effective_decision_interval = resolve_effective_decision_interval(cfg, ckpt_params=ckpt_params)
 
-            # Safety constraint validation between checkpoint and benchmark config
             effective_min_green = float(ckpt_params.get("min_green", cfg.min_green))
             effective_yellow_duration = float(ckpt_params.get("yellow_duration", cfg.yellow_duration))
             effective_all_red_duration = float(ckpt_params.get("all_red_duration", cfg.all_red_duration))
+            effective_max_green = ckpt_params.get("max_green", cfg.max_green)
 
             mismatches = []
             if "min_green" in ckpt_params and abs(float(ckpt_params["min_green"]) - cfg.min_green) > 1e-4:
@@ -373,6 +321,15 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 mismatches.append(f"yellow_duration (ckpt={ckpt_params['yellow_duration']}s vs cfg={cfg.yellow_duration}s)")
             if "all_red_duration" in ckpt_params and abs(float(ckpt_params["all_red_duration"]) - cfg.all_red_duration) > 1e-4:
                 mismatches.append(f"all_red_duration (ckpt={ckpt_params['all_red_duration']}s vs cfg={cfg.all_red_duration}s)")
+            if (
+                "max_green" in ckpt_params
+                and (
+                    (ckpt_params["max_green"] is None) != (cfg.max_green is None)
+                    or (ckpt_params["max_green"] is not None and cfg.max_green is not None
+                        and abs(float(ckpt_params["max_green"]) - float(cfg.max_green)) > 1e-4)
+                )
+            ):
+                mismatches.append(f"max_green (ckpt={ckpt_params['max_green']}s vs cfg={cfg.max_green}s)")
 
             if mismatches:
                 raise ValueError(
@@ -384,7 +341,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "scenario_name": cfg.scenario_name,
                 "decision_interval": effective_decision_interval,
                 "min_green": effective_min_green,
-                "max_green": cfg.max_green,
+                "max_green": effective_max_green,
                 "yellow_duration": effective_yellow_duration,
                 "all_red_duration": effective_all_red_duration,
                 "max_steps": cfg.steps,
@@ -402,43 +359,64 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
             env = TrafficSignalRLEnv(**env_kwargs)
 
+            # Validate action space and target TLS before running
+            if "num_actions" in ckpt_params and ckpt_params["num_actions"] != env.num_actions:
+                env.close()
+                raise ValueError(
+                    f"Action space mismatch: checkpoint expects {ckpt_params['num_actions']} actions, "
+                    f"but scenario '{cfg.scenario_name}' TLS '{env.tls_id}' has {env.num_actions} green phases."
+                )
+            if (
+                "target_tls_id" in ckpt_params
+                and ckpt_params["target_tls_id"]
+                and ckpt_params["target_tls_id"] != env.tls_id
+            ):
+                env.close()
+                raise ValueError(
+                    f"Target TLS mismatch: checkpoint targets '{ckpt_params['target_tls_id']}', "
+                    f"but environment initialized with '{env.tls_id}'."
+                )
+
             agent = QLearningController(
                 num_actions=env.num_actions,
                 discretizer=env.state_discretizer,
                 min_green=effective_min_green,
-                max_green=cfg.max_green,
+                max_green=effective_max_green,
+                yellow_duration=effective_yellow_duration,
+                all_red_duration=effective_all_red_duration,
+                target_tls_id=env.tls_id,
                 seed=cfg.seed,
                 eval_mode=True,
+                tie_break_strategy="first",
             )
             if not os.path.isfile(model_path):
                 raise FileNotFoundError(f"Q-Learning model checkpoint not found: {model_path}")
             agent.load(model_path)
+            agent.decision_interval = effective_decision_interval
             agent.eval_mode = True
             agent.epsilon = 0.0  # Strict zero exploration
 
-            obs_vec, info = env.reset(seed=cfg.seed)
+            audit_before = snapshot_agent(agent)
+            _, info = env.reset(seed=cfg.seed)
             valid_actions = info["valid_actions"]
             discrete_state = info["discrete_state"]
 
             accumulated_reward = 0.0
-            step_count = 0
 
             while True:
                 act = agent.select_action_for_state(
                     discrete_state, valid_actions=valid_actions, current_phase=discrete_state[0]
                 )
 
-                next_obs, reward, terminated, truncated, next_info = env.step(act)
+                _, reward, terminated, truncated, next_info = env.step(act)
                 accumulated_reward += reward
-                step_count += 1
-
-                obs_vec = next_obs
                 valid_actions = next_info["valid_actions"]
                 discrete_state = next_info["discrete_state"]
 
                 if terminated or truncated:
                     break
 
+            eval_audit = finish_eval_audit(agent, audit_before)
             episode_reward = round(accumulated_reward, 2)
             summary = env.get_summary() or {}
 
@@ -486,6 +464,8 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         err_msg = f"Simulation failed with exception: {str(e)}"
         print(f"[ERROR] {err_msg}")
         return {
+            "metric_schema_version": "4.0.0",
+            "schema_classification": "current",
             "run_id": run_id,
             "scenario_name": cfg.scenario_name,
             "algorithm": cfg.algorithm,
@@ -515,10 +495,23 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
     # Extract metrics
     completed = summary.get("total_completed_vehicles", 0)
-    completion_rate = round((completed / total_demand * 100.0) if total_demand > 0 else 0.0, 2)
-    throughput_vph = round(completed * (3600.0 / max(1, summary.get("total_steps", 3600))), 1)
+    if summary.get("metric_schema_version") == "4.0.0":
+        total_demand = summary.get("scheduled_demand_in_window")
+    completion_rate = round((completed / total_demand * 100.0) if total_demand is not None and total_demand > 0 else 0.0, 2)
+    duration = summary.get("observation_window_duration")
+    if duration is None:
+        duration = summary.get("total_steps", 0) * summary.get("step_length", 1.0)
+    throughput_vph = round(completed * 3600.0 / duration, 1) if duration > 0 else 0.0
 
-    is_valid, anomalies, flags = validate_run_metrics(summary, total_demand=total_demand, return_flags=True)
+    is_valid, anomalies, flags = validate_run_metrics(summary, total_demand=total_demand or 0, return_flags=True)
+    if eval_audit is not None and not eval_audit["invariance_pass"]:
+        is_valid = False
+        anomalies.append("EVALUATION_MUTATED_AGENT")
+    if eval_audit is not None:
+        errors = validation_data_errors({"summary": summary, "eval_audit": eval_audit})
+        if errors:
+            is_valid = False
+            anomalies.extend(errors)
     data_valid = is_valid and summary.get("is_valid", True)
     if not data_valid:
         overall_status = "INVALID"
@@ -529,10 +522,27 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     else:
         overall_status = "SUCCESS"
 
-    fingerprint = compute_run_fingerprint(cfg, model_path)
-    cohort_id = compute_cohort_fingerprint(cfg, model_path)
+    from src.evaluation.provenance import build_provenance
+    provenance = build_provenance(cfg, model_path)
+    fingerprint = provenance["run_fingerprint"]
+    cohort_id = provenance["cohort_fingerprint"]
 
+    viable, reasons = is_validation_viable({"summary": summary, "eval_audit": eval_audit})
     run_record: Dict[str, Any] = {
+        "validation_protocol_version": "stage04-schema4-v1",
+        "validation_viable": viable,
+        "validation_rejection_reasons": reasons,
+        "metric_schema_version": summary.get("metric_schema_version", "3.0.0"),
+        "eval_audit": eval_audit,
+        "schema_classification": "current" if summary.get("metric_schema_version") == "4.0.0" else "legacy",
+        "observation_window_duration": duration,
+        "scheduled_demand_in_window": summary.get("scheduled_demand_in_window"),
+        "demand_denominator": summary.get("demand_denominator"),
+        "demand_denominator_source": summary.get("demand_denominator_source"),
+        "accounting_valid": summary.get("accounting_valid"),
+        "tripinfo_required": summary.get("tripinfo_required"),
+        "tripinfo_reconciliation_status": summary.get("tripinfo_reconciliation_status"),
+        "measurement_errors": summary.get("measurement_errors", 0),
         "run_id": run_id,
         "scenario_name": cfg.scenario_name,
         "algorithm": cfg.algorithm,
@@ -540,10 +550,13 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         "training_seed": cfg.training_seed,
         "checkpoint_id": checkpoint_id,
         "checkpoint_path": model_path if model_path else None,
+        "provenance": provenance,
+        "fingerprint_schema": provenance["schema"],
         "fingerprint": fingerprint,
         "cohort_id": cohort_id,
         "decision_interval": effective_decision_interval,
         "min_green": effective_min_green,
+        "max_green": effective_max_green,
         "yellow_duration": effective_yellow_duration,
         "all_red_duration": effective_all_red_duration,
         "fixed_time_green": cfg.fixed_time_green,
@@ -594,10 +607,14 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(run_record, f, indent=2)
 
+    mw_val = run_record.get('tripinfo_mean_waiting_time')
+    if mw_val is None:
+        mw_val = run_record.get('mean_waiting_time')
+    mw_str = f"{mw_val:.2f}s" if mw_val is not None else "N/A"
     print(
         f"==> Status: {overall_status} | Time: {wall_clock:.2f}s | "
         f"Completed: {completed}/{total_demand} ({completion_rate:.1f}%) | "
-        f"Mean Wait: {run_record['tripinfo_mean_waiting_time']:.2f}s | "
+        f"Mean Wait: {mw_str} | "
         f"Mean Queue: {run_record['mean_queue_length']:.2f} | "
         f"Teleports: {run_record['teleport_count']}"
     )
@@ -613,11 +630,19 @@ def get_run_cohort_key(r: Dict[str, Any]) -> str:
     Crucially, this key DOES NOT vary with evaluation 'seed', allowing runs with different
     evaluation seeds under the same configuration/model to be aggregated together into a single cohort.
     """
+    if r.get("provenance"):
+        from src.evaluation.provenance import digest
+        p = r["provenance"]
+        return str(p.get("cohort_fingerprint")) + "|identity=" + digest({k:v for k,v in p.get("identity", {}).items() if k != "effective_config"}) + "|training=" + str(r.get("training_seed")) + "|schema=" + str(r.get("metric_schema_version"))
     if r.get("cohort_id"):
-        return str(r["cohort_id"])
+        return str(r["cohort_id"]) + "|schema=" + str(r.get("metric_schema_version", "3.0.0")) + "|code=" + str(r.get("code_hash", r.get("fingerprint", "unknown"))) + "|training=" + str(r.get("training_seed")) + "|protocol=" + str(r.get("validation_protocol_version", "legacy"))
     if r.get("cohort_key"):
-        return str(r["cohort_key"])
+        return str(r["cohort_key"]) + "|schema=" + str(r.get("metric_schema_version", "3.0.0")) + "|code=" + str(r.get("code_hash", r.get("fingerprint", "unknown"))) + "|training=" + str(r.get("training_seed")) + "|protocol=" + str(r.get("validation_protocol_version", "legacy"))
     parts = [
+        str(r.get("training_seed")),
+        str(r.get("code_hash", r.get("fingerprint", "unknown"))),
+        str(r.get("validation_protocol_version", "legacy")),
+        str(r.get("metric_schema_version", "3.0.0")),
         str(r.get("scenario_name") or ""),
         str(r.get("algorithm") or ""),
         str(r.get("checkpoint_id") or "no_ckpt"),
@@ -696,9 +721,14 @@ def aggregate_benchmark_statistics(
                 latest_run_order = max(run_order.get(id(r), 0) for r in runs)
 
                 cohort_stats: Dict[str, Any] = {
+                    "metric_schema_version": deduped_runs[-1].get("metric_schema_version", "3.0.0"),
+                    "schema_classification": "current" if deduped_runs[-1].get("metric_schema_version") == "4.0.0" else "legacy",
+                    "observation_window_duration": deduped_runs[-1].get("observation_window_duration"),
                     "run_count": len(deduped_runs),
                     "seeds": distinct_seeds,
                     "cohort_id": c_key,
+                    "provenance": deduped_runs[-1].get("provenance"),
+                    "training_seed": deduped_runs[-1].get("training_seed"),
                     "latest_run_order": latest_run_order,
                     "fingerprint": deduped_runs[-1].get("fingerprint"),
                     "checkpoint_id": deduped_runs[-1].get("checkpoint_id"),
@@ -707,7 +737,7 @@ def aggregate_benchmark_statistics(
                     "is_valid": True,
                 }
                 for key, _ in metrics_keys:
-                    vals = [float(r.get(key, 0.0)) for r in deduped_runs]
+                    vals = [float(r[key]) for r in deduped_runs if r.get(key) is not None]
                     if vals:
                         std_val = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
                         entry = {
@@ -715,12 +745,13 @@ def aggregate_benchmark_statistics(
                             "std": round(std_val, 2),
                             "min": round(float(np.min(vals)), 2),
                             "max": round(float(np.max(vals)), 2),
+                            "available": True,
                         }
                         if key in ("collision_count", "teleport_count"):
                             entry["sum"] = int(np.sum(vals))
                         cohort_stats[key] = entry
                     else:
-                        entry = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+                        entry = {"mean": None, "std": None, "min": None, "max": None, "available": False}
                         if key in ("collision_count", "teleport_count"):
                             entry["sum"] = 0
                         cohort_stats[key] = entry
@@ -768,9 +799,11 @@ def aggregate_benchmark_statistics(
                     c_id = cs["cohort_id"]
                     fp = cs.get("fingerprint")
                     label = f"{algo} (fp: {fp[:8]})" if fp else f"{algo} (cohort: {c_id[:8]})"
+                    label += " [schema " + cs["metric_schema_version"] + "; " + hashlib.sha256(c_id.encode()).hexdigest()[:12] + "]"
                     summary_stats[scen][label] = cs
 
         # 2. Compute improvements relative to baseline
+        from src.evaluation.provenance import comparison_identity
         baseline_stats = summary_stats[scen].get(baseline_algo)
         if baseline_stats and baseline_stats.get("is_valid", False):
             b_steps = baseline_stats.get("total_steps")
@@ -778,7 +811,10 @@ def aggregate_benchmark_statistics(
                 if algo_key == baseline_algo or not stats.get("is_valid", False):
                     continue
                 a_steps = stats.get("total_steps")
-                if b_steps and a_steps and b_steps != a_steps:
+                if (comparison_identity(stats.get("provenance")) != comparison_identity(baseline_stats.get("provenance"))
+                    or stats.get("metric_schema_version") != baseline_stats.get("metric_schema_version")
+                    or stats.get("observation_window_duration") != baseline_stats.get("observation_window_duration")
+                    or (b_steps and a_steps and b_steps != a_steps)):
                     stats["protocol_incompatible"] = True
                     stats["improvements_vs_baseline"] = {}
                     continue
@@ -787,6 +823,8 @@ def aggregate_benchmark_statistics(
                     if key in baseline_stats and key in stats:
                         b_mean = baseline_stats[key]["mean"]
                         a_mean = stats[key]["mean"]
+                        if b_mean is None or a_mean is None:
+                            continue
                         imp = compute_improvement(b_mean, a_mean, higher_is_better=higher_is_better)
                         improvements[f"{key}_improvement_pct"] = round(imp, 2)
                 stats["improvements_vs_baseline"] = improvements
@@ -847,10 +885,11 @@ def run_full_benchmark_matrix(
             print(f"[WARN] Failed to resume existing records: {e}")
 
     # Build set of already executed fingerprints
+    from src.evaluation.provenance import reusable_record
     executed_fingerprints = {
         r.get("fingerprint")
         for r in all_records
-        if r.get("is_valid", False) and r.get("status") == "SUCCESS" and r.get("fingerprint")
+        if reusable_record(r, r.get("fingerprint"))
     }
 
     total_tasks = len(scenarios) * len(algorithms) * len(seeds)

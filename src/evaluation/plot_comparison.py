@@ -6,11 +6,12 @@ Generates benchmark charts across Groups A, B, and C:
 - Group C: Reinforcement Learning Dynamics (Q-Learning reward, Epsilon decay, RL Convergence)
 """
 
-import json
 import os
-from typing import Any, Dict, List
+from typing import List
 import matplotlib.pyplot as plt
 import pandas as pd
+
+from src.evaluation.compare_algorithms import load_json
 
 
 def set_plot_style():
@@ -29,13 +30,6 @@ ALGO_COLORS = {
     "Max-Pressure": "#2ca02c",   # Forest Green
     "Q-Learning": "#ff7f0e",     # Amber Orange
 }
-
-
-def load_json(filepath: str) -> Dict[str, Any]:
-    if os.path.isfile(filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
 
 
 def plot_group_a_comparisons(
@@ -98,7 +92,7 @@ def plot_group_a_comparisons(
         stds = [scen_data[a]["total_completed_vehicles"]["std"] for a in active_algos]
         bars = ax.bar(active_algos, means, yerr=stds, capsize=5, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
         ax.bar_label(bars, padding=4, fmt="%.0f", fontsize=9, fontweight="bold")
-        ax.set_ylabel("Completed Vehicles (veh / hour)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Completed Vehicles (veh)", fontsize=11, fontweight="bold")
         ax.set_title(f"Throughput (Completed Vehicles) — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
         ax.grid(True, axis="y")
         plt.tight_layout()
@@ -114,7 +108,7 @@ def plot_group_a_comparisons(
         bars = ax.bar(active_algos, means, yerr=stds, capsize=5, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
         ax.bar_label(bars, padding=4, fmt="%.1fk s", fontsize=9, fontweight="bold")
         ax.set_ylabel("Total Time Loss (×1,000 seconds)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Total Network Time Loss — {scen.upper()} (TripInfo)", fontsize=12, fontweight="bold", pad=12)
+        ax.set_title(f"Completed Vehicles Total Time Loss — {scen.upper()} (TripInfo)", fontsize=12, fontweight="bold", pad=12)
         ax.grid(True, axis="y")
         plt.tight_layout()
         p4 = os.path.join(output_dir, f"{scen}_time_loss_comparison.png")

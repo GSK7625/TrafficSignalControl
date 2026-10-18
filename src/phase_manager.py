@@ -4,6 +4,7 @@ Ensures minimum green times, enforces safe yellow clearance intervals,
 and prevents abrupt phase transitions across traffic control algorithms.
 """
 
+import math
 from enum import Enum
 from typing import List, Optional
 
@@ -80,14 +81,15 @@ class SafePhaseManager:
         """
         if not green_phases:
             raise ValueError(f"green_phases cannot be empty for TLS '{tls_id}'")
-        if yellow_duration <= 0:
-            raise ValueError("yellow_duration must be positive")
-        if all_red_duration < 0:
-            raise ValueError("all_red_duration must be non-negative")
-        if min_green < 0:
-            raise ValueError("min_green must be non-negative")
-        if max_green is not None and max_green < min_green:
-            raise ValueError(f"max_green ({max_green}) cannot be less than min_green ({min_green})")
+        if not math.isfinite(yellow_duration) or yellow_duration <= 0:
+            raise ValueError("yellow_duration must be positive and finite")
+        if not math.isfinite(all_red_duration) or all_red_duration < 0:
+            raise ValueError("all_red_duration must be non-negative and finite")
+        if not math.isfinite(min_green) or min_green < 0:
+            raise ValueError("min_green must be non-negative and finite")
+        if max_green is not None:
+            if not math.isfinite(max_green) or max_green < min_green:
+                raise ValueError(f"max_green ({max_green}) must be finite and >= min_green ({min_green})")
         if initial_phase < 0 or initial_phase >= len(green_phases):
             raise IndexError(f"initial_phase {initial_phase} out of bounds [0, {len(green_phases)-1}]")
 
@@ -214,7 +216,7 @@ class SafePhaseManager:
         # If requesting to maintain the current phase:
         if target_phase_idx == self._current_phase:
             if self._state_type == PhaseState.GREEN:
-                # Anti-starvation / max-green: if max_green is exceeded and alternative phases exist,
+                # Max-green hold rejection: if max_green is exceeded and alternative phases exist,
                 # reject holding the phase to force serving other approaches
                 if (
                     self.max_green is not None

@@ -134,12 +134,18 @@ def generate_comparison_report(
                 scenario_warnings.append(f"- **{algo}**: Không có dữ liệu thực nghiệm (chưa hoàn thành hoặc bị lỗi).")
                 continue
 
-            wt = r.get("mean_waiting_time", 0.0)
-            wt_std = r.get("waiting_time_std", 0.0)
-            sys_d = r.get("system_mean_delay", 0.0)
-            sys_d_std = r.get("system_delay_std", 0.0)
-            ql = r.get("mean_queue_length", 0.0)
-            ql_std = r.get("queue_length_std", 0.0)
+            wt = r.get("mean_waiting_time")
+            wt_std = r.get("waiting_time_std")
+            wt_str = f"{wt:.2f} ± {wt_std:.2f}" if (wt is not None and wt_std is not None) else "N/A"
+
+            sys_d = r.get("system_mean_delay")
+            sys_d_std = r.get("system_delay_std")
+            sys_d_str = f"{sys_d:.2f} ± {sys_d_std:.2f}" if (sys_d is not None and sys_d_std is not None) else "N/A"
+
+            ql = r.get("mean_queue_length")
+            ql_std = r.get("queue_length_std")
+            ql_str = f"{ql:.2f} ± {ql_std:.2f}" if (ql is not None and ql_std is not None) else "N/A"
+
             tp = r.get("total_completed_vehicles", 0)
             cr = r.get("completion_rate_pct", 0.0)
             cr_str = f"{cr:.1f}%" if cr > 0 else "-"
@@ -159,15 +165,16 @@ def generate_comparison_report(
                 col_str = "0 / 0"
                 if cr < 98.0 and cr > 0:
                     status_badge = "⚠️ LOW_COMPLETION"
+                    sys_d_display = f"{sys_d:.2f}s" if sys_d is not None else "N/A"
                     scenario_warnings.append(
                         f"- **{algo}**: Tỷ lệ hoàn thành thấp ({cr:.1f}%). "
-                        f"Có hiện tượng nghẽn mạng ngoài cổng (System Delay {sys_d:.2f}s)."
+                        f"Có hiện tượng nghẽn mạng ngoài cổng (System Delay {sys_d_display})."
                     )
                 else:
                     status_badge = "✅ SAFE"
 
             lines.append(
-                f"| **{algo}** | {wt:.2f} ± {wt_std:.2f} | {sys_d:.2f} ± {sys_d_std:.2f} | {ql:.2f} ± {ql_std:.2f} | {tp} | {cr_str} | {col_str} | {status_badge} |"
+                f"| **{algo}** | {wt_str} | {sys_d_str} | {ql_str} | {tp} | {cr_str} | {col_str} | {status_badge} |"
             )
 
         lines.append("")

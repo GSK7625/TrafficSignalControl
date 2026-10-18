@@ -1,9 +1,10 @@
 """Simulation configuration module for RESCO datasets and SUMO/TraCI execution."""
 
 from dataclasses import dataclass
+import math
 import os
 import shutil
-from typing import Optional
+from typing import List, Optional
 
 try:
     import sumolib
@@ -43,22 +44,47 @@ class SimulationConfig:
     control_mode: str = "original"
     use_tripinfo: bool = False
     decision_interval: float = 1.0
+    target_tls_id: Optional[str] = None
+    controlled_tls_ids: Optional[List[str]] = None
 
     def __post_init__(self):
-        if self.step_length <= 0:
-            raise ValueError(f"step_length must be positive, got {self.step_length}")
-        if self.decision_interval <= 0 or self.decision_interval != self.decision_interval or self.decision_interval == float("inf"):
+        if not math.isfinite(self.step_length) or self.step_length <= 0:
+            raise ValueError(f"step_length must be positive and finite, got {self.step_length}")
+        if not math.isfinite(self.decision_interval) or self.decision_interval <= 0:
             raise ValueError(f"decision_interval must be positive and finite, got {self.decision_interval}")
-        if self.gui_delay < 0:
-            raise ValueError(f"gui_delay must be non-negative, got {self.gui_delay}")
-        if self.yellow_duration <= 0:
-            raise ValueError(f"yellow_duration must be positive, got {self.yellow_duration}")
-        if self.all_red_duration < 0:
-            raise ValueError(f"all_red_duration must be non-negative, got {self.all_red_duration}")
-        if self.min_green < 0:
-            raise ValueError(f"min_green must be non-negative, got {self.min_green}")
-        if self.max_green is not None and self.max_green < self.min_green:
-            raise ValueError(f"max_green ({self.max_green}) cannot be less than min_green ({self.min_green})")
+        if not math.isfinite(self.gui_delay) or self.gui_delay < 0:
+            raise ValueError(f"gui_delay must be non-negative and finite, got {self.gui_delay}")
+        if not math.isfinite(self.yellow_duration) or self.yellow_duration <= 0:
+            raise ValueError(f"yellow_duration must be positive and finite, got {self.yellow_duration}")
+        if not math.isfinite(self.all_red_duration) or self.all_red_duration < 0:
+            raise ValueError(f"all_red_duration must be non-negative and finite, got {self.all_red_duration}")
+        if not math.isfinite(self.min_green) or self.min_green < 0:
+            raise ValueError(f"min_green must be non-negative and finite, got {self.min_green}")
+        if self.max_green is not None:
+            if not math.isfinite(self.max_green) or self.max_green < self.min_green:
+                raise ValueError(f"max_green ({self.max_green}) must be finite and >= min_green ({self.min_green})")
+
+        # Step-divisibility policy (F06): reject non-integer multiples to prevent silent timing distortion
+        def _check_step_divisibility(name: str, val: float, step: float, tol: float = 1e-5) -> None:
+            if val is None or val <= 0:
+                return
+            ratio = val / step
+            if abs(ratio - round(ratio)) > tol:
+                raise ValueError(
+                    f"Configuration rejected: {name} ({val}s) is not an integer multiple of "
+                    f"step_length ({step}s). Exact step timing cannot be guaranteed without distorting durations."
+                )
+
+        if self.decision_interval < self.step_length:
+            raise ValueError(
+                f"decision_interval ({self.decision_interval}s) must be >= step_length ({self.step_length}s)"
+            )
+        _check_step_divisibility("decision_interval", self.decision_interval, self.step_length)
+        _check_step_divisibility("yellow_duration", self.yellow_duration, self.step_length)
+        _check_step_divisibility("all_red_duration", self.all_red_duration, self.step_length)
+        _check_step_divisibility("min_green", self.min_green, self.step_length)
+        if self.max_green is not None:
+            _check_step_divisibility("max_green", self.max_green, self.step_length)
 
         # Resolve paths
         self.scenario_dir = os.path.abspath(os.path.join(self.data_dir, self.dataset_name))
@@ -66,13 +92,9 @@ class SimulationConfig:
             raise ValueError(f"Dataset '{self.dataset_name}' not found under '{self.data_dir}'")
 
         if not self.sumocfg_path:
-            candidates = [
-                os.path.join(self.scenario_dir, f"{self.dataset_name}.sumocfg"),
-            ]
-            for c in candidates:
-                if os.path.isfile(c):
-                    self.sumocfg_path = os.path.abspath(c)
-                    break
+            candidate = os.path.join(self.scenario_dir, f"{self.dataset_name}.sumocfg")
+            if os.path.isfile(candidate):
+                self.sumocfg_path = os.path.abspath(candidate)
             if not self.sumocfg_path:
                 for f in os.listdir(self.scenario_dir):
                     if f.endswith(".sumocfg"):
@@ -127,6 +149,8 @@ def get_scenario_config(
     control_mode: str = "original",
     use_tripinfo: bool = False,
     decision_interval: float = 1.0,
+    target_tls_id: Optional[str] = None,
+    controlled_tls_ids: Optional[List[str]] = None,
     **kwargs,
 ) -> SimulationConfig:
     """Creates a SimulationConfig populated with metadata from the dataset inspection."""
@@ -142,12 +166,12 @@ def get_scenario_config(
         dataset_name=dataset_name,
         data_dir=data_dir,
         gui=gui,
-        gui_delay=kwargs.get("gui_delay", gui_delay),
+        gui_delay=gui_delay,
         step_length=step_length,
         yellow_duration=yellow_duration,
         all_red_duration=all_red_duration,
         min_green=min_green,
-        max_green=kwargs.get("max_green", max_green),
+        max_green=max_green,
         max_steps=max_steps,
         seed=seed,
         output_dir=output_dir,
@@ -157,6 +181,8 @@ def get_scenario_config(
         control_mode=control_mode,
         use_tripinfo=use_tripinfo,
         decision_interval=decision_interval,
+        target_tls_id=target_tls_id,
+        controlled_tls_ids=controlled_tls_ids,
     )
 
 
