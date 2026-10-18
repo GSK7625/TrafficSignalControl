@@ -1,12 +1,11 @@
-"""Unit tests for RL support components: StateDiscretizer, ObservationBuilder, and Reward functions."""
+"""Unit tests for RL support components: StateDiscretizer and Reward functions."""
 
 import numpy as np
 import pytest
 
 from src.controllers.base import ControlledLink, IntersectionObservation
 from src.rl.discretization import StateDiscretizer
-from src.rl.observations import ObservationBuilder
-from src.rl.rewards import NegativeAverageQueueReward
+from src.rl.rewards import NegativePressureReward
 
 
 @pytest.fixture
@@ -85,61 +84,18 @@ class TestStateDiscretizer:
         assert disc.discretize(sample_observation)[3] == 2
 
 
-class TestObservationBuilder:
-    """Test suite for continuous ObservationBuilder."""
-
-    def test_vector_dimension(self):
-        builder = ObservationBuilder(
-            incoming_lanes=["lane_1", "lane_2"],
-            num_green_phases=2,
-            min_green=5.0,
-        )
-        # N_in (2) + K (2) + 3 (time, transition, min_green_flag) = 7
-        assert builder.observation_dim == 7
-
-    def test_build_vector_values(self, sample_observation):
-        builder = ObservationBuilder(
-            incoming_lanes=["lane_N", "lane_E"],
-            num_green_phases=2,
-            min_green=5.0,
-            max_queue_scale=20.0,
-            max_time_scale=60.0,
-        )
-        vec = builder.build_vector(sample_observation)
-        assert isinstance(vec, np.ndarray)
-        assert len(vec) == 7
-
-        # Incoming lanes are sorted: ["lane_E", "lane_N"]
-        # lane_E queue: 8.0 / 20.0 = 0.40
-        # lane_N queue: 3.0 / 20.0 = 0.15
-        assert pytest.approx(vec[0], 1e-4) == 0.40
-        assert pytest.approx(vec[1], 1e-4) == 0.15
-
-        # One-hot phase: phase 0 is active -> [1.0, 0.0]
-        assert vec[2] == 1.0
-        assert vec[3] == 0.0
-
-        # Normalized time: 10.0 / 60.0
-        assert pytest.approx(vec[4], 1e-4) == 10.0 / 60.0
-
-        # In transition: False -> 0.0
-        assert vec[5] == 0.0
-
-        # Min green met: 10.0 >= 5.0 -> 1.0
-        assert vec[6] == 1.0
-
 
 class TestRewards:
     """Test suite for RL Reward functions."""
 
-    def test_negative_average_queue_reward(self):
-        reward_fn = NegativeAverageQueueReward(scale=1.0)
+    def test_negative_pressure_reward_unmapped(self):
+        reward_fn = NegativePressureReward(scale=1.0)
         # Step 1: queue sum = 4.0
         reward_fn.record_step({"l1": 2.0, "l2": 2.0})
         # Step 2: queue sum = 8.0
         reward_fn.record_step({"l1": 4.0, "l2": 4.0})
 
-        # Average queue = (4 + 8) / 2 = 6.0 -> Reward = -6.0
+        # Average queue/pressure = (4 + 8) / 2 = 6.0 -> Reward = -6.0
         r = reward_fn.calculate_reward()
         assert pytest.approx(r, 1e-6) == -6.0
 
@@ -147,8 +103,8 @@ class TestRewards:
         reward_fn.reset()
         assert reward_fn.calculate_reward() == 0.0
 
-    def test_negative_average_queue_reward_with_pending(self):
-        reward_fn = NegativeAverageQueueReward(scale=1.0, pending_weight=1.5)
+    def test_negative_pressure_reward_with_pending(self):
+        reward_fn = NegativePressureReward(scale=1.0, pending_weight=1.5)
         # Step 1: queue=2.0, pending=4 -> total penalty = 2.0 + 1.5 * 4 = 8.0
         reward_fn.record_step({"l1": 2.0}, pending_vehicles=4)
         # Step 2: queue=4.0, pending=0 -> total penalty = 4.0
@@ -156,6 +112,34 @@ class TestRewards:
         # Average penalty = (8.0 + 4.0) / 2 = 6.0 -> Reward = -6.0
         r = reward_fn.calculate_reward()
         assert pytest.approx(r, 1e-6) == -6.0
+
+    def test_negative_pressure_reward_with_controlled_links(self):
+        reward_fn = NegativePressureReward(scale=1.0)
+        links = [
+            ControlledLink(signal_index=0, from_lane="in_1", to_lane="out_1"),
+            ControlledLink(signal_index=1, from_lane="in_2", to_lane="out_2"),
+        ]
+        in_queues = {"in_1": 5.0, "in_2": 3.0}
+        out_queues = {"out_1": 2.0, "out_2": 1.0}
+
+        # Step 1: pressure = |5 - 2| + |3 - 1| = 3.0 + 2.0 = 5.0
+        reward_fn.record_step(
+            in_lane_queues=in_queues,
+            out_lane_queues=out_queues,
+            controlled_links=links,
+        )
+        assert pytest.approx(reward_fn.calculate_reward(), 1e-6) == -5.0
+
+        # Step 2: downstream blocked (out_1 has 10 vehicles)
+        reward_fn.reset()
+        blocked_out_queues = {"out_1": 10.0, "out_2": 1.0}
+        # pressure = |5 - 10| + |3 - 1| = 5.0 + 2.0 = 7.0 (heavily penalizes downstream spillback)
+        reward_fn.record_step(
+            in_lane_queues=in_queues,
+            out_lane_queues=blocked_out_queues,
+            controlled_links=links,
+        )
+        assert pytest.approx(reward_fn.calculate_reward(), 1e-6) == -7.0
 
 
 class TestQLearningEvaluation:
@@ -246,5 +230,11 @@ class TestQLearningEvaluation:
         # Exceeded max_green (>= 60.0): anti-starvation excludes current phase [1, 2]
         mgr.time_in_current_phase.return_value = 60.0
         assert TrafficSignalRLEnv.get_valid_actions(env) == [1, 2]
+
+    def test_env_save_run_details_default(self):
+        from src.rl.environment import TrafficSignalRLEnv
+        env = TrafficSignalRLEnv(scenario_name="cologne1")
+        assert env.save_run_details is False
+        assert env.config.save_run_details is False
 
 

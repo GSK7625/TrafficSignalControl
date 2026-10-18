@@ -60,6 +60,10 @@ class TestMetricsCollector:
         assert summary["total_completed_vehicles"] == 0
         assert summary["is_valid"] is True
         assert summary["status"] == "OK"
+        assert "core_metrics" in summary
+        assert summary["core_metrics"]["queue_length"]["mean_queue_length"] == 0.0
+        assert summary["core_metrics"]["waiting_time"]["mean_waiting_time"] is None
+        assert summary["core_metrics"]["throughput"]["throughput_vph"] == 0.0
 
     def test_record_step_with_mock_traci(self):
         collector = MetricsCollector(scenario_name="test_scen")
@@ -113,3 +117,27 @@ class TestMetricsCollector:
         data_abs = os.path.abspath("data")
         with pytest.raises(ValueError, match="Cannot save results into data directory"):
             collector.export_results(os.path.join(data_abs, "forbidden"))
+
+    def test_get_core_metrics(self):
+        collector = MetricsCollector(scenario_name="test_scen")
+        collector.step_records.append(
+            StepMetrics(
+                step=1,
+                sim_time=1.0,
+                running_vehicles=2,
+                queue_length=3,
+                waiting_time=4.5,
+                step_completed_vehicles=1,
+                cumulative_completed_vehicles=1,
+            )
+        )
+        core = collector.get_core_metrics()
+        assert "mean_waiting_time" in core
+        assert core["mean_queue_length"] == 3.0
+        assert core["max_queue_length"] == 3
+        assert core["total_completed_vehicles"] == 1
+        assert "throughput_vph" in core
+
+        summary = collector.get_summary()
+        assert "core_metrics" in summary
+        assert summary["core_metrics"]["queue_length"]["mean_queue_length"] == 3.0

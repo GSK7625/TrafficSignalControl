@@ -387,15 +387,107 @@ def plot_group_c_rl(
     return generated
 
 
-def generate_all_phase6_charts(output_dir: str = "results/figures") -> List[str]:
-    """Generates all required benchmark charts for Phase 6."""
+def plot_benchmark_dashboard(
+    summary_file: str = "results/evaluation/benchmark_summary.json",
+    output_dir: str = "results/figures",
+) -> List[str]:
+    """Generates a single comprehensive 2x2 Dashboard per scenario combining key comparison metrics."""
+    os.makedirs(output_dir, exist_ok=True)
+    set_plot_style()
+    data = load_json(summary_file)
+    if not data:
+        return []
+
+    generated = []
+    scenarios = [s for s in ["cologne1", "ingolstadt1"] if s in data]
+    algos_order = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
+
+    for scen in scenarios:
+        scen_data = data[scen]
+        active_algos = [a for a in algos_order if a in scen_data]
+        if not active_algos:
+            continue
+
+        colors = [ALGO_COLORS.get(a, "#333333") for a in active_algos]
+
+        fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=300)
+
+        # 1. Average Waiting Time
+        ax = axes[0, 0]
+        means = [scen_data[a].get("tripinfo_mean_waiting_time", {}).get("mean", scen_data[a].get("mean_waiting_time", {}).get("mean", 0.0)) for a in active_algos]
+        stds = [scen_data[a].get("tripinfo_mean_waiting_time", {}).get("std", scen_data[a].get("mean_waiting_time", {}).get("std", 0.0)) for a in active_algos]
+        bars = ax.bar(active_algos, means, yerr=stds, capsize=4, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
+        ax.bar_label(bars, padding=3, fmt="%.1fs", fontsize=8, fontweight="bold")
+        ax.set_ylabel("Waiting Time (s)", fontsize=10, fontweight="bold")
+        ax.set_title("Average Waiting Time", fontsize=11, fontweight="bold")
+        ax.grid(True, axis="y")
+
+        # 2. Average Queue Length
+        ax = axes[0, 1]
+        means = [scen_data[a].get("mean_queue_length", {}).get("mean", 0.0) for a in active_algos]
+        stds = [scen_data[a].get("mean_queue_length", {}).get("std", 0.0) for a in active_algos]
+        bars = ax.bar(active_algos, means, yerr=stds, capsize=4, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
+        ax.bar_label(bars, padding=3, fmt="%.1f", fontsize=8, fontweight="bold")
+        ax.set_ylabel("Queue Length (veh)", fontsize=10, fontweight="bold")
+        ax.set_title("Average Queue Length", fontsize=11, fontweight="bold")
+        ax.grid(True, axis="y")
+
+        # 3. Total Completed Vehicles
+        ax = axes[1, 0]
+        means = [scen_data[a].get("total_completed_vehicles", {}).get("mean", 0.0) for a in active_algos]
+        stds = [scen_data[a].get("total_completed_vehicles", {}).get("std", 0.0) for a in active_algos]
+        bars = ax.bar(active_algos, means, yerr=stds, capsize=4, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
+        ax.bar_label(bars, padding=3, fmt="%.0f", fontsize=8, fontweight="bold")
+        ax.set_ylabel("Completed Vehicles", fontsize=10, fontweight="bold")
+        ax.set_title("Total Completed Vehicles", fontsize=11, fontweight="bold")
+        ax.grid(True, axis="y")
+
+        # 4. Relative Improvement vs Fixed-Time
+        ax = axes[1, 1]
+        compared_algos = [a for a in active_algos if a != "Fixed-Time"]
+        if compared_algos:
+            c_colors = [ALGO_COLORS.get(a, "#333333") for a in compared_algos]
+            imps = [
+                scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0)
+                for a in compared_algos
+            ]
+            bars = ax.bar(compared_algos, imps, color=c_colors, alpha=0.9, edgecolor="black", linewidth=0.6)
+            ax.bar_label(bars, padding=3, fmt="%+.1f%%", fontsize=8, fontweight="bold")
+            ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
+            ax.set_ylabel("Improvement (%)", fontsize=10, fontweight="bold")
+            ax.set_title("Waiting Time Improvement vs Fixed-Time", fontsize=11, fontweight="bold")
+            ax.grid(True, axis="y")
+
+        fig.suptitle(f"Benchmark Performance Dashboard — {scen.upper()}", fontsize=14, fontweight="bold", y=0.98)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        out_p = os.path.join(output_dir, f"{scen}_benchmark_dashboard.png")
+        plt.savefig(out_p)
+        plt.close(fig)
+        generated.append(out_p)
+
+    return generated
+
+
+def generate_all_phase6_charts(output_dir: str = "results/figures", dashboard_only: bool = False) -> List[str]:
+    """Generates benchmark charts. If dashboard_only is True, creates consolidated dashboards."""
+    if dashboard_only:
+        dashboards = plot_benchmark_dashboard(output_dir=output_dir)
+        print(f"\n[INFO] Generated {len(dashboards)} consolidated dashboards in '{output_dir}'.")
+        return dashboards
+
     all_charts = []
     all_charts.extend(plot_group_a_comparisons(output_dir=output_dir))
     all_charts.extend(plot_group_b_dynamics(output_dir=output_dir))
     all_charts.extend(plot_group_c_rl(output_dir=output_dir))
+    all_charts.extend(plot_benchmark_dashboard(output_dir=output_dir))
     print(f"\n[INFO] Generated {len(all_charts)} publication-quality charts in '{output_dir}'.")
     return all_charts
 
 
 if __name__ == "__main__":
-    generate_all_phase6_charts()
+    import argparse
+    parser = argparse.ArgumentParser(description="Plot Benchmark Comparison Charts")
+    parser.add_argument("--output-dir", type=str, default="results/figures")
+    parser.add_argument("--dashboard-only", action="store_true", help="Only generate consolidated dashboard figures")
+    args = parser.parse_args()
+    generate_all_phase6_charts(output_dir=args.output_dir, dashboard_only=args.dashboard_only)

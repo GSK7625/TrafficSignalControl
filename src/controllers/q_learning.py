@@ -11,14 +11,7 @@ from src.rl.discretization import StateDiscretizer
 
 
 class QLearningController(BaseTrafficController):
-    """Tác tử Tabular Q-Learning dùng cho điều khiển tín hiệu đèn giao thông.
-
-    Công thức cập nhật:
-        Q(s, a) <- Q(s, a) + alpha * [r + gamma * max_{a'} Q(s', a') - Q(s, a)]
-        Đối với các trạng thái kết thúc (done=True):
-        Q(s, a) <- Q(s, a) + alpha * [r - Q(s, a)]
-    """
-
+    """Tabular Q-Learning agent for traffic signal control."""
 
     def __init__(
         self,
@@ -53,7 +46,7 @@ class QLearningController(BaseTrafficController):
         self.epsilon = float(epsilon)
         self.epsilon_min = float(epsilon_min)
         self.epsilon_decay = float(epsilon_decay)
-        self.discretizer = discretizer if discretizer is not None else StateDiscretizer()
+        self.discretizer = discretizer or StateDiscretizer()
         self.target_tls_id = target_tls_id
         self.decision_interval = float(decision_interval)
         self.min_green = float(min_green)
@@ -66,13 +59,9 @@ class QLearningController(BaseTrafficController):
         if seed is not None:
             self.set_seed(seed)
 
-        # Q-table: dictionary mapping discrete state tuple -> np.ndarray of shape (num_actions,)
-        self.q_table: Dict[Tuple[int, int, int, int], np.ndarray] = {}
-
-        # Tracking metrics
-        self.total_updates: int = 0
+        self.q_table: Dict[Tuple[int, ...], np.ndarray] = {}
         self.action_counts: np.ndarray = np.zeros(self.num_actions, dtype=int)
-        self.episode_rewards: List[float] = []
+        self.total_updates: int = 0
 
     def set_seed(self, seed: int) -> None:
         """Sets random seed for reproducible exploration."""
@@ -81,160 +70,88 @@ class QLearningController(BaseTrafficController):
 
     def reset(self) -> None:
         """Resets transient execution state."""
-        self.history.clear()
+        pass
 
-    def get_q_values(self, state: Tuple[int, int, int, int]) -> np.ndarray:
+    def get_q_values(self, state: Tuple[int, ...]) -> np.ndarray:
         """Retrieves or initializes Q-values for a given discrete state."""
         if state not in self.q_table:
-            if getattr(self, "eval_mode", False):
-                return np.zeros(self.num_actions, dtype=np.float64)
             self.q_table[state] = np.zeros(self.num_actions, dtype=np.float64)
         return self.q_table[state]
 
     def select_action_for_state(
         self,
-        state: Tuple[int, int, int, int],
+        state: Tuple[int, ...],
         valid_actions: Optional[Sequence[int]] = None,
         current_phase: Optional[int] = None,
     ) -> int:
-        """Selects an action using epsilon-greedy exploration respecting valid actions.
-
-        Args:
-            state: Discrete state tuple.
-            valid_actions: Optional list of eligible actions. If None, all actions are valid.
-            current_phase: Optional active green phase index for anti-chatter tie breaking.
-
-        Returns:
-            Selected action index.
-        """
-        if valid_actions is None or len(valid_actions) == 0:
+        """Selects action via epsilon-greedy strategy with anti-chatter tie breaking."""
+        candidates = [a for a in valid_actions if 0 <= a < self.num_actions] if valid_actions else list(range(self.num_actions))
+        if not candidates:
             candidates = list(range(self.num_actions))
-        else:
-            candidates = [a for a in valid_actions if 0 <= a < self.num_actions]
-            if not candidates:
-                candidates = list(range(self.num_actions))
 
-        # In evaluation mode or when random check fails, exploit argmax Q
-        if self.eval_mode or random.random() >= self.epsilon:
+        if not self.eval_mode and random.random() < self.epsilon:
+            chosen = random.choice(candidates)
+        else:
             q_vals = self.get_q_values(state)
-            candidate_q = [q_vals[a] for a in candidates]
-            max_q = max(candidate_q)
-            # Break ties among candidates achieving maximum Q
-            best_candidates = [
-                a for a, q in zip(candidates, candidate_q) if abs(q - max_q) <= 1e-8
-            ]
-            # Anti-chatter inertia: if current phase is in best candidates, maintain current phase
-            if current_phase is not None and current_phase in best_candidates:
-                chosen_action = current_phase
-            elif self.eval_mode or self.tie_break_strategy == "first":
-                chosen_action = min(best_candidates)
+            cand_q = [q_vals[a] for a in candidates]
+            max_q = max(cand_q)
+            best = [a for a, q in zip(candidates, cand_q) if abs(q - max_q) <= 1e-8]
+            if current_phase is not None and current_phase in best:
+                chosen = current_phase
+            elif self.tie_break_strategy == "random" and not self.eval_mode:
+                chosen = random.choice(best)
             else:
-                chosen_action = random.choice(best_candidates)
-        else:
-            # Explore: uniform random selection among valid actions
-            chosen_action = random.choice(candidates)
+                chosen = best[0]
 
-        self.action_counts[chosen_action] += 1
-        return chosen_action
+        self.action_counts[chosen] += 1
+        return chosen
 
     def update(
         self,
-        state: Tuple[int, int, int, int],
+        state: Tuple[int, ...],
         action: int,
         reward: float,
-        next_state: Tuple[int, int, int, int],
+        next_state: Tuple[int, ...],
         done: bool = False,
         valid_next_actions: Optional[Sequence[int]] = None,
         terminated: Optional[bool] = None,
         truncated: Optional[bool] = None,
     ) -> float:
-        """Applies Bellman Q-learning update.
-
-        Args:
-            state: Current discrete state.
-            action: Action taken.
-            reward: Immediate scalar reward.
-            next_state: Next discrete state.
-            done: Whether episode terminated or truncated (for backward compatibility).
-            valid_next_actions: Valid actions available in next_state.
-            terminated: True if episode ended at true terminal absorbing state.
-            truncated: True if episode ended due to time limit / horizon.
-
-        Returns:
-            Absolute Bellman TD error.
-        """
+        """Applies Bellman Q-learning update."""
         if self.eval_mode:
             return 0.0
 
-        q_current = self.get_q_values(state)
+        is_term = terminated if terminated is not None else done
+        q_curr = self.get_q_values(state)
 
-        # True terminal state cuts off bootstrapping; time-limit truncation continues bootstrapping
-        is_true_terminal = terminated if terminated is not None else done
-
-        if is_true_terminal:
+        if is_term:
             target = float(reward)
         else:
             next_q = self.get_q_values(next_state)
-            if valid_next_actions is not None and len(valid_next_actions) > 0:
-                valid_candidates = [a for a in valid_next_actions if 0 <= a < self.num_actions]
-                max_next_q = max([next_q[a] for a in valid_candidates]) if valid_candidates else 0.0
-            else:
-                max_next_q = float(np.max(next_q))
+            cand = [a for a in valid_next_actions if 0 <= a < self.num_actions] if valid_next_actions else range(self.num_actions)
+            target = float(reward + self.gamma * max(next_q[a] for a in cand))
 
-            target = float(reward + self.gamma * max_next_q)
-
-        td_error = target - q_current[action]
-        q_current[action] += self.learning_rate * td_error
+        td_error = target - q_curr[action]
+        q_curr[action] += self.learning_rate * td_error
         self.total_updates += 1
-
         return abs(td_error)
 
     def decay_epsilon(self) -> float:
-        """Decays exploration rate epsilon by decay factor down to epsilon_min."""
+        """Decays exploration rate down to epsilon_min."""
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         return self.epsilon
 
     def select_action(
         self, observations: Dict[str, IntersectionObservation]
     ) -> Dict[str, int]:
-        """BaseTrafficController interface method: maps observations to target actions."""
+        """Maps observations to target phase actions."""
         actions: Dict[str, int] = {}
         for tls_id, obs in observations.items():
-            if self.target_tls_id is not None and tls_id != self.target_tls_id:
+            if self.target_tls_id and tls_id != self.target_tls_id:
                 continue
-
             state = self.discretizer.discretize(obs)
-
-            # Determine valid actions from observation constraints
-            if obs.is_in_transition:
-                valid_actions = [obs.current_phase]
-            elif obs.time_in_phase < self.discretizer.min_green:
-                valid_actions = [obs.current_phase]
-            elif (
-                getattr(self, "max_green", None) is not None
-                and obs.time_in_phase >= self.max_green
-                and len(obs.green_phases) > 1
-            ):
-                # Anti-starvation guard: force switching away from current phase
-                valid_actions = [a for a in range(len(obs.green_phases)) if a != obs.current_phase]
-            else:
-                valid_actions = list(range(len(obs.green_phases)))
-
-            act = self.select_action_for_state(
-                state, valid_actions=valid_actions, current_phase=obs.current_phase
-            )
-            actions[tls_id] = act
-
-            self.log_decision(
-                tls_id=tls_id,
-                sim_time=obs.sim_time,
-                step=obs.step,
-                action=act,
-                details={
-                    "state": state,
-                    "epsilon": self.epsilon,
-                    "eval_mode": self.eval_mode,
-                },
+            actions[tls_id] = self.select_action_for_state(
+                state, current_phase=obs.current_phase
             )
         return actions
 
@@ -257,21 +174,20 @@ class QLearningController(BaseTrafficController):
             "all_red_duration": self.all_red_duration,
             "tie_break_strategy": self.tie_break_strategy,
             "num_states_in_table": len(self.q_table),
-            "discretizer_config": self.discretizer.get_config(),
+            "discretizer_config": self.discretizer.get_config() if hasattr(self.discretizer, "get_config") else {},
         }
 
     def save(self, filepath: str) -> None:
         """Saves Q-table and metadata to disk."""
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
-        # Convert Q-table tuple keys to string keys for JSON serialization, or use pickle
-        serializable_data = {
+        data = {
             "config": self.get_config(),
             "q_table": {str(k): v.tolist() for k, v in self.q_table.items()},
             "action_counts": self.action_counts.tolist(),
             "total_updates": self.total_updates,
         }
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(serializable_data, f, indent=2)
+            json.dump(data, f, indent=2)
 
     def load(self, filepath: str) -> None:
         """Loads Q-table and configuration from disk."""
@@ -281,23 +197,18 @@ class QLearningController(BaseTrafficController):
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        cfg = data["config"]
-        self.num_actions = cfg["num_actions"]
-        self.learning_rate = cfg["learning_rate"]
-        self.gamma = cfg["gamma"]
-        self.epsilon = cfg["epsilon"]
-        self.epsilon_min = cfg["epsilon_min"]
-        self.epsilon_decay = cfg["epsilon_decay"]
-        self.decision_interval = cfg.get("decision_interval", getattr(self, "decision_interval", 5.0))
-        self.min_green = float(cfg.get("min_green", getattr(self, "min_green", 5.0)))
-        # Legacy missing field uses the platform default; explicit null disables it.
-        self.max_green = (float(cfg["max_green"]) if cfg["max_green"] is not None else None) if "max_green" in cfg else 60.0
-        self.yellow_duration = float(cfg.get("yellow_duration", getattr(self, "yellow_duration", 3.0)))
-        self.all_red_duration = float(cfg.get("all_red_duration", getattr(self, "all_red_duration", 1.0)))
-        self.tie_break_strategy = cfg.get("tie_break_strategy", getattr(self, "tie_break_strategy", "first"))
+        cfg = data.get("config", {})
+        for attr in (
+            "num_actions", "learning_rate", "gamma", "epsilon", "epsilon_min",
+            "epsilon_decay", "decision_interval", "min_green", "yellow_duration",
+            "all_red_duration", "tie_break_strategy", "target_tls_id"
+        ):
+            if attr in cfg and cfg[attr] is not None:
+                setattr(self, attr, type(getattr(self, attr, cfg[attr]))(cfg[attr]))
+        if "max_green" in cfg:
+            self.max_green = float(cfg["max_green"]) if cfg["max_green"] is not None else None
 
-        # Restore discretizer if config present
-        if "discretizer_config" in cfg:
+        if "discretizer_config" in cfg and hasattr(self, "discretizer"):
             d_cfg = cfg["discretizer_config"]
             self.discretizer = StateDiscretizer(
                 min_green=d_cfg.get("min_green", 5.0),
@@ -306,15 +217,9 @@ class QLearningController(BaseTrafficController):
                 waiting_queue_thresholds=tuple(d_cfg.get("waiting_thresholds", [1.0, 6.0, 15.0])),
             )
 
-        if "target_tls_id" in cfg and self.target_tls_id is None:
-            self.target_tls_id = cfg["target_tls_id"]
-
-        # Restore Q-table
         self.q_table.clear()
-        for k_str, v_list in data["q_table"].items():
-            # Parse tuple from string representation, e.g. "(0, 1, 2, 1)"
-            cleaned = k_str.strip("() ")
-            k_tuple = tuple(int(x.strip()) for x in cleaned.split(","))
+        for k_str, v_list in data.get("q_table", {}).items():
+            k_tuple = tuple(int(x.strip()) for x in k_str.strip("() ").split(","))
             self.q_table[k_tuple] = np.array(v_list, dtype=np.float64)
 
         if "action_counts" in data:

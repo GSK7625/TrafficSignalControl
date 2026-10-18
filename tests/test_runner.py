@@ -89,3 +89,32 @@ class TestSimulationRunnerSetup:
         with pytest.raises(ValueError, match="exceeds max_green"):
             SimulationRunner(cfg, controller=incompatible_ctrl)
 
+    def test_runner_selects_libsumo_when_headless(self):
+        import importlib.util
+        if importlib.util.find_spec("libsumo") is None:
+            pytest.skip("libsumo is not installed in this environment")
+
+        cfg = SimulationConfig(dataset_name="cologne1", gui=False, use_libsumo=True)
+        runner = SimulationRunner(cfg)
+        assert runner.is_libsumo is True
+        assert runner.traci.__name__ == "libsumo"
+
+    def test_runner_forces_traci_when_gui(self):
+        cfg = SimulationConfig(dataset_name="cologne1", gui=True)
+        runner = SimulationRunner(cfg)
+        assert runner.is_libsumo is False
+        assert runner.traci.__name__ == "traci"
+
+    def test_runner_forces_traci_when_no_libsumo_requested(self):
+        cfg = SimulationConfig(dataset_name="cologne1", gui=False, use_libsumo=False)
+        runner = SimulationRunner(cfg)
+        assert runner.is_libsumo is False
+        assert runner.traci.__name__ == "traci"
+
+    def test_save_run_details_default_is_false(self):
+        cfg = SimulationConfig(dataset_name="cologne1")
+        assert cfg.save_run_details is False
+        runner = SimulationRunner(cfg)
+        assert runner.config.save_run_details is False
+
+

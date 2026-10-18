@@ -2,10 +2,10 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![SUMO](https://img.shields.io/badge/Eclipse%20SUMO-1.28.0+-00599C?style=flat)](https://eclipse.dev/sumo/)
-[![Tests](https://img.shields.io/badge/pytest-75%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
+[![Tests](https://img.shields.io/badge/pytest-80%20passed-brightgreen?style=flat&logo=pytest)](file:///tests)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thuật toán điều khiển tín hiệu đèn giao thông thích ứng (**Adaptive Traffic Signal Control - ATSC**) trên môi trường **Eclipse SUMO** (Simulation of Urban MObility) thông qua giao thức **TraCI**, tích hợp các kịch bản chuẩn thuộc bộ dữ liệu **RESCO** (Reinforcement Learning Benchmarks for Traffic Signal Control).
+Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thuật toán điều khiển tín hiệu đèn giao thông thích ứng (**Adaptive Traffic Signal Control - ATSC**) trên môi trường **Eclipse SUMO** (Simulation of Urban MObility) thông qua giao thức **TraCI** / **libsumo**, tích hợp các kịch bản chuẩn thuộc bộ dữ liệu **RESCO** (Reinforcement Learning Benchmarks for Traffic Signal Control).
 
 ---
 
@@ -35,12 +35,13 @@ Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thu�
 ## 1. Giới thiệu & Tính năng nổi bật
 
 - **Tích hợp 3 thuật toán chuẩn mực**: Hỗ trợ 2 phương pháp kinh điển (**Fixed-Time 30s**, **Max-Pressure Heuristic**) và phương pháp Học tăng cường (**Tabular Q-Learning**).
-- **Hỗ trợ giao diện đồ họa SUMO-GUI trực quan**: Chuyển đổi linh hoạt giữa chế độ dòng lệnh Headless tốc độ cao (benchmark, training) và chế độ trực quan **SUMO-GUI** (`--gui`, `--gui-delay`) để xem từng xe di chuyển, chuyển làn và chu kỳ đèn giao thông theo thời gian thực.
-- **Bộ quản lý an toàn pha đèn (Safe Phase Manager)**: Tự động chèn pha vàng dọn nút (*Yellow clearance transition*) và pha đỏ toàn phần (*All-red clearance*), đảm bảo thời gian đèn xanh tối thiểu (`min_green >= 5s`) và tối đa (`max_green <= 60s`), ngăn ngừa chuyển pha đột ngột gây tai nạn trong mô phỏng.
+- **Hỗ trợ linh hoạt libsumo và SUMO-GUI**: Tự động kích hoạt backend **libsumo** in-process tốc độ cao khi chạy headless để tối ưu hiệu năng tính toán, và chuyển tiếp mượt mà sang **SUMO-GUI** (`--gui`, `--gui-delay`) để xem trực quan từng phương tiện, chuyển làn và chu kỳ đèn giao thông theo thời gian thực.
+- **Bộ quản lý an toàn pha đèn (Safe Phase Manager)**: Tự động chèn pha vàng dọn nút (*Yellow clearance transition*) và pha đỏ toàn phần (*All-red clearance*), đảm bảo thời gian đèn xanh tối thiểu (`min_green >= 5s`) và tối đa (`max_green <= 60s`), ngăn ngừa chuyển pha đột ngột gây xung đột giao thông.
 - **Phân tách nhịp điều khiển (Decoupled Cadence)**: Tách biệt nhịp quyết định của baseline (1.0s để tránh hiện tượng dãn chu kỳ) và agent RL (5.0s theo chuẩn RESCO).
+- **Phần thưởng áp lực hàng đợi thông minh (Pressure-based Rewards)**: Hàm thưởng `NegativePressureReward` đo lường chênh lệch áp lực giữa các làn vào và làn ra, trừng phạt hiện tượng dồn ứ hạ lưu (*downstream spillback*).
+- **Kiểm định tính bất biến & Nguồn gốc thử nghiệm (Provenance & Eval Audit)**: Cơ chế fingerprinting định danh cấu hình thực nghiệm, băm SHA-256 bảng $Q(s, a)$ trước và sau evaluation nhằm chứng minh agent RL ở chế độ thuần greedy ($\varepsilon=0$) không bị rò rỉ cập nhật trọng số trong quá trình đánh giá.
 - **Thu thập dữ liệu thực tế chính xác (Ground-truth Tripinfo)**: Phân tích trực tiếp tệp `--tripinfo-output` chuẩn của SUMO để đo lường thời gian trễ, thời gian chờ, quãng đường di chuyển và vận tốc thực tế của từng phương tiện.
-- **Hệ thống đánh giá khoa học & Tự động hóa**: Khung thực nghiệm ma trận đa kịch bản (`cologne1`, `ingolstadt1`), đa thuật toán, đa seed (`42`, `101`, `2024`), thống kê mẫu không chệch ($ddof=1$) và tự động sinh các báo cáo Markdown cùng biểu đồ so sánh.
-- **Chất lượng mã nguồn & Kiểm thử toàn diện**: Bộ kiểm thử tự động với 75 unit tests bao quát các thành phần logic bộ điều khiển, quản lý an toàn chuyển pha, hạch toán chỉ số, nạp cấu hình và tích hợp mô phỏng TraCI.
+- **Chất lượng mã nguồn & Kiểm thử toàn diện**: Bộ kiểm thử tự động với **80 unit tests** bao quát các thành phần logic bộ điều khiển, quản lý an toàn chuyển pha, hạch toán chỉ số, nạp cấu hình và tích hợp mô phỏng TraCI / libsumo.
 
 ---
 
@@ -48,11 +49,11 @@ Nền tảng mô phỏng và đánh giá đối chuẩn (Benchmarking) các thu�
 
 ```mermaid
 flowchart TD
-    subgraph SUMO_Environment ["Môi trường mô phỏng SUMO & TraCI"]
+    subgraph SUMO_Environment ["Môi trường mô phỏng SUMO & TraCI / libsumo"]
         NET[".net.xml (Topology)"]
         ROU[".rou.xml (Demand)"]
-        SUMO["SUMO Engine (Headless / GUI)"]
-        TRACI["Giao thức TraCI"]
+        SUMO["SUMO Engine (Headless / GUI / libsumo)"]
+        TRACI["Giao thức TraCI / libsumo"]
         NET --> SUMO
         ROU --> SUMO
         SUMO <--> TRACI
@@ -73,8 +74,14 @@ flowchart TD
         QL["Tabular Q-Learning"]
     end
 
+    subgraph Evaluation_Audit ["Kiểm định & Xác thực (Audit & Provenance)"]
+        AUDIT["EvalAudit\n(Q-Table Invariance, SHA-256 Digest)"]
+        PROV["Provenance\n(Metadata Fingerprinting, Reproducibility)"]
+    end
+
     PM <--> Controllers
     Controllers -->|Action: Chọn Green Phase| PM
+    Controllers <--> Evaluation_Audit
 
     subgraph Outputs ["Dữ liệu xuất & Đánh giá"]
         CSV["benchmark_runs.csv / step_metrics.csv"]
@@ -119,20 +126,27 @@ Dự án tinh gọn và chuẩn hóa **3 kịch bản trọng tâm** từ bộ d
 ```text
 TrafficSignalControl/
 ├── configs/                     # Cấu hình huấn luyện và thử nghiệm (YAML)
+│   ├── README.md                # Tài liệu hướng dẫn cấu hình & tham số
 │   ├── experiments.yaml         # Cấu hình kịch bản và tham số benchmark đối chuẩn
 │   └── q_learning.yaml          # Cấu hình siêu tham số và rời rạc hóa Tabular Q-Learning
 ├── data/                        # Tập dữ liệu RESCO SUMO (.net.xml, .rou.xml, .sumocfg)
+│   ├── README.md                # Tài liệu hướng dẫn bộ dữ liệu giao thông
 │   ├── cologne1/                # Kịch bản Cologne 1 nút giao (8 pha xanh, 2.015 xe)
 │   ├── cologne3/                # Kịch bản Cologne 3 nút giao liên tiếp (4.494 xe)
 │   ├── ingolstadt1/             # Kịch bản Ingolstadt 1 nút giao (3 pha xanh, 1.716 xe)
 │   └── SOURCES.md               # Tài liệu bản quyền và nguồn dữ liệu RESCO
+├── docs/                        # Tài liệu hướng dẫn kỹ thuật & tài liệu bổ trợ
+│   └── README.md                # Cổng thông tin tài liệu dự án
 ├── models/                      # Thư mục lưu checkpoint mô hình RL đã huấn luyện (.json)
+│   ├── README.md                # Tài liệu đặc tả checkpoint & schema Q-table
 │   └── q_learning/              # Checkpoints Tabular Q-Learning (*_best.json, *_final.json)
 ├── results/                     # Kết quả thực nghiệm và trực quan hóa (tự động sinh)
+│   ├── README.md                # Tài liệu giải thích kết quả, chỉ số & biểu đồ
 │   ├── evaluation/              # Dữ liệu đối chuẩn (benchmark_runs.csv, benchmark_summary.json, ...)
 │   ├── figures/                 # Biểu đồ so sánh chất lượng học thuật (.png)
 │   └── training/                # Log quá trình huấn luyện RL (JSON log)
 ├── src/                         # Mã nguồn chính của nền tảng
+│   ├── README.md                # Tài liệu kiến trúc mã nguồn & API
 │   ├── controllers/             # Các bộ điều khiển tín hiệu đèn giao thông
 │   │   ├── base.py              # Lớp BaseTrafficController trừu tượng
 │   │   ├── fixed_time.py        # Bộ điều khiển Fixed-Time 30s
@@ -140,26 +154,46 @@ TrafficSignalControl/
 │   │   └── q_learning.py        # Bộ điều khiển Tabular Q-Learning
 │   ├── evaluation/              # Module đánh giá & đối chuẩn benchmark
 │   │   ├── compare_algorithms.py# Tổng hợp kết quả & xuất báo cáo Markdown/JSON
+│   │   ├── eval_audit.py        # Kiểm toán bất biến bảng Q-table (SHA-256 digest)
 │   │   ├── evaluate_rl.py       # Đánh giá agent RL độc lập ở chế độ greedy
 │   │   ├── experiment_runner.py # Trình thực thi ma trận benchmark đa seed
-│   │   └── plot_comparison.py   # Bộ sinh biểu đồ trực quan hóa học thuật
+│   │   ├── plot_comparison.py   # Bộ sinh biểu đồ trực quan hóa học thuật
+│   │   └── provenance.py        # Định danh cấu hình & metadata tái lập thực nghiệm
 │   ├── rl/                      # Thành phần môi trường Học tăng cường
 │   │   ├── discretization.py    # Rời rạc hóa không gian trạng thái
-│   │   ├── environment.py       # Môi trường Gymnasium-compatible RL Env tích hợp TraCI
+│   │   ├── environment.py       # Môi trường Gymnasium-compatible RL Env (TraCI/libsumo)
 │   │   ├── observations.py      # Bộ trích xuất và chuẩn hóa vector quan sát
-│   │   └── rewards.py           # Các hàm phần thưởng giao thông (Negative Queue Reward)
+│   │   └── rewards.py           # Các hàm phần thưởng giao thông (Pressure & Queue Reward)
 │   ├── training/                # Pipeline huấn luyện RL
 │   │   └── train_q_learning.py  # Huấn luyện Tabular Q-Learning kèm validation định kỳ
 │   ├── config.py                # Nạp và xác thực cấu hình mô phỏng & an toàn
 │   ├── data_inspector.py        # Phân tích cú pháp mạng và luồng xe RESCO trong cửa sổ
 │   ├── metrics.py               # Thu thập chỉ số và phân tích tripinfo SUMO
 │   ├── phase_manager.py         # Quản lý an toàn chuyển pha đèn giao thông (SafePhaseManager)
-│   └── runner.py                # Điều phối vòng lặp mô phỏng SUMO/TraCI
-├── tests/                       # Toàn bộ bộ kiểm thử tự động (75 unit tests)
+│   └── runner.py                # Điều phối vòng lặp mô phỏng SUMO (libsumo/TraCI)
+├── tests/                       # Toàn bộ bộ kiểm thử tự động (80 unit tests)
+│   ├── README.md                # Tài liệu hướng dẫn kiểm thử tự động
+│   ├── test_compare_algorithms.py
+│   ├── test_config_and_inspector.py
+│   ├── test_controllers.py
+│   ├── test_evaluation_runner.py
+│   ├── test_metrics.py
+│   ├── test_phase_manager.py
+│   ├── test_rl_components.py
+│   └── test_runner.py
 ├── main.py                      # Điểm vào chính (CLI) của ứng dụng
 ├── requirements.txt             # Danh sách thư viện Python phụ thuộc
-└── README.md                    # Tài liệu hướng dẫn sử dụng dự án
+└── README.md                    # Tài liệu hướng dẫn tổng quan dự án
 ```
+
+### Tra cứu tài liệu chi tiết từng thư mục:
+- 📖 [**`src/README.md`**](file:///src/README.md): Kiến trúc mã nguồn, các bộ điều khiển, môi trường RL, quản lý an toàn và quy trình mô phỏng.
+- ⚙️ [**`configs/README.md`**](file:///configs/README.md): Giải thích chi tiết các tệp YAML `experiments.yaml`, `q_learning.yaml` và quy tắc ưu tiên cấu hình.
+- 🗺️ [**`data/README.md`**](file:///data/README.md): Thông số mạng lưới RESCO (`cologne1`, `ingolstadt1`, `cologne3`), luồng xe và lệnh `--inspect`.
+- 🧠 [**`models/README.md`**](file:///models/README.md): Checkpoints mô hình RL, cấu trúc Q-table JSON và tiêu chuẩn Viability Gate.
+- 📊 [**`results/README.md`**](file:///results/README.md): Giải thích các chỉ số đối chuẩn, schema tệp CSV/JSON và danh mục biểu đồ 300 DPI.
+- 🧪 [**`tests/README.md`**](file:///tests/README.md): Phân loại chi tiết 80 unit tests và cơ chế giả lập TraCI/libsumo.
+- 📚 [**`docs/README.md`**](file:///docs/README.md): Cổng thông tin tổng hợp, tóm tắt lý thuyết ATSC và lệnh nhanh thường dùng.
 
 ---
 
@@ -250,6 +284,15 @@ python main.py --dataset cologne1 --algorithm q-learning --model models/q_learni
 ##### D. Chạy thử nghiệm agent Q-Learning chưa qua huấn luyện (`--allow-untrained`):
 ```powershell
 python main.py --dataset cologne1 --algorithm q-learning --allow-untrained --tripinfo
+```
+
+##### E. Các cờ bổ trợ hiệu năng & lưu vết nâng cao:
+- `--save-details`: Lưu toàn bộ tệp XML tripinfo gốc và CSV thống kê chi tiết từng giây mô phỏng (mặc định tắt để tránh tiêu tốn dung lượng ổ đĩa).
+- `--no-libsumo`: Ép buộc sử dụng giao thức socket TraCI truyền thống thay vì `libsumo` in-process bindings (khi cần chạy độc lập hoặc giám sát qua cổng mạng).
+
+```powershell
+# Chạy headless với cờ lưu vết chi tiết và ép buộc cổng TraCI
+python main.py --dataset cologne1 --algorithm fixed-time --save-details --no-libsumo
 ```
 
 ---
@@ -348,9 +391,16 @@ Báo cáo đối chuẩn được xuất tại `results/evaluation/benchmark_com
 
 #### B. Sinh biểu đồ chuẩn công bố khoa học (Publication Quality):
 ```powershell
+# Sinh toàn bộ biểu đồ chi tiết từng chỉ số và chuỗi thời gian
 python -m src.evaluation.plot_comparison
+
+# Chỉ tạo 2 dashboard tổng hợp lưới 2x2 cho công bố khoa học (tối ưu không gian)
+python -m src.evaluation.plot_comparison --dashboard-only
 ```
 Toàn bộ biểu đồ định dạng 300 DPI sẽ được lưu tại `results/figures/`:
+- **Dashboard tổng hợp (Consolidated Dashboards)**:
+  - `summary_dashboard.png`: Lưới 2x2 so sánh 4 chỉ số cốt lõi (Waiting Time, Queue Length, Throughput, Time Loss) kèm error bars.
+  - `timeseries_dashboard.png`: Lưới 2x2 thể hiện động học dòng xe theo chuỗi thời gian mô phỏng (Queues, Running vehicles, Cumulative completed, Green time distribution).
 - **Nhóm A (Comparative Bar Charts with Error Bars)**:
   - Thời gian chờ trung bình (`*_mean_waiting_time.png`)
   - Độ dài hàng đợi trung bình (`*_mean_queue_length.png`)
@@ -446,10 +496,10 @@ Hệ thống tính toán và đối chuẩn các chỉ số hiệu năng then ch
 
 ## 10. Kiểm thử tự động (Test Suite)
 
-Dự án áp dụng quy trình kiểm thử nghiêm ngặt bao quát toàn bộ logic xử lý, từ đơn vị thành phần đến tích hợp SUMO TraCI:
+Dự án áp dụng quy trình kiểm thử nghiêm ngặt bao quát toàn bộ logic xử lý, từ đơn vị thành phần đến tích hợp SUMO TraCI / libsumo:
 
 ```powershell
-# Chạy toàn bộ 75 unit tests
+# Chạy toàn bộ 80 unit tests
 pytest -q
 
 # Chạy có hiển thị chi tiết tên từng bài test
@@ -459,13 +509,13 @@ pytest -v
 pytest tests/test_runner.py tests/test_phase_manager.py
 ```
 
-### Các nhóm kiểm thử chính (75 unit tests):
-- **Controllers (`tests/test_controllers.py`)**: Kiểm tra giải thuật Fixed-Time (chu kỳ, sequence, xác thực đầu vào, đồng bộ lịch trình khi chuyển pha cưỡng bức, tương thích min/max green), tính toán áp lực Max-Pressure theo làn (tránh đếm lặp, giữ min_green, chuyển pha theo áp lực tối đa, giải quyết hòa tie-breaking giữ pha hiện tại, tín hiệu cho phép rẽ `s`), và tác tử Tabular Q-Learning (khởi tạo, chọn hành động $\varepsilon$-greedy, ưu tiên pha hiện tại khi hòa, cập nhật Bellman, phân rã $\varepsilon$, lưu và nạp Q-table).
+### Các nhóm kiểm thử chính (80 unit tests):
+- **Controllers (`tests/test_controllers.py`, 17 tests)**: Kiểm tra giải thuật Fixed-Time (chu kỳ, sequence, xác thực đầu vào, đồng bộ lịch trình khi chuyển pha cưỡng bức, tương thích min/max green), tính toán áp lực Max-Pressure theo làn (tránh đếm lặp, giữ min_green, chuyển pha theo áp lực tối đa, giải quyết hòa tie-breaking giữ pha hiện tại, tín hiệu cho phép rẽ `s`), và tác tử Tabular Q-Learning (khởi tạo, chọn hành động $\varepsilon$-greedy, ưu tiên pha hiện tại khi hòa, cập nhật Bellman, phân rã $\varepsilon$, lưu và nạp Q-table).
 - **Phase Manager & Safety Constraints (`tests/test_phase_manager.py`, 19 tests)**: Kiểm tra quy tắc sinh pha vàng an toàn (`build_yellow_state` cho các trường hợp chuyển đổi tín hiệu, duy trì xanh, duy trì vàng, pha rẽ `s`, quyền ưu tiên `g`/`G`), khởi tạo bộ quản lý an toàn `SafePhaseManager`, xử lý yêu cầu giữ nguyên pha, từ chối pha vượt ngưỡng, khóa thời gian đèn xanh tối thiểu (`min_green`), chuyển pha sau `min_green`, từ chối lệnh trong giai đoạn dọn nút (transition), chu kỳ dọn nút chuẩn (vàng chuyển tiếp và toàn đỏ all-red), đồng bộ pha ngoại vi (`sync_external_phase`), áp dụng cấu hình vào TraCI và cưỡng bức chuyển pha khi chạm ngưỡng `max_green`.
 - **Simulation Config & Dataset Inspector (`tests/test_config_and_inspector.py`, 12 tests)**: Xác thực cấu hình mô phỏng `SimulationConfig` (kiểm tra tính hợp lệ và bắt lỗi `step_length`, `decision_interval`, `yellow_duration`, kịch bản không tồn tại), kiểm tra bộ nạp cấu hình YAML (`TestYamlConfigLoader`: bắt lỗi thiếu file, file YAML sai định dạng, nạp thành công các cấu hình thực tế `configs/q_learning.yaml` và `configs/experiments.yaml`), và kiểm tra bộ trích xuất dữ liệu `TestDataInspector` (phân tích cú pháp kịch bản `cologne1`, `ingolstadt1`, xử lý kịch bản lỗi, duyệt toàn bộ kịch bản `--inspect-all`).
-- **RL Environment & Components (`tests/test_rl_components.py`, 10 tests)**: Kiểm tra State Discretizer (phân nhóm giá trị, rời rạc hóa vector quan sát, chia bins thời gian xanh hiệu dụng), Observation Builder (kiểm tra kích thước vector đặc trưng và giá trị chuẩn hóa), các hàm phần thưởng giao thông (phần thưởng phạt âm hàng đợi `NegativeAverageQueueReward` thông thường và có tính phương tiện chờ gia nhập `pending`), và quy trình đánh giá RL (kiểm tra đánh giá greedy trả về đầy đủ metrics, cơ chế lọc checkpoint đạt tiêu chuẩn Viability Gate, và môi trường RL tuân thủ ràng buộc `max_green`).
-- **Simulation Runner & Lifecycle (`tests/test_runner.py`, 7 tests)**: Kiểm tra hàm trích xuất pha xanh hợp lệ `extract_green_phases` (lọc pha xanh thuần túy không chứa vàng, loại bỏ trạng thái trùng lặp, cơ chế dự phòng an toàn khi tất cả các pha đều chứa vàng), khởi tạo `SimulationRunner` (sinh lệnh thực thi SUMO headless, SUMO-GUI kèm tham số trễ `--gui-delay`, kiểm tra lỗi khi gọi `step()` trước `start()`, và xác thực tính tương thích của bộ điều khiển Fixed-Time với cấu hình an toàn).
-- **Metrics & TripInfo Parsing (`tests/test_metrics.py`, 6 tests)**: Kiểm tra bộ phân tích cú pháp tệp XML `--tripinfo-output` (`parse_tripinfo_output`: xử lý an toàn khi thiếu tệp, tệp XML rỗng không có phương tiện, và tính toán chính xác chỉ số cho tệp XML hợp lệ), kiểm tra bộ thu thập chỉ số `MetricsCollector` (xử lý an toàn khi summary rỗng, ghi nhận dữ liệu từng bước với mock TraCI, kiểm tra an toàn thư mục xuất và cấu trúc JSON summary).
+- **RL Environment & Components (`tests/test_rl_components.py`, 10 tests)**: Kiểm tra State Discretizer (phân nhóm giá trị, rời rạc hóa vector quan sát, chia bins thời gian xanh hiệu dụng), các hàm phần thưởng giao thông (`NegativePressureReward` trừng phạt dồn ứ hạ lưu, áp lực làn vào/làn ra, trọng số xe chờ `pending`), và quy trình đánh giá RL (kiểm tra đánh giá greedy trả về đầy đủ metrics, cơ chế lọc checkpoint đạt tiêu chuẩn Viability Gate, kiểm tra ràng buộc `max_green` và cờ an toàn `save_run_details`).
+- **Simulation Runner & Lifecycle (`tests/test_runner.py`, 11 tests)**: Kiểm tra hàm trích xuất pha xanh hợp lệ `extract_green_phases` (lọc pha xanh thuần túy không chứa vàng, loại bỏ trạng thái trùng lặp, cơ chế dự phòng an toàn), khởi tạo `SimulationRunner` (sinh lệnh thực thi SUMO headless, SUMO-GUI kèm tham số trễ `--gui-delay`, kiểm tra lỗi khi gọi `step()` trước `start()`, xác thực tính tương thích của bộ điều khiển Fixed-Time, tự động chọn backend `libsumo` khi headless, bắt buộc `traci` khi chạy `--gui` hoặc `--no-libsumo`, và cờ `save_run_details`).
+- **Metrics & TripInfo Parsing (`tests/test_metrics.py`, 7 tests)**: Kiểm tra bộ phân tích cú pháp tệp XML `--tripinfo-output` (`parse_tripinfo_output`: xử lý an toàn khi thiếu tệp, tệp XML rỗng không có phương tiện, và tính toán chính xác chỉ số cho tệp XML hợp lệ), kiểm tra bộ thu thập chỉ số `MetricsCollector` (xử lý an toàn khi summary rỗng, ghi nhận dữ liệu từng bước với mock TraCI, trích xuất `get_core_metrics`, kiểm tra an toàn thư mục xuất và cấu trúc JSON summary).
 - **Comparative Reporting (`tests/test_compare_algorithms.py`, 2 tests)**: Kiểm tra hàm `generate_comparison_report` tạo báo cáo so sánh đầy đủ các chỉ số an toàn (va chạm, teleport) và độ trễ hệ thống, đồng thời kiểm tra khả năng xử lý an toàn đối với các lượt chạy lỗi hoặc thất bại (`FAILED`) mà không làm gián đoạn chương trình.
 - **Evaluation Runner Utils (`tests/test_evaluation_runner.py`, 2 tests)**: Kiểm tra hàm trích xuất phiên bản SUMO đang cài đặt (`get_sumo_version`) và hàm tính toán tỷ lệ cải thiện hiệu năng (`compute_improvement`) so với phương pháp cơ sở.
 

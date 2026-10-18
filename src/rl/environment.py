@@ -7,24 +7,13 @@ import numpy as np
 
 from src.config import SimulationConfig, get_scenario_config
 from src.rl.discretization import StateDiscretizer
-from src.rl.observations import ObservationBuilder
-from src.rl.rewards import BaseRewardFunction, NegativeAverageQueueReward
+from src.rl.rewards import BaseRewardFunction, NegativePressureReward
 from src.metrics import build_vehicle_accounting
 from src.runner import SimulationRunner
 
 
 class TrafficSignalRLEnv:
-    """Gymnasium-compatible Traffic Signal Control Environment.
-
-    Designed for Tabular Q-Learning and reinforcement learning controllers.
-
-    Key Characteristics:
-    - Wraps SimulationRunner, SafePhaseManager, and MetricsCollector without duplicating logic.
-    - Operates at fixed decision intervals (default: 5.0 seconds).
-    - Accurately tracks requested action vs executed phase vs clearance transitions.
-    - Provides valid action masking to strictly respect minimum green times and clearance safety.
-    - Handles SUMO lifecycle cleanly across multiple episodes.
-    """
+    """Gymnasium-compatible Traffic Signal Control Environment."""
 
     def __init__(
         self,
@@ -41,31 +30,16 @@ class TrafficSignalRLEnv:
         use_tripinfo: bool = True,
         gui: bool = False,
         gui_delay: float = 0.0,
-        obs_builder: Optional[ObservationBuilder] = None,
         state_discretizer: Optional[StateDiscretizer] = None,
-        max_queue_scale: float = 20.0,
-        max_time_scale: float = 60.0,
         max_effective_green: float = 25.0,
         serving_queue_thresholds: Optional[Tuple[float, float]] = None,
         waiting_queue_thresholds: Optional[Tuple[float, float, float]] = None,
         target_tls_id: Optional[str] = None,
+        save_run_details: bool = False,
+        **kwargs: Any,
     ):
         self.scenario_name = scenario_name
-        self.target_tls_id = target_tls_id
-        d_int = float(decision_interval)
-        if d_int <= 0 or d_int != d_int or d_int == float("inf"):
-            raise ValueError(f"decision_interval must be positive and finite, got {decision_interval}")
-        sim_step_length = 1.0
-        if d_int < sim_step_length:
-            raise ValueError(
-                f"decision_interval ({decision_interval}s) must be >= simulation step_length ({sim_step_length}s)"
-            )
-        ratio = d_int / sim_step_length
-        if abs(ratio - round(ratio)) > 1e-5:
-            raise ValueError(
-                f"decision_interval ({decision_interval}s) must be an integer multiple of simulation step_length ({sim_step_length}s)"
-            )
-        self.decision_interval = d_int
+        self.decision_interval = float(decision_interval)
         self.min_green = float(min_green)
         self.max_green = float(max_green) if max_green is not None else None
         self.yellow_duration = float(yellow_duration)
@@ -76,8 +50,8 @@ class TrafficSignalRLEnv:
         self.use_tripinfo = use_tripinfo
         self.gui = gui
         self.gui_delay = float(gui_delay)
+        self.save_run_details = save_run_details
 
-        # Initialize SimulationConfig and temporary runner to inspect intersection details
         self.config: SimulationConfig = get_scenario_config(
             dataset_name=scenario_name,
             gui=gui,
@@ -93,87 +67,42 @@ class TrafficSignalRLEnv:
             control_mode="agent",
             use_tripinfo=use_tripinfo,
             decision_interval=self.decision_interval,
+            save_run_details=save_run_details,
         )
 
         self.runner = SimulationRunner(self.config)
-        all_tls = self.runner.scenario_info.tls_ids
-        if len(all_tls) > 1 and target_tls_id is None:
-            raise ValueError(
-                f"Scenario '{scenario_name}' contains {len(all_tls)} traffic lights ({all_tls}). "
-                f"TrafficSignalRLEnv is a single-agent environment and requires single-intersection networks "
-                f"or an explicit target_tls_id. Multi-agent RL is required for coordinated multi-intersection control."
-            )
-        self.tls_id = target_tls_id if target_tls_id is not None else all_tls[0]
-        if self.tls_id not in self.runner.tls_managers:
-            raise ValueError(f"Target TLS '{self.tls_id}' not found in scenario '{scenario_name}'")
-        # Restrict runner's active control strictly and persistently to the controlled intersection
+        self.tls_id = target_tls_id or self.runner.scenario_info.tls_ids[0]
+        self.target_tls_id = self.tls_id
         self.config.target_tls_id = self.tls_id
         self.config.controlled_tls_ids = [self.tls_id]
         self.runner.set_controlled_tls_ids(self.tls_id)
+
         self.green_phases = self.runner.tls_managers[self.tls_id].green_phases
         self.num_actions = len(self.green_phases)
-
-        # Incoming lanes controlled by this intersection
         self.incoming_lanes = self.runner.scenario_info.controlled_lanes_per_tls.get(
-            self.tls_id, []
-        )
-        if not self.incoming_lanes:
-            self.incoming_lanes = self.runner.all_controlled_lanes
-
-        # Build feature extractors
-        if obs_builder is not None:
-            self.obs_builder = obs_builder
-        else:
-            self.obs_builder = ObservationBuilder(
-                incoming_lanes=self.incoming_lanes,
-                num_green_phases=self.num_actions,
-                min_green=self.min_green,
-                max_queue_scale=max_queue_scale,
-                max_time_scale=max_time_scale,
-            )
-
-        if state_discretizer is not None:
-            self.state_discretizer = state_discretizer
-        else:
-            disc_kwargs: Dict[str, Any] = {
-                "min_green": self.min_green,
-                "max_effective_green": max_effective_green,
-            }
-            if serving_queue_thresholds is not None:
-                disc_kwargs["serving_queue_thresholds"] = serving_queue_thresholds
-            if waiting_queue_thresholds is not None:
-                disc_kwargs["waiting_queue_thresholds"] = waiting_queue_thresholds
-            self.state_discretizer = StateDiscretizer(**disc_kwargs)
-
-        # Reward function
-        self.reward_fn: BaseRewardFunction = (
-            reward_fn if reward_fn is not None else NegativeAverageQueueReward(scale=1.0)
+            self.tls_id, self.runner.all_controlled_lanes
         )
 
-        self.observation_dim: int = self.obs_builder.observation_dim
-        self.action_dim: int = self.num_actions
+        self.state_discretizer = state_discretizer or StateDiscretizer(
+            min_green=self.min_green,
+            max_effective_green=max_effective_green,
+            serving_queue_thresholds=serving_queue_thresholds or (1.0, 5.0),
+            waiting_queue_thresholds=waiting_queue_thresholds or (1.0, 6.0, 15.0),
+        )
+        self.reward_fn = reward_fn or NegativePressureReward(scale=1.0)
 
-        self._episode_count: int = 0
+        self.observation_dim = 4
+        self.action_dim = self.num_actions
+        self._episode_count = 0
         self._last_summary: Optional[Dict[str, Any]] = None
 
-    def reset(self, seed: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """Starts or resets a simulation episode.
-
-        Returns:
-            Tuple of (continuous_observation_vector, info_dict).
-        """
+    def reset(self, seed: Optional[int] = None) -> Tuple[Any, Dict[str, Any]]:
+        """Starts or resets a simulation episode."""
         if seed is not None:
             self.seed = seed
             self.config.seed = seed
 
-        # Ensure previous simulation is cleanly closed
         self.close()
-
-        # Re-assert persistent target TLS in runner config before reset
-        self.config.target_tls_id = self.tls_id
-        self.config.controlled_tls_ids = [self.tls_id]
-
-        # Reset runner and initialize fresh run
         self.runner.reset()
         self.runner.set_controlled_tls_ids(self.tls_id)
         self.runner.start()
@@ -181,169 +110,113 @@ class TrafficSignalRLEnv:
         self._episode_count += 1
         self.reward_fn.reset()
 
-        raw_obs = self.runner.get_observation()
-        tls_obs = raw_obs[self.tls_id]
-
-        obs_vec = self.obs_builder.build_vector(tls_obs)
+        tls_obs = self.runner.get_observation()[self.tls_id]
         discrete_state = self.state_discretizer.discretize(tls_obs)
 
         info = {
             "tls_id": self.tls_id,
             "discrete_state": discrete_state,
-            "raw_observation": tls_obs,
             "valid_actions": self.get_valid_actions(),
             "action_mask": self.get_valid_action_mask(),
+            "raw_observation": tls_obs,
             "sim_time": self.runner.sim_time,
             "step": self.runner.current_step,
             "episode": self._episode_count,
         }
-
-        return obs_vec, info
+        return discrete_state, info
 
     def get_valid_actions(self) -> List[int]:
-        """Returns the list of valid action indices based on current signal state and constraints."""
-        if not self.runner.is_running:
+        """Returns valid action indices based on signal timing constraints."""
+        if not getattr(self.runner, "is_running", False):
             return list(range(self.num_actions))
 
         mgr = self.runner.tls_managers[self.tls_id]
-        curr_phase = mgr.get_current_phase()
+        curr = mgr.get_current_phase()
 
-        # If in clearance transition, agent cannot alter the ongoing transition
         if mgr.is_in_transition():
             return [mgr.get_target_phase()]
-
-        # If minimum green constraint has not yet elapsed, must hold current green phase
         if mgr.time_in_current_phase() < self.min_green:
-            return [curr_phase]
+            return [curr]
+        if self.max_green and mgr.time_in_current_phase() >= self.max_green and self.num_actions > 1:
+            return [a for a in range(self.num_actions) if a != curr]
 
-        # Max-green mask (does not guarantee starvation freedom): if max green has elapsed, must switch away from current phase
-        if (
-            self.max_green is not None
-            and mgr.time_in_current_phase() >= self.max_green
-            and self.num_actions > 1
-        ):
-            return [a for a in range(self.num_actions) if a != curr_phase]
-
-        # Otherwise, all valid green phases are eligible for selection
         return list(range(self.num_actions))
 
     def get_valid_action_mask(self) -> np.ndarray:
-        """Returns a boolean array of shape (num_actions,) where True denotes a valid action."""
+        """Returns boolean mask where True denotes a valid action."""
         mask = np.zeros(self.num_actions, dtype=bool)
-        valid = self.get_valid_actions()
-        for a in valid:
+        for a in self.get_valid_actions():
             if 0 <= a < self.num_actions:
                 mask[a] = True
         return mask
 
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        """Applies control action and advances simulation by decision_interval seconds.
-
-        Args:
-            action: Requested green phase index in [0, num_actions - 1].
-
-        Returns:
-            Tuple of (next_obs_vector, reward, terminated, truncated, info).
-        """
-        if not self.runner.is_running:
-            raise RuntimeError("Environment is not running. Call reset() first.")
-
+    def step(self, action: int) -> Tuple[Any, float, bool, bool, Dict[str, Any]]:
+        """Applies control action and advances simulation by decision_interval seconds."""
         action = int(action)
-        valid_actions = self.get_valid_actions()
-        is_valid = action in valid_actions
-
-        mgr = self.runner.tls_managers[self.tls_id]
-        requested_phase = action
-        prev_phase = mgr.get_current_phase()
-
-        # Runner owns requests and per-step safety. Never mutate the manager here.
-        action_accepted = False
-
-        # Reset reward accumulator for this decision interval
         self.reward_fn.reset()
 
-        # Advance simulation for decision_interval steps (e.g. 5 steps of 1.0s)
         steps_to_run = max(1, int(round(self.decision_interval / self.config.step_length)))
-        steps_executed = 0
         terminated = False
         truncated = False
 
-        for _ in range(steps_to_run):
+        for step_idx in range(steps_to_run):
             if self.runner.sim_time >= self.config.end_time:
                 terminated = True
                 break
-            if self.config.max_steps is not None and self.runner.current_step >= self.config.max_steps:
+            if self.config.max_steps and self.runner.current_step >= self.config.max_steps:
                 truncated = True
                 break
 
-            # Advance 1 step
-            actions = {self.tls_id: action} if steps_executed == 0 and 0 <= action < self.num_actions else {}
-            step_metrics = self.runner.step(actions=actions)
-            if steps_executed == 0:
-                action_accepted = self.runner.last_action_results.get(self.tls_id, False)
-            steps_executed += 1
+            act_dict = {self.tls_id: action} if step_idx == 0 and 0 <= action < self.num_actions else {}
+            step_metrics = self.runner.step(actions=act_dict)
 
-            # Accumulate queue metrics for reward calculation
-            raw_obs = self.runner.get_observation()
-            tls_obs = raw_obs[self.tls_id]
-            pending_count = getattr(step_metrics, "pending_vehicles", 0) if step_metrics else 0
-            self.reward_fn.record_step(tls_obs.in_lane_queues, pending_vehicles=pending_count)
+            tls_obs = self.runner.get_observation()[self.tls_id]
+            pending = getattr(step_metrics, "pending_vehicles", 0) if step_metrics else 0
+            self.reward_fn.record_step(
+                in_lane_queues=tls_obs.in_lane_queues,
+                out_lane_queues=tls_obs.out_lane_queues,
+                pending_vehicles=pending,
+                controlled_links=tls_obs.controlled_links,
+            )
 
-        # Calculate interval reward
         reward = self.reward_fn.calculate_reward()
-
-        # Query updated observation
-        raw_obs = self.runner.get_observation()
-        tls_obs = raw_obs[self.tls_id]
-
-        obs_vec = self.obs_builder.build_vector(tls_obs)
+        tls_obs = self.runner.get_observation()[self.tls_id]
         discrete_state = self.state_discretizer.discretize(tls_obs)
 
-        # Check termination at the end of the interval
         if self.runner.sim_time >= self.config.end_time:
             terminated = True
-        if self.config.max_steps is not None and self.runner.current_step >= self.config.max_steps:
+        if self.config.max_steps and self.runner.current_step >= self.config.max_steps:
             truncated = True
 
         info = {
             "tls_id": self.tls_id,
-            "requested_action": requested_phase,
-            "action_accepted": action_accepted,
-            "is_valid_action": is_valid,
-            "prev_phase": prev_phase,
-            "actual_phase": mgr.get_current_phase(),
-            "is_in_transition": mgr.is_in_transition(),
-            "time_in_phase": mgr.time_in_current_phase(),
-            "steps_in_interval": steps_executed,
             "discrete_state": discrete_state,
-            "raw_observation": tls_obs,
             "valid_actions": self.get_valid_actions(),
             "action_mask": self.get_valid_action_mask(),
+            "raw_observation": tls_obs,
             "sim_time": self.runner.sim_time,
             "step": self.runner.current_step,
         }
 
         if terminated or truncated:
-            # Finalize run and export summary
             self._last_summary = self._finalize_episode()
             info["episode_summary"] = self._last_summary
 
-        return obs_vec, reward, terminated, truncated, info
+        return discrete_state, reward, terminated, truncated, info
 
     def _finalize_episode(self) -> Dict[str, Any]:
-        """Finalizes the simulation run and retrieves the summary from MetricsCollector."""
+        """Finalizes episode, collects metrics, and exports results."""
         running_vehs = 0
         pending_vehs = 0
         try:
-            import traci
-            if traci is not None and self.runner.is_running:
-                running_vehs = len(traci.vehicle.getIDList())
-                pending_vehs = len(traci.simulation.getPendingVehicles())
-        except Exception as exc:
-            self.runner.metrics_collector.record_error(f"End-of-episode population read failed: {exc}")
+            if getattr(self.runner, "traci", None) and self.runner.is_running:
+                running_vehs = len(self.runner.traci.vehicle.getIDList())
+                pending_vehs = len(self.runner.traci.simulation.getPendingVehicles())
+        except Exception:
+            pass
 
         accounting_meta = build_vehicle_accounting(
-            scenario_name=getattr(self.config, "dataset_name", getattr(self.config, "scenario_name", "")),
+            scenario_name=self.config.dataset_name,
             window_begin=self.runner.config.begin_time,
             window_end=self.runner.sim_time,
             step_length=self.config.step_length,
@@ -352,12 +225,13 @@ class TrafficSignalRLEnv:
             pending_vehs=pending_vehs,
             total_teleports=self.runner.total_teleports,
             total_collisions=self.runner.total_collision_incidents,
-            scenario_info=getattr(self.runner, "scenario_info", None),
-                population=self.runner.metrics_collector.population_snapshot(),
+            scenario_info=self.runner.scenario_info,
+            population=self.runner.metrics_collector.population_snapshot(),
         )
 
         metadata = {
             "control_mode": "agent",
+            "sim_interface": "libsumo" if getattr(self.runner, "is_libsumo", False) else "traci",
             "seed": self.config.seed,
             "step_length": self.config.step_length,
             "yellow_duration": self.config.yellow_duration,
@@ -365,33 +239,36 @@ class TrafficSignalRLEnv:
             "min_green": self.config.min_green,
             "decision_interval": self.decision_interval,
             "collision_count": self.runner.total_collision_incidents,
-            "collision_incidents": self.runner.total_collision_incidents,
-            "collision_steps": self.runner.total_collision_steps,
-            "collision_vehicle_involvements": self.runner.total_collision_vehicle_involvements,
-            "unique_colliding_vehicles_count": len(self.runner.unique_colliding_vehicles),
-            "phase_change_count": sum(mgr.phase_switch_count for mgr in self.runner.tls_managers.values()),
-            "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.runner.tls_managers.items()},
+            "phase_change_count": sum(m.phase_switch_count for m in self.runner.tls_managers.values()),
         }
         metadata.update(accounting_meta)
         metadata.update(self.runner.safety_metadata())
         self.runner.close()
-        metadata.update(self.runner.safety_metadata())
         self.runner.metrics_collector.set_run_metadata(metadata)
 
-        # Export metrics into unique run folder
-        run_folder = os.path.join(self.config.output_dir, self.runner.run_folder_name)
-        os.makedirs(run_folder, exist_ok=True)
+        # Reconcile tripinfo from tempfile if present
+        if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
+            self.runner.metrics_collector.tripinfo_file = self.runner.tripinfo_path
+            self.runner.metrics_collector.reconcile_tripinfo()
+
+        run_folder = None
+        json_path = None
+        csv_path = None
+
+        if getattr(self.config, "save_run_details", False) and getattr(self.config, "output_dir", None):
+            run_folder = os.path.join(self.config.output_dir, self.runner.run_folder_name)
+            os.makedirs(run_folder, exist_ok=True)
+            if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
+                final_tripinfo = os.path.join(run_folder, "tripinfo.xml")
+                shutil.copy2(self.runner.tripinfo_path, final_tripinfo)
+                self.runner.metrics_collector.tripinfo_file = final_tripinfo
+            json_path, csv_path = self.runner.metrics_collector.export_results(run_folder)
 
         if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
-            final_tripinfo = os.path.join(run_folder, "tripinfo.xml")
-            shutil.copy2(self.runner.tripinfo_path, final_tripinfo)
             try:
                 os.remove(self.runner.tripinfo_path)
             except Exception:
                 pass
-            self.runner.metrics_collector.tripinfo_file = final_tripinfo
-
-        json_path, csv_path = self.runner.metrics_collector.export_results(run_folder)
 
         summary = self.runner.metrics_collector.get_summary()
         summary["output_json"] = json_path
@@ -401,12 +278,10 @@ class TrafficSignalRLEnv:
         return summary
 
     def get_summary(self) -> Optional[Dict[str, Any]]:
-        """Returns the summary of the last completed episode."""
         return self._last_summary
 
     def close(self) -> None:
-        """Safely closes TraCI and frees simulation resources."""
-        if self.runner is not None and self.runner.is_running:
+        if self.runner is not None and getattr(self.runner, "is_running", False):
             self.runner.close()
 
     def __enter__(self):
@@ -416,5 +291,4 @@ class TrafficSignalRLEnv:
         self.close()
 
 
-# Alias for compatibility
 TrafficSignalEnv = TrafficSignalRLEnv

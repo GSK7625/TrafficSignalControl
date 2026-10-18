@@ -1,8 +1,10 @@
 """Reinforcement Learning module for traffic signal control."""
 
 from src.rl.discretization import StateDiscretizer
-from src.rl.observations import ObservationBuilder
-from src.rl.rewards import BaseRewardFunction, NegativeAverageQueueReward
+from src.rl.rewards import (
+    BaseRewardFunction,
+    NegativePressureReward,
+)
 
 
 def __getattr__(name: str):
@@ -15,7 +17,6 @@ def __getattr__(name: str):
 __all__ = [
     "TrafficSignalRLEnv",
     "StateDiscretizer",
-    "ObservationBuilder",
     "BaseRewardFunction",
-    "NegativeAverageQueueReward",
+    "NegativePressureReward",
 ]

@@ -37,46 +37,20 @@ class BaseTrafficController(ABC):
 
     def __init__(self, name: str):
         self.name = name
-        self.history: List[Dict[str, Any]] = []
 
     @abstractmethod
     def reset(self) -> None:
-        """Resets controller internal states (e.g. at the start of a simulation run)."""
+        """Resets controller internal states."""
         pass
 
     @abstractmethod
     def select_action(
         self, observations: Dict[str, IntersectionObservation]
     ) -> Dict[str, int]:
-        """Selects target green phase index for each controlled intersection.
-
-        Args:
-            observations: Dictionary mapping tls_id to IntersectionObservation.
-
-        Returns:
-            Dictionary mapping tls_id to requested target green phase index.
-        """
+        """Selects target green phase index for each controlled intersection."""
         pass
 
     @abstractmethod
     def get_config(self) -> Dict[str, Any]:
-        """Returns algorithm configuration parameters and hyper-parameters."""
+        """Returns controller configuration dictionary."""
         pass
-
-    def log_decision(
-        self,
-        tls_id: str,
-        sim_time: float,
-        step: int,
-        action: int,
-        details: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Records a control decision for post-run analysis and audit trail."""
-        record = {
-            "tls_id": tls_id,
-            "sim_time": sim_time,
-            "step": step,
-            "action": action,
-            "details": details or {},
-        }
-        self.history.append(record)

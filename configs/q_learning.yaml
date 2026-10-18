@@ -11,16 +11,17 @@ hyperparameters:
   gamma: 0.95
   epsilon_start: 1.0
   epsilon_min: 0.05
-  epsilon_decay: 0.85
-  num_episodes: 15
+  epsilon_decay: 0.94
+  num_episodes: 60
   seed: 42
 
 discretization:
   max_effective_green: 25.0
-  serving_queue_thresholds: [1.0, 5.0]
-  waiting_queue_thresholds: [1.0, 6.0, 15.0]
+  serving_queue_thresholds: [2.0, 8.0]
+  waiting_queue_thresholds: [4.0, 15.0, 35.0]
 
 reward:
-  name: NegativeAverageQueueReward
+  name: NegativePressureReward
   scale: 1.0
-  pending_weight: 0.0
+  pending_weight: 0.5
+

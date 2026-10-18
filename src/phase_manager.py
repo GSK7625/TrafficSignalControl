@@ -1,10 +1,9 @@
-"""Safe Traffic Light Phase Manager.
+"""Traffic Light Phase Manager (SafePhaseManager).
 
-Ensures minimum green times, enforces safe yellow clearance intervals,
-and prevents abrupt phase transitions across traffic control algorithms.
+Quản lý chuyển pha an toàn: đảm bảo min_green, thời gian đèn vàng dọn nút (yellow clearance),
+và toàn đỏ (all-red) nếu có.
 """
 
-import math
 from enum import Enum
 from typing import List, Optional
 
@@ -16,47 +15,26 @@ class PhaseState(Enum):
 
 
 def build_yellow_state(current_state: str, target_state: str) -> str:
-    """Builds an intermediate yellow clearance state between current and target signal states.
-
-    Rules:
-    - Any link that is currently Green ('G', 'g') or Stop-and-Go ('s') and will become Red ('r', 'u', 'O', 'o')
-      must switch to Yellow ('y').
-    - Any link currently Green ('G', 'g') that will become Stop-and-Go ('s') must switch to Yellow ('y').
-    - Any link currently Stop-and-Go ('s') that stays 's' or becomes Green ('G', 'g') retains 's' during yellow.
-    - Any link that remains Green retains green; if transitioning between 'G' and 'g', the safer permissive 'g' is held during yellow.
-    - Red links ('r') must strictly remain Red ('r') during clearance.
-    """
+    """Tạo trạng thái đèn vàng chuyển tiếp an toàn giữa 2 pha."""
     if len(current_state) != len(target_state):
         raise ValueError(
             f"State lengths do not match: current({len(current_state)}) vs target({len(target_state)})"
         )
-
-    yellow_chars = []
-    for c_curr, c_targ in zip(current_state, target_state):
-        # 1. Any movement losing right-of-way to red must display yellow
-        if c_curr in ("G", "g", "s") and c_targ in ("r", "u", "O", "o"):
-            yellow_chars.append("y")
-        # 2. Protected/permissive green transitioning to stop-and-go requires yellow clearance
-        elif c_curr in ("G", "g") and c_targ == "s":
-            yellow_chars.append("y")
-        # 3. Stop-and-go ('s') holding 's' or upgrading to green ('G', 'g') safely holds 's' during clearance
-        elif c_curr == "s" and c_targ in ("G", "g", "s"):
-            yellow_chars.append("s")
-        # 4. Links remaining green retain green; if priority changes, hold safer permissive 'g' during transition
-        elif c_curr in ("G", "g") and c_targ in ("G", "g"):
-            yellow_chars.append("g" if "g" in (c_curr, c_targ) else "G")
-        # 5. Existing yellow retained
-        elif c_curr == "y":
-            yellow_chars.append("y")
-        # 6. All other links (including red links) must remain red during clearance
+    res = []
+    for c, t in zip(current_state, target_state):
+        if c in "Ggs" and (t in "ruOo" or (c in "Gg" and t == "s")):
+            res.append("y")
+        elif c in "Gg" and t in "Gg":
+            res.append("g" if "g" in (c, t) else "G")
+        elif c in "sy":
+            res.append(c)
         else:
-            yellow_chars.append("r")
-
-    return "".join(yellow_chars)
+            res.append("r")
+    return "".join(res)
 
 
 class SafePhaseManager:
-    """Manages signal phase transitions safely for an individual traffic light intersection."""
+    """Quản lý chu kỳ chuyển pha cho từng nút giao thông."""
 
     def __init__(
         self,
@@ -68,183 +46,84 @@ class SafePhaseManager:
         max_green: Optional[float] = None,
         initial_phase: int = 0,
     ):
-        """Initializes SafePhaseManager.
-
-        Args:
-            tls_id: Traffic light intersection ID in SUMO.
-            green_phases: List of valid green phase signal strings.
-            yellow_duration: Clearance yellow time in seconds.
-            all_red_duration: Optional clearance all-red time in seconds (default: 0.0).
-            min_green: Minimum required green duration before a switch can occur.
-            max_green: Maximum green duration allowed before a phase switch is forced.
-            initial_phase: Starting green phase index.
-        """
         if not green_phases:
-            raise ValueError(f"green_phases cannot be empty for TLS '{tls_id}'")
-        if not math.isfinite(yellow_duration) or yellow_duration <= 0:
-            raise ValueError("yellow_duration must be positive and finite")
-        if not math.isfinite(all_red_duration) or all_red_duration < 0:
-            raise ValueError("all_red_duration must be non-negative and finite")
-        if not math.isfinite(min_green) or min_green < 0:
-            raise ValueError("min_green must be non-negative and finite")
-        if max_green is not None:
-            if not math.isfinite(max_green) or max_green < min_green:
-                raise ValueError(f"max_green ({max_green}) must be finite and >= min_green ({min_green})")
-        if initial_phase < 0 or initial_phase >= len(green_phases):
-            raise IndexError(f"initial_phase {initial_phase} out of bounds [0, {len(green_phases)-1}]")
+            raise ValueError("green_phases cannot be empty")
+        if yellow_duration <= 0:
+            raise ValueError("yellow_duration must be positive")
+        if all_red_duration < 0:
+            raise ValueError("all_red_duration must be non-negative")
+        if min_green < 0:
+            raise ValueError("min_green must be non-negative")
+        if not (0 <= initial_phase < len(green_phases)):
+            raise IndexError("initial_phase out of bounds")
 
         self.tls_id = tls_id
         self.green_phases = green_phases
         self.yellow_duration = yellow_duration
         self.all_red_duration = all_red_duration
         self.min_green = min_green
-        self.max_green = float(max_green) if max_green is not None else None
+        self.max_green = max_green
 
         self._current_phase: int = initial_phase
         self._target_phase: int = initial_phase
         self._state_type: PhaseState = PhaseState.GREEN
-        self._current_signal_string: str = self.green_phases[initial_phase]
+        self._current_signal_string: str = green_phases[initial_phase]
         self._time_in_phase: float = 0.0
         self._yellow_time_remaining: float = 0.0
         self._all_red_time_remaining: float = 0.0
 
-        # Phase usage tracking
+        # Thống kê hoạt động
         self.phase_switch_count: int = 0
         self.phase_durations: dict[int, float] = {i: 0.0 for i in range(len(green_phases))}
         self.total_transition_time: float = 0.0
         self.actual_yellow_time: float = 0.0
 
     def get_current_phase(self) -> int:
-        """Returns the current active green phase index."""
         return self._current_phase
 
     def get_target_phase(self) -> int:
-        """Returns the target phase index (relevant during yellow transition)."""
         return self._target_phase
 
     def get_current_state(self) -> str:
-        """Returns the current signal string (e.g. 'GGGrrr' or 'yyyrrr')."""
         return self._current_signal_string
 
     def is_in_transition(self) -> bool:
-        """Returns True if the signal is currently in yellow or all-red transition."""
-        return self._state_type in (PhaseState.YELLOW, PhaseState.ALL_RED)
+        return self._state_type != PhaseState.GREEN
 
     def time_in_current_phase(self) -> float:
-        """Returns elapsed time in current green phase (or yellow transition)."""
         return self._time_in_phase
 
-    def sync_external_phase(
-        self,
-        phase_index: Optional[int] = None,
-        signal_state: Optional[str] = None,
-        step_duration: float = 1.0,
-    ) -> None:
-        """Synchronizes phase tracking with an external controller (e.g. native SUMO program).
-
-        Maps external signal states to internal green phase indices [0, len(green_phases)-1]
-        and appropriately classifies yellow/all-red clearance intervals without polluting
-        green phase metrics or setting out-of-range phase indices.
-        """
-        if signal_state is not None:
-            self._current_signal_string = signal_state
-            if signal_state in self.green_phases:
-                green_idx = self.green_phases.index(signal_state)
-                if green_idx != self._current_phase:
-                    self._current_phase = green_idx
-                    self._target_phase = green_idx
-                    self._time_in_phase = 0.0
-                    self.phase_switch_count += 1
-                elif self._state_type != PhaseState.GREEN:
-                    self._time_in_phase = 0.0
-                self._state_type = PhaseState.GREEN
-                self._time_in_phase += step_duration
-                self.phase_durations[green_idx] = (
-                    self.phase_durations.get(green_idx, 0.0) + step_duration
-                )
-            else:
-                self.total_transition_time += step_duration
-                if any(c in signal_state for c in ("y", "Y")):
-                    self._state_type = PhaseState.YELLOW
-                    self.actual_yellow_time += step_duration
-                else:
-                    self._state_type = PhaseState.ALL_RED
-                self._time_in_phase += step_duration
-        elif phase_index is not None:
-            if 0 <= phase_index < len(self.green_phases):
-                if phase_index != self._current_phase:
-                    self._current_phase = phase_index
-                    self._target_phase = phase_index
-                    self._time_in_phase = 0.0
-                    self.phase_switch_count += 1
-                elif self._state_type != PhaseState.GREEN:
-                    self._time_in_phase = 0.0
-                self._state_type = PhaseState.GREEN
-                self._current_signal_string = self.green_phases[phase_index]
-                self._time_in_phase += step_duration
-                self.phase_durations[phase_index] = (
-                    self.phase_durations.get(phase_index, 0.0) + step_duration
-                )
-            else:
-                self._state_type = PhaseState.YELLOW
-                self.total_transition_time += step_duration
-                self.actual_yellow_time += step_duration
-                self._time_in_phase += step_duration
-
     def is_max_green_exceeded(self) -> bool:
-        """Returns True if the current green phase has reached or exceeded max_green."""
-        if self.max_green is not None and self._state_type == PhaseState.GREEN:
-            return self._time_in_phase >= self.max_green
-        return False
+        return (
+            self.max_green is not None
+            and self._state_type == PhaseState.GREEN
+            and self._time_in_phase >= self.max_green
+        )
 
     def request_phase(self, target_phase_idx: int) -> bool:
-        """Requests switching to a new green phase index.
+        if not (0 <= target_phase_idx < len(self.green_phases)):
+            raise IndexError(f"Target phase index {target_phase_idx} out of range")
 
-        Returns:
-            True if request was accepted (either already in that phase, or yellow transition initiated).
-            False if rejected (due to min_green not met, currently in transition, or max_green exceeded when staying).
-        """
-        if target_phase_idx < 0 or target_phase_idx >= len(self.green_phases):
-            raise IndexError(
-                f"Target phase index {target_phase_idx} out of range [0, {len(self.green_phases)-1}]"
-            )
-
-        # If currently transitioning, cannot accept new change
-        if self._state_type in (PhaseState.YELLOW, PhaseState.ALL_RED):
+        if self.is_in_transition():
             return False
 
-        # If requesting to maintain the current phase:
         if target_phase_idx == self._current_phase:
-            if self._state_type == PhaseState.GREEN:
-                # Max-green hold rejection: if max_green is exceeded and alternative phases exist,
-                # reject holding the phase to force serving other approaches
-                if (
-                    self.max_green is not None
-                    and self._time_in_phase >= self.max_green
-                    and len(self.green_phases) > 1
-                ):
-                    return False
-                return True
-            return False
+            if self.is_max_green_exceeded() and len(self.green_phases) > 1:
+                return False
+            return True
 
-        # If requesting to switch to a DIFFERENT phase, min green must have elapsed
         if self._time_in_phase < self.min_green:
             return False
 
-        # Initiate yellow transition
         self._target_phase = target_phase_idx
-        current_state = self.green_phases[self._current_phase]
-        target_state = self.green_phases[target_phase_idx]
+        curr_state = self.green_phases[self._current_phase]
+        targ_state = (
+            "r" * len(curr_state)
+            if self.all_red_duration > 1e-6
+            else self.green_phases[target_phase_idx]
+        )
 
-        if self.all_red_duration > 1e-6:
-            # When an ALL-RED interval is configured, ALL links currently showing Green
-            # must transition through Yellow, because in the subsequent all-red state
-            # every link will become Red.
-            all_red_target = "r" * len(current_state)
-            self._current_signal_string = build_yellow_state(current_state, all_red_target)
-        else:
-            self._current_signal_string = build_yellow_state(current_state, target_state)
-
+        self._current_signal_string = build_yellow_state(curr_state, targ_state)
         self._state_type = PhaseState.YELLOW
         self._yellow_time_remaining = self.yellow_duration
         self._all_red_time_remaining = 0.0
@@ -253,44 +132,26 @@ class SafePhaseManager:
         return True
 
     def update(self, step_duration: float = 1.0, traci_module=None) -> None:
-        """Advances internal timing by step_duration and updates SUMO TLS if traci_module is provided."""
-        if self._state_type in (PhaseState.YELLOW, PhaseState.ALL_RED):
-            self.total_transition_time += step_duration
-            if any(c in self._current_signal_string for c in ("y", "Y")):
-                self.actual_yellow_time += step_duration
+        self._time_in_phase += step_duration
 
         if self._state_type == PhaseState.YELLOW:
-            self._time_in_phase += step_duration
+            self.total_transition_time += step_duration
+            self.actual_yellow_time += step_duration
             self._yellow_time_remaining -= step_duration
-
             if self._yellow_time_remaining <= 1e-6:
                 if self.all_red_duration > 1e-6:
-                    # Switch to intermediate ALL_RED clearance
                     self._state_type = PhaseState.ALL_RED
                     self._current_signal_string = "r" * len(self.green_phases[self._target_phase])
                     self._all_red_time_remaining = self.all_red_duration
                     self._time_in_phase = 0.0
-                    self._yellow_time_remaining = 0.0
                 else:
-                    # Transition complete: switch directly to target green phase
-                    self._current_phase = self._target_phase
-                    self._current_signal_string = self.green_phases[self._current_phase]
-                    self._state_type = PhaseState.GREEN
-                    self._time_in_phase = 0.0
-                    self._yellow_time_remaining = 0.0
+                    self._activate_green(self._target_phase)
         elif self._state_type == PhaseState.ALL_RED:
-            self._time_in_phase += step_duration
+            self.total_transition_time += step_duration
             self._all_red_time_remaining -= step_duration
-
             if self._all_red_time_remaining <= 1e-6:
-                # All-red complete: switch to target green phase
-                self._current_phase = self._target_phase
-                self._current_signal_string = self.green_phases[self._current_phase]
-                self._state_type = PhaseState.GREEN
-                self._time_in_phase = 0.0
-                self._all_red_time_remaining = 0.0
+                self._activate_green(self._target_phase)
         else:
-            self._time_in_phase += step_duration
             self.phase_durations[self._current_phase] = (
                 self.phase_durations.get(self._current_phase, 0.0) + step_duration
             )
@@ -298,8 +159,53 @@ class SafePhaseManager:
         if traci_module is not None:
             self.apply_to_traci(traci_module)
 
+    def _activate_green(self, phase_idx: int) -> None:
+        self._current_phase = phase_idx
+        self._current_signal_string = self.green_phases[phase_idx]
+        self._state_type = PhaseState.GREEN
+        self._time_in_phase = 0.0
+
+    def sync_external_phase(
+        self,
+        phase_index: Optional[int] = None,
+        signal_state: Optional[str] = None,
+        step_duration: float = 1.0,
+    ) -> None:
+        if signal_state is not None:
+            self._current_signal_string = signal_state
+            if signal_state in self.green_phases:
+                idx = self.green_phases.index(signal_state)
+            else:
+                self.total_transition_time += step_duration
+                if any(c in signal_state for c in ("y", "Y")):
+                    self._state_type = PhaseState.YELLOW
+                    self.actual_yellow_time += step_duration
+                else:
+                    self._state_type = PhaseState.ALL_RED
+                self._time_in_phase += step_duration
+                return
+        elif phase_index is not None and 0 <= phase_index < len(self.green_phases):
+            idx = phase_index
+            self._current_signal_string = self.green_phases[idx]
+        else:
+            self._state_type = PhaseState.YELLOW
+            self.total_transition_time += step_duration
+            self.actual_yellow_time += step_duration
+            self._time_in_phase += step_duration
+            return
+
+        if idx != self._current_phase:
+            self._current_phase = self._target_phase = idx
+            self._time_in_phase = 0.0
+            self.phase_switch_count += 1
+        elif self._state_type != PhaseState.GREEN:
+            self._time_in_phase = 0.0
+
+        self._state_type = PhaseState.GREEN
+        self._time_in_phase += step_duration
+        self.phase_durations[idx] = self.phase_durations.get(idx, 0.0) + step_duration
+
     def apply_to_traci(self, traci_module) -> None:
-        """Sets the active signal string on the SUMO traffic light via TraCI."""
         try:
             traci_module.trafficlight.setRedYellowGreenState(
                 self.tls_id, self._current_signal_string

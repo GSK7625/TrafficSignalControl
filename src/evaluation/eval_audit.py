@@ -15,4 +15,4 @@ def finish_eval_audit(agent, before):
                 total_updates_before=before[1], total_updates_after=after[1],
                 agent_instance_used=True, invariance_pass=before == after,
                 eval_mode=agent.eval_mode, epsilon=agent.epsilon,
-                mutable_diagnostics=["action_counts", "history"])
+                mutable_diagnostics=["action_counts"])
