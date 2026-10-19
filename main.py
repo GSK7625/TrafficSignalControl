@@ -9,17 +9,15 @@ import argparse
 import json
 import sys
 
-# Ensure UTF-8 output encoding across Windows consoles
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except (OSError, ValueError):
-        pass
+# Ensure UTF-8 output and error encoding across Windows consoles
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (OSError, ValueError):
+            pass
 
-from src.config import DEFAULT_SAFETY_CONFIG, get_scenario_config
-from src.controllers import make_controller
-from src.data_inspector import inspect_scenario
-from src.runner import SimulationRunner
+from src.evaluation.experiment_runner import ExperimentConfig, run_single_experiment
 
 
 # Cấu hình mặc định môi trường CLI
@@ -59,6 +57,12 @@ def parse_args():
         default=None,
         help="Max simulation steps (default: run entire scenario)",
     )
+    parser.add_argument(
+        "--model", "-m",
+        type=str,
+        default=None,
+        help="Path to Q-Learning model checkpoint (default: models/q_learning/q_learning_<dataset>_best.json)",
+    )
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -69,49 +73,23 @@ def parse_args():
 
 def main():
     args = parse_args()
-    dataset = args.dataset
-    algorithm = args.algorithm
-
-    info = inspect_scenario(dataset, data_dir="data")
-    dec_interval = 5.0 if algorithm == "q-learning" else 1.0
-
-    controller, mode = make_controller(
-        algorithm=algorithm,
-        dataset_name=dataset,
-        scenario_info=info,
-        seed=RANDOM_SEED,
-        decision_interval=dec_interval,
-        **DEFAULT_SAFETY_CONFIG,
-    )
-
-    cfg = get_scenario_config(
-        dataset_name=dataset,
-        gui=args.gui,
-        gui_delay=DEFAULT_GUI_DELAY if args.gui else 0.0,
-        step_length=1.0,
-        **DEFAULT_SAFETY_CONFIG,
-        scenario_info=info,
-        target_tls_id=getattr(controller, "target_tls_id", None),
-        max_steps=args.steps,
-        seed=RANDOM_SEED,
-        output_dir=OUTPUT_DIR,
-        control_mode=mode,
-        use_tripinfo=True,
-        decision_interval=dec_interval,
-        use_libsumo=True,
-        save_run_details=False,
-    )
-
-    algo_name = getattr(controller, "name", "Original/Fixed")
-    print(f"[INFO] Initializing simulation: dataset='{dataset}', algorithm='{algo_name}', GUI={args.gui}")
-
-    runner = SimulationRunner(cfg, controller=controller)
-    summary = runner.run(num_steps=args.steps)
-
-    print("\n================ SIMULATION RESULTS ================")
+    record, summary = run_single_experiment(ExperimentConfig(
+        scenario_name=args.dataset, algorithm=args.algorithm, steps=args.steps,
+        model_path=args.model,
+        gui=args.gui, gui_delay=DEFAULT_GUI_DELAY if args.gui else 0.0,
+        seed=RANDOM_SEED, output_dir=OUTPUT_DIR,
+    ), include_summary=True)
+    if record["status"] == "FAILED":
+        err = record["error_message"]
+        if "Model file not found" in err:
+            err += (
+                f"\nGợi ý: Kịch bản '{args.dataset}' chưa có checkpoint sẵn. "
+                f"Hãy chạy huấn luyện trước bằng lệnh:\n"
+                f"  python -m src.training.train_q_learning --dataset {args.dataset}\n"
+                f"hoặc chỉ định đường dẫn model qua cờ '--model' / '-m'."
+            )
+        raise RuntimeError(err)
     print(json.dumps(summary, indent=2))
-    if summary.get("output_json"):
-        print(f"\n[SUCCESS] Summary report saved to: '{summary.get('output_json')}'")
 
 
 if __name__ == "__main__":

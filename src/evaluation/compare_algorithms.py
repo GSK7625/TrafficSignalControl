@@ -5,6 +5,7 @@ import json
 import os
 from typing import Any, Dict
 
+from src.evaluation.experiment_runner import normalize_algo_name
 from src.metrics import REPORT_COMPLETION_THRESHOLD, service_status
 
 
@@ -23,9 +24,13 @@ def _stat(metrics, key, statistic="mean", default=None):
     return value if isinstance(value, (int, float)) and math.isfinite(value) else default
 
 
+def _format_mean_std(result, mean_key, std_key):
+    mean, std = result.get(mean_key), result.get(std_key)
+    return f"{mean:.2f} ± {std:.2f}" if mean is not None and std is not None else "N/A"
+
+
 def generate_comparison_report(
     eval_dir: str = "results/evaluation",
-    experiments_summary: str = "results/experiments/benchmark_summary.json",
     phase6_summary: str = "results/evaluation/benchmark_summary.json",
     output_report: str = "results/evaluation/benchmark_comparison.md",
 ) -> Dict[str, Dict[str, Dict[str, Any]]]:
@@ -39,8 +44,9 @@ def generate_comparison_report(
     algos_display = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
 
     if p6_data:
-        for scen, algos in p6_data.items():
+        for scen, raw_algos in p6_data.items():
             combined_results[scen] = {}
+            algos = {normalize_algo_name(k): v for k, v in raw_algos.items()}
             for algo in algos_display:
                 metrics = algos.get(algo)
                 if not metrics:
@@ -131,25 +137,18 @@ def generate_comparison_report(
                 scenario_warnings.append(f"- **{algo}**: Không có dữ liệu thực nghiệm (chưa hoàn thành hoặc bị lỗi).")
                 continue
 
-            wt = r.get("mean_waiting_time")
-            wt_std = r.get("waiting_time_std")
-            wt_str = f"{wt:.2f} ± {wt_std:.2f}" if (wt is not None and wt_std is not None) else "N/A"
-
+            wt_str = _format_mean_std(r, "mean_waiting_time", "waiting_time_std")
             sys_d = r.get("system_mean_delay")
-            sys_d_std = r.get("system_delay_std")
-            sys_d_str = f"{sys_d:.2f} ± {sys_d_std:.2f}" if (sys_d is not None and sys_d_std is not None) else "N/A"
+            sys_d_str = _format_mean_std(r, "system_mean_delay", "system_delay_std")
+            ql_str = _format_mean_std(r, "mean_queue_length", "queue_length_std")
 
-            ql = r.get("mean_queue_length")
-            ql_std = r.get("queue_length_std")
-            ql_str = f"{ql:.2f} ± {ql_std:.2f}" if (ql is not None and ql_std is not None) else "N/A"
-
-            tp = r.get("total_completed_vehicles", 0)
+            tp = r.get("total_completed_vehicles")
+            tp_str = f"{tp:.0f}" if isinstance(tp, (int, float)) else ("N/A" if tp is None else str(tp))
             cr = r.get("completion_rate_pct", 0.0)
             cr_str = f"{cr:.1f}%" if cr is not None else "N/A"
             col_sum = r.get("collision_sum", 0)
             col_max = r.get("collision_max", 0)
             tel_sum = r.get("teleport_sum", 0)
-            tel_max = r.get("teleport_max", 0)
 
             if (col_sum or 0) > 0 or (tel_sum or 0) > 0:
                 col_str = f"⚠️ {col_sum} / {tel_sum} (max {col_max})"
@@ -180,7 +179,7 @@ def generate_comparison_report(
             if config:
                 scenario_warnings.append(f"- **{algo}** — cấu hình hiệu lực: " + ", ".join(f"{key}={value}" for key, value in config.items()))
             lines.append(
-                f"| **{algo}** | {wt_str} | {sys_d_str} | {ql_str} | {tp} | {cr_str} | {col_str} | {status_badge} |"
+                f"| **{algo}** | {wt_str} | {sys_d_str} | {ql_str} | {tp_str} | {cr_str} | {col_str} | {status_badge} |"
             )
 
         lines.append("")

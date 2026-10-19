@@ -1,5 +1,6 @@
 """Fixed-time traffic signal controller."""
 
+import math
 from typing import Any, Dict, List, Optional
 from src.controllers.base import BaseTrafficController, IntersectionObservation
 
@@ -64,8 +65,19 @@ class FixedTimeController(BaseTrafficController):
     ) -> List[str]:
         """Validates configuration against constraints."""
         errors: List[str] = []
+        if min_green is not None and self.default_green_time < min_green:
+            errors.append(f"default_green_time ({self.default_green_time}s) is less than min_green ({min_green}s)")
         if max_green is not None and self.default_green_time > max_green:
             errors.append(f"default_green_time ({self.default_green_time}s) exceeds max_green ({max_green}s)")
+        for tls_id, p_map in self.phase_durations.items():
+            if isinstance(p_map, dict):
+                for p_idx, dur in p_map.items():
+                    if dur is None or not (isinstance(dur, (int, float)) and math.isfinite(dur) and dur > 0):
+                        errors.append(f"TLS '{tls_id}' phase {p_idx} duration must be positive and finite, got {dur}")
+                    elif min_green is not None and dur < min_green:
+                        errors.append(f"TLS '{tls_id}' phase {p_idx} duration ({dur}s) is less than min_green ({min_green}s)")
+                    elif max_green is not None and dur > max_green:
+                        errors.append(f"TLS '{tls_id}' phase {p_idx} duration ({dur}s) exceeds max_green ({max_green}s)")
         if num_phases_per_tls:
             for tls_id, seq in self.phase_sequences.items():
                 if any(not 0 <= p < num_phases_per_tls.get(tls_id, 0) for p in seq):

@@ -1,10 +1,21 @@
 """Unit tests for MetricsCollector and tripinfo output parser."""
 
 import os
-from unittest.mock import MagicMock
 import pytest
 
-from src.metrics import MetricsCollector, StepMetrics, parse_tripinfo_output
+from src.data_inspector import ScenarioInfo
+from src.metrics import MetricsCollector, StepMetrics, build_vehicle_accounting, parse_tripinfo_output
+
+
+@pytest.mark.parametrize("completed,demand,status", [
+    (6, 23, "LOW_COMPLETION"), (0, 23, "LOW_COMPLETION"),
+    (95, 100, "COMPLETED"), (100, 100, "COMPLETED"), (0, 0, "NO_DEMAND"),
+])
+def test_summary_service_status_uses_completion_fraction(completed, demand, status):
+    collector = MetricsCollector("audit")
+    collector._cumulative_completed = completed
+    collector.run_metadata["scheduled_demand_in_window"] = demand
+    assert collector.get_summary()["service_status"] == status
 
 
 class TestParseTripinfoOutput:
@@ -100,6 +111,12 @@ class TestMetricsCollector:
         with pytest.raises(ValueError, match="Cannot save results into data directory"):
             collector.export_results(os.path.join(data_abs, "forbidden"))
 
+        # Sibling directories starting with "data" should be allowed
+        sibling_dir = str(tmp_path / "data_results")
+        s_json, s_csv = collector.export_results(sibling_dir)
+        assert os.path.isfile(s_json)
+        assert os.path.isfile(s_csv)
+
     def test_get_core_metrics(self):
         collector = MetricsCollector(scenario_name="test_scen")
         collector.step_records.append(
@@ -163,3 +180,134 @@ class TestMetricsCollector:
         collector = MetricsCollector("audit", str(path))
         collector.reconcile_tripinfo()
         assert collector.get_summary()["tripinfo_mean_waiting_time"] is None
+
+
+class TestVehicleAccounting:
+    """Test suite for vehicle accounting invariants (B01)."""
+
+    @pytest.fixture
+    def scenario_two_vehs(self):
+        return ScenarioInfo(
+            name="test_scen",
+            cfg_path="",
+            net_path="",
+            rou_path="",
+            begin_time=0.0,
+            end_time=100.0,
+            duration=100.0,
+            tls_count=1,
+            trips_or_vehicles_count=2,
+            departure_times=[10.0, 20.0],
+        )
+
+    def test_matching_counts_is_valid(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=0.0,
+            window_end=100.0,
+            total_completed=2,
+            running_vehs=0,
+            pending_vehs=0,
+        )
+        assert meta["accounting_valid"] is True
+        assert meta["scheduled_demand_in_window"] == 2
+        assert meta["realized_demand_in_window"] == 2
+
+    def test_excess_completed_vehicles_is_invalid(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=0.0,
+            window_end=100.0,
+            total_completed=3,
+            running_vehs=0,
+            pending_vehs=0,
+        )
+        assert meta["accounting_valid"] is False
+        assert "accounting_error_reasons" in meta
+        assert any("Completed vehicles" in r for r in meta["accounting_error_reasons"])
+
+    def test_excess_realized_vehicles_is_invalid(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=0.0,
+            window_end=100.0,
+            total_completed=1,
+            running_vehs=1,
+            pending_vehs=1,
+        )
+        assert meta["accounting_valid"] is False
+        assert any("Realized vehicles" in r for r in meta["accounting_error_reasons"])
+
+    def test_missing_vehicles_unexplained_is_invalid(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=0.0,
+            window_end=100.0,
+            total_completed=1,
+            running_vehs=0,
+            pending_vehs=0,
+            total_teleports=0,
+        )
+        assert meta["accounting_valid"] is False
+        assert any("missing vehicles" in r.lower() for r in meta["accounting_error_reasons"])
+
+    def test_missing_vehicles_explained_by_teleports_is_valid(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=0.0,
+            window_end=100.0,
+            total_completed=1,
+            running_vehs=0,
+            pending_vehs=0,
+            total_teleports=1,
+        )
+        assert meta["accounting_valid"] is True
+
+    def test_zero_demand_zero_realized_is_valid(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=200.0,
+            window_end=300.0,
+            total_completed=0,
+            running_vehs=0,
+            pending_vehs=0,
+        )
+        assert meta["scheduled_demand_in_window"] == 0
+        assert meta["accounting_valid"] is True
+
+    def test_zero_demand_nonzero_realized_is_invalid(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=200.0,
+            window_end=300.0,
+            total_completed=0,
+            running_vehs=1,
+            pending_vehs=0,
+        )
+        assert meta["scheduled_demand_in_window"] == 0
+        assert meta["accounting_valid"] is False
+
+    def test_collector_summary_rejects_invalid_accounting(self, scenario_two_vehs):
+        meta = build_vehicle_accounting(
+            scenario_info=scenario_two_vehs,
+            window_begin=0.0,
+            window_end=100.0,
+            total_completed=3,
+            running_vehs=0,
+            pending_vehs=0,
+        )
+        collector = MetricsCollector("test_scen")
+        collector.run_metadata.update(meta)
+        summary = collector.get_summary()
+        assert summary["accounting_valid"] is False
+        assert summary["is_valid"] is False
+        assert summary["status"] == "INVALID"
+        assert summary["data_validity"] == "INVALID"
+        assert len(summary["measurement_error_messages"]) > 0
+
+    def test_get_summary_includes_completion_rate_pct(self):
+        collector = MetricsCollector("audit")
+        collector._cumulative_completed = 50
+        collector.run_metadata["scheduled_demand_in_window"] = 100
+        summary = collector.get_summary()
+        assert summary["completion_rate_pct"] == 50.0

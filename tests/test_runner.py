@@ -163,9 +163,8 @@ class TestSimulationRunnerSetup:
         runner.traci = mock_traci
         runner.is_running = True
         monkeypatch.setattr(
-            runner.metrics_collector,
-            "population_snapshot",
-            lambda: (_ for _ in ()).throw(RuntimeError("accounting failed")),
+            "src.runner.build_vehicle_accounting",
+            lambda **_: (_ for _ in ()).throw(RuntimeError("accounting failed")),
         )
         with pytest.raises(RuntimeError, match="accounting failed"):
             runner.finalize()

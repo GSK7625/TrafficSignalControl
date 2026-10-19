@@ -4,25 +4,29 @@ Executes, aggregates, and benchmarks traffic signal control algorithms
 (Fixed-Time, Max-Pressure, Q-Learning) in a clean, straightforward workflow.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
 import math
 import os
-import subprocess
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
-from src.config import DEFAULT_SAFETY_CONFIG, get_scenario_config
+from src.config import DEFAULT_SAFETY_CONFIG, get_scenario_config, load_yaml_config
 from src.controllers import algorithm_key, make_controller, resolve_q_learning_checkpoint
-from src.data_inspector import inspect_scenario
-from src.rl.environment import TrafficSignalRLEnv
+from src.controllers.q_learning import QLearningController
 from src.runner import SimulationRunner
-from src.evaluation.evaluate_rl import create_evaluation_session, run_greedy_eval_loop
-from src.metrics import METRIC_SCHEMA_VERSION, completion_statistics, service_status
+from src.evaluation.evaluate_rl import checkpoint_env_params, create_evaluation_session, run_greedy_eval_loop
+from src.metrics import BENCHMARK_METRICS, METRIC_SCHEMA_VERSION, completion_statistics, service_status
+
+
+def normalize_algo_name(name: str) -> str:
+    """Normalizes algorithm names including short aliases like ft, mp, ql."""
+    display_names = {"fixed-time": "Fixed-Time", "max-pressure": "Max-Pressure", "q-learning": "Q-Learning"}
+    return display_names.get(algorithm_key(name), name.strip())
 
 
 @dataclass
@@ -35,38 +39,50 @@ class ExperimentConfig:
     steps: Optional[int] = None
     model_path: Optional[str] = None
     output_dir: str = "results/evaluation"
-    yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"]
-    all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"]
-    min_green: float = DEFAULT_SAFETY_CONFIG["min_green"]
-    max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"]
+    timing_overrides: Dict[str, Optional[float]] = field(default_factory=dict)
+    gui: bool = False
+    gui_delay: float = 0.0
     fixed_time_green: float = 30.0
     pressure_metric: str = "queue"
-    decision_interval: Optional[float] = None
     save_run_details: bool = False
     step_length: float = 1.0
     use_tripinfo: bool = True
 
+    def __post_init__(self):
+        self.algorithm = normalize_algo_name(self.algorithm)
+
 
 def load_experiments_yaml(config_path: str = "configs/experiments.yaml") -> Dict[str, Any]:
     """Loads benchmark parameters from experiments YAML file if present."""
-    from src.config import load_yaml_config
     return load_yaml_config(config_path)
 
 
-def resolve_effective_decision_interval(
-    cfg: ExperimentConfig, ckpt_params: Optional[Dict[str, Any]] = None
-) -> float:
-    """Resolves decision interval: 1.0s for baselines, 5.0s (or checkpoint) for RL."""
-    if cfg.decision_interval is not None:
-        return float(cfg.decision_interval)
+def effective_timing(cfg: ExperimentConfig) -> Dict[str, Any]:
+    """Only explicitly supplied overrides may replace checkpoint timing."""
+    is_rl = algorithm_key(cfg.algorithm) == "q-learning"
+    timing = {**DEFAULT_SAFETY_CONFIG, "decision_interval": 5.0 if is_rl else 1.0}
+    model = resolve_model_path(cfg)
+    if is_rl and model and Path(model).is_file():
+        params = checkpoint_env_params(QLearningController.from_checkpoint(model).get_config())
+        timing.update({key: params[key] for key in timing})
+    for key, value in cfg.timing_overrides.items():
+        if key not in timing or (value is None and key != "max_green"):
+            raise ValueError(f"Invalid timing override: {key}={value}")
+        timing[key] = value
+    return {key: float(value) if value is not None else None for key, value in timing.items()}
 
-    algo_key = algorithm_key(cfg.algorithm)
-    if algo_key == "q-learning":
-        if ckpt_params and "decision_interval" in ckpt_params:
-            return float(ckpt_params["decision_interval"])
-        return 5.0
 
-    return 1.0
+def resolve_effective_decision_interval(cfg: ExperimentConfig, ckpt_params=None) -> float:
+    if ckpt_params and "decision_interval" not in cfg.timing_overrides:
+        return float(ckpt_params.get("decision_interval", effective_timing(cfg)["decision_interval"]))
+    return float(effective_timing(cfg)["decision_interval"])
+
+
+def simulation_options(simulation: Dict[str, Any]) -> Dict[str, Any]:
+    """Split YAML timing overrides from ordinary simulation options."""
+    keys = (*DEFAULT_SAFETY_CONFIG, "decision_interval")
+    return {"timing_overrides": {k: simulation[k] for k in keys if k in simulation},
+            **{k: simulation[k] for k in ("step_length", "use_tripinfo", "steps") if k in simulation}}
 
 
 def resolve_model_path(cfg: ExperimentConfig) -> Optional[str]:
@@ -79,23 +95,18 @@ def resolve_model_path(cfg: ExperimentConfig) -> Optional[str]:
     return None
 
 
-def get_sumo_version() -> str:
-    """Dynamically determines the installed SUMO version."""
-    import re
-    try:
-        output = subprocess.check_output(["sumo", "--version"], text=True, stderr=subprocess.STDOUT, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    match = re.search(r"\b(\d+\.\d+(?:\.\d+)?)", output)
-    return match.group(1) if match else "unknown"
-
-
 def _experiment_identity(cfg: ExperimentConfig, checkpoint_path=None, root=None, include_seed=True) -> str:
     base = Path(root or ".")
     params = asdict(cfg)
     for key in ("output_dir", "model_path"):
         params.pop(key, None)
     params["algorithm"] = algorithm_key(cfg.algorithm)
+    params["metric_schema_version"] = METRIC_SCHEMA_VERSION
+    try:
+        params["timing_overrides"] = effective_timing(cfg)
+    except (ValueError, TypeError, KeyError, SyntaxError, AttributeError, OverflowError):
+        pass  # Invalid checkpoints still have a stable content fingerprint.
+
     if not include_seed:
         params.pop("seed", None)
     model = Path(checkpoint_path or resolve_model_path(cfg) or "__no_model__")
@@ -134,94 +145,44 @@ def compute_improvement(baseline_val: float, algo_val: float, higher_is_better: 
     return sign * (algo_val - baseline_val) / abs(baseline_val) * 100.0
 
 
-def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
-    """Executes a single experiment run for any controller algorithm."""
-    scenario_info = inspect_scenario(cfg.scenario_name, data_dir="data")
-    total_demand = scenario_info.trips_or_vehicles_count
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id = f"{cfg.scenario_name}_{cfg.algorithm.lower().replace(' ', '_').replace('-', '_')}_s{cfg.seed}_{timestamp}"
-    run_dir = os.path.join(cfg.output_dir, "runs", run_id) if cfg.save_run_details else None
-    if run_dir:
-        os.makedirs(run_dir, exist_ok=True)
-
-    print(f"\n---> Running [{cfg.scenario_name.upper()}] | Algorithm: [{cfg.algorithm}] | Seed: {cfg.seed}")
-
+def run_single_experiment(cfg: ExperimentConfig, *, include_summary: bool = False):
+    """Run simulation or evaluation; optionally return the full metrics summary."""
     start_wall_clock = time.time()
-    algo_key = algorithm_key(cfg.algorithm)
-
-    summary: Dict[str, Any] = {}
-    episode_reward: Optional[float] = None
-    env: Optional[TrafficSignalRLEnv] = None
-    runner: Optional[SimulationRunner] = None
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = f"{cfg.scenario_name}_{algorithm_key(cfg.algorithm)}_s{cfg.seed}_{timestamp}"
+    run_dir = os.path.join(cfg.output_dir, "runs", run_id) if cfg.save_run_details else None
+    identity = {"run_id": run_id, "scenario_name": cfg.scenario_name, "algorithm": cfg.algorithm, "seed": cfg.seed}
+    summary, episode_reward = {}, None
     model_path = resolve_model_path(cfg)
-    identity = {"run_fingerprint": compute_run_fingerprint(cfg, model_path), "cohort_fingerprint": compute_cohort_fingerprint(cfg, model_path)}
-
     try:
-        if algo_key == "q-learning":
-            timing = {key: getattr(cfg, key) for key in DEFAULT_SAFETY_CONFIG}
-            if cfg.decision_interval is not None:
-                timing["decision_interval"] = cfg.decision_interval
-            agent, env = create_evaluation_session(
-                cfg.scenario_name, model_path, seed=cfg.seed, timing_overrides=timing,
-                max_steps=cfg.steps, output_dir=run_dir, use_tripinfo=cfg.use_tripinfo, step_length=cfg.step_length,
-                save_run_details=cfg.save_run_details, gui=False,
-            )
-
+        identity.update(run_fingerprint=compute_run_fingerprint(cfg), cohort_fingerprint=compute_cohort_fingerprint(cfg))
+        timing = effective_timing(cfg)
+        options = dict(max_steps=cfg.steps, seed=cfg.seed, output_dir=run_dir,
+                       gui=cfg.gui, gui_delay=cfg.gui_delay, step_length=cfg.step_length,
+                       use_tripinfo=cfg.use_tripinfo, save_run_details=cfg.save_run_details)
+        if not include_summary and not cfg.use_tripinfo:
+            raise ValueError("Benchmark evaluation requires TripInfo")
+        if algorithm_key(cfg.algorithm) == "q-learning":
+            agent, env = create_evaluation_session(cfg.scenario_name, model_path,
+                                                 timing_overrides=cfg.timing_overrides, **options)
             with env:
                 episode_reward, summary = run_greedy_eval_loop(agent, env, seed=cfg.seed)
-
         else:
-            # Baseline controllers: Fixed-Time, Max-Pressure
-            controller, _ = make_controller(
-                cfg.algorithm,
-                dataset_name=cfg.scenario_name,
-                fixed_time_green=cfg.fixed_time_green,
-                min_green=cfg.min_green,
-                max_green=cfg.max_green,
-                pressure_metric=cfg.pressure_metric,
-            )
-
-            sim_cfg = get_scenario_config(
-                dataset_name=cfg.scenario_name,
-                gui=False,
-                step_length=cfg.step_length,
-                yellow_duration=cfg.yellow_duration,
-                all_red_duration=cfg.all_red_duration,
-                min_green=cfg.min_green,
-                max_green=cfg.max_green,
-                max_steps=cfg.steps,
-                seed=cfg.seed,
-                output_dir=run_dir,
-                control_mode="agent",
-                use_tripinfo=cfg.use_tripinfo,
-                decision_interval=resolve_effective_decision_interval(cfg),
-                save_run_details=cfg.save_run_details,
-            )
-            runner = SimulationRunner(sim_cfg, controller=controller)
-            summary = runner.run(num_steps=cfg.steps)
-
+            controller, mode = make_controller(cfg.algorithm, dataset_name=cfg.scenario_name,
+                                               fixed_time_green=cfg.fixed_time_green, pressure_metric=cfg.pressure_metric,
+                                               min_green=timing["min_green"], max_green=timing["max_green"])
+            sim_cfg = get_scenario_config(cfg.scenario_name, control_mode=mode, **timing, **options)
+            summary = SimulationRunner(sim_cfg, controller=controller).run()
         if not summary.get("is_valid", True):
             raise ValueError(f"Invalid simulation measurements: {summary.get('measurement_error_messages', [])}")
-
-    except Exception as e:
-        wall_clock = time.time() - start_wall_clock
-        print(f"[ERROR] Simulation run failed: {e}")
-        return {
-            **identity,
-            "run_id": run_id,
-            "scenario_name": cfg.scenario_name,
-            "algorithm": cfg.algorithm,
-            "seed": cfg.seed,
-            "status": "FAILED",
-            "is_valid": False,
-            "error_message": str(e),
-            "wall_clock_time_seconds": round(wall_clock, 2),
-        }
+    except Exception as error:
+        record = {**identity, "status": "FAILED", "is_valid": False, "error_message": str(error),
+                  "wall_clock_time_seconds": round(time.time() - start_wall_clock, 2)}
+        return (record, summary) if include_summary else record
     wall_clock = time.time() - start_wall_clock
 
     # Extract key metrics cleanly
-    completed, scheduled_demand, completion_fraction = completion_statistics(summary, total_demand)
+    completed, scheduled_demand, completion_fraction = completion_statistics(summary)
     completion_rate = round(completion_fraction * 100.0, 2)
     duration = summary.get("observation_window_duration") or (summary.get("total_steps", 0) * summary.get("step_length", 1.0))
     throughput_vph = round(completed * 3600.0 / duration, 1) if duration > 0 else 0.0
@@ -236,15 +197,14 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
     run_record: Dict[str, Any] = {
         **identity,
-        "run_id": run_id,
-        "scenario_name": cfg.scenario_name,
-        "algorithm": cfg.algorithm,
-        "seed": cfg.seed,
         "training_seed": cfg.training_seed,
         "checkpoint_path": model_path,
         "status": "SUCCESS",
         "is_valid": True,
         "total_steps": summary.get("total_steps", 0),
+        "observation_window_begin": summary.get("observation_window_begin"),
+        "observation_window_end": summary.get("observation_window_end"),
+        "observation_window_duration": summary.get("observation_window_duration"),
         "total_demand": scheduled_demand,
         "total_completed_vehicles": completed,
         "completion_rate_pct": completion_rate,
@@ -267,7 +227,8 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         "phase_durations_per_tls": summary.get("phase_durations_per_tls", {}),
         "reward_config": summary.get("reward_config"),
         "reward_config_source": summary.get("reward_config_source"),
-        "effective_config": {"steps": cfg.steps, **{key: summary.get(key, getattr(cfg, key)) for key in (*DEFAULT_SAFETY_CONFIG, "step_length", "decision_interval")}},
+        "effective_config": {"steps": cfg.steps, **{key: summary.get(key, value) for key, value in {**timing, "step_length": cfg.step_length}.items()}},
+        "controlled_tls_ids": summary.get("controlled_tls_ids", []),
         "safety_status": safety_status,
         "service_status": run_service_status,
         "wall_clock_time_seconds": round(wall_clock, 2),
@@ -287,7 +248,7 @@ def run_single_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         f"Wait: {wait_label} | Queue: {run_record['mean_queue_length']:.2f} | "
         f"Collisions: {col_count}"
     )
-    return run_record
+    return (run_record, summary) if include_summary else run_record
 
 
 def aggregate_benchmark_statistics(
@@ -298,15 +259,17 @@ def aggregate_benchmark_statistics(
     groups: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
     failed_groups: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
 
+    baseline_algo = normalize_algo_name(baseline_algo)
     unique = {}
     cohorts = {}
     for record in run_records:
-        key = (record.get("scenario_name"), record.get("algorithm"))
+        norm_algo = normalize_algo_name(record.get("algorithm", ""))
+        key = (record.get("scenario_name"), norm_algo)
         cohort = record.get("cohort_fingerprint")
         if key in cohorts and cohorts[key] != cohort:
             raise ValueError("Cannot aggregate different experiment cohorts")
         cohorts[key] = cohort
-        unique[(*key, record.get("seed"))] = record
+        unique[(*key, record.get("seed"))] = {**record, "algorithm": norm_algo}
 
     for r in unique.values():
         scen = r.get("scenario_name", "unknown")
@@ -316,58 +279,35 @@ def aggregate_benchmark_statistics(
         else:
             groups.setdefault(scen, {}).setdefault(algo, []).append(r)
 
-    metrics_keys = [
-        ("tripinfo_mean_waiting_time", False),
-        ("mean_waiting_time", False),
-        ("mean_queue_length", False),
-        ("total_completed_vehicles", True),
-        ("completion_rate_pct", True),
-        ("throughput_vph", True),
-        ("tripinfo_mean_travel_time", False),
-        ("tripinfo_total_time_loss", False),
-        ("system_mean_delay", False),
-        ("system_total_delay", False),
-        ("collision_count", False),
-        ("teleport_count", False),
-        ("phase_change_count", False),
-    ]
-
     summary_stats: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    all_scenarios = sorted(list(set(list(groups.keys()) + list(failed_groups.keys()))))
-    for scen in all_scenarios:
+    for scen in sorted(groups.keys() | failed_groups.keys()):
         summary_stats[scen] = {}
 
     for scen, algos in groups.items():
         for algo, runs in algos.items():
-            distinct_seeds = sorted(list({r["seed"] for r in runs if "seed" in r}))
+            distinct_seeds = sorted({r["seed"] for r in runs if "seed" in r})
             algo_stats: Dict[str, Any] = {
                 "effective_config": runs[0].get("effective_config"),
                 "reward_config": runs[0].get("reward_config"),
+                "controlled_tls_ids": runs[0].get("controlled_tls_ids", []),
                 "run_count": len(runs),
                 "seeds": distinct_seeds,
                 "status": "SUCCESS",
                 "is_valid": True,
             }
 
-            for key, _ in (*metrics_keys, ("episode_reward", True)):
+            for key, _ in (*BENCHMARK_METRICS, ("episode_reward", True)):
                 vals = [float(r[key]) for r in runs if r.get(key) is not None and math.isfinite(float(r[key]))]
-                if vals:
-                    std_val = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
-                    entry = {
-                        "mean": round(float(np.mean(vals)), 2),
-                        "std": round(std_val, 2),
-                        "min": round(float(np.min(vals)), 2),
-                        "max": round(float(np.max(vals)), 2),
-                        "available": True,
-                    }
-                    if key in ("collision_count", "teleport_count"):
-                        entry["sum"] = int(np.sum(vals))
-                    algo_stats[key] = entry
-                else:
-                    entry = {"mean": None, "std": None, "min": None, "max": None, "available": False}
-                    if key in ("collision_count", "teleport_count"):
-                        entry["sum"] = 0
-                    algo_stats[key] = entry
+                entry = {
+                    "mean": round(float(np.mean(vals)), 2) if vals else None,
+                    "std": round(float(np.std(vals, ddof=1)), 2) if len(vals) > 1 else (0.0 if vals else None),
+                    "min": round(min(vals), 2) if vals else None,
+                    "max": round(max(vals), 2) if vals else None,
+                    "available": bool(vals),
+                }
+                if key in ("collision_count", "teleport_count"):
+                    entry["sum"] = int(sum(vals))
+                algo_stats[key] = entry
 
             col_sum = algo_stats.get("collision_count", {}).get("sum", 0)
             tel_sum = algo_stats.get("teleport_count", {}).get("sum", 0)
@@ -383,8 +323,41 @@ def aggregate_benchmark_statistics(
             for algo, stats in summary_stats[scen].items():
                 if algo == baseline_algo or not stats.get("is_valid", False):
                     continue
+                b_tls = set(baseline_stats.get("controlled_tls_ids") or [])
+                a_tls = set(stats.get("controlled_tls_ids") or [])
+                if b_tls and a_tls and b_tls != a_tls:
+                    stats["comparison_unavailable_reason"] = (
+                        f"Controlled TLS mismatch in '{scen}': baseline '{baseline_algo}' controls {sorted(b_tls)}, "
+                        f"but '{algo}' controls {sorted(a_tls)}. Cannot compare runs with differing control scopes."
+                    )
+                    continue
+                baseline_runs = {run.get("seed"): run for run in algos[baseline_algo]}
+                candidate_runs = {run.get("seed"): run for run in algos[algo]}
+                if baseline_runs.keys() != candidate_runs.keys() or None in baseline_runs:
+                    raise ValueError(f"Cannot compare '{algo}' with '{baseline_algo}' in '{scen}': seed sets differ or are missing")
+                verified = True
+                window_keys = ("total_steps", "observation_window_begin", "observation_window_end", "observation_window_duration")
+                for seed, baseline_run in baseline_runs.items():
+                    candidate_run = candidate_runs[seed]
+                    base_config = baseline_run.get("effective_config") or {}
+                    candidate_config = candidate_run.get("effective_config") or {}
+                    # Controller decision intervals may intentionally differ by algorithm.
+                    config_keys = ("steps", "step_length", *DEFAULT_SAFETY_CONFIG)
+                    base_conditions = {key: base_config.get(key) for key in config_keys}
+                    candidate_conditions = {key: candidate_config.get(key) for key in config_keys}
+                    for key in (*window_keys, "metric_schema_version"):
+                        base_conditions[key] = baseline_run.get(key)
+                        candidate_conditions[key] = candidate_run.get(key)
+                    if base_conditions != candidate_conditions:
+                        raise ValueError(f"Cannot compare '{algo}' with '{baseline_algo}' in '{scen}', seed {seed}: simulation conditions differ")
+                    if (any(baseline_run.get(key) is None for key in window_keys)
+                            or "steps" not in base_config or base_config.get("step_length") is None):
+                        verified = False
+                if not verified:
+                    stats["comparison_unavailable_reason"] = "Missing simulation window or step configuration"
+                    continue
                 improvements: Dict[str, float] = {}
-                for key, higher_is_better in metrics_keys:
+                for key, higher_is_better in BENCHMARK_METRICS:
                     if key in baseline_stats and key in stats:
                         b_mean = baseline_stats[key].get("mean")
                         a_mean = stats[key].get("mean")
@@ -435,7 +408,7 @@ def run_full_benchmark_matrix(
     if seeds is None:
         seeds = yaml_cfg.get("seeds", [sim_yaml.get("seed", 42)])
 
-    options = {key: sim_yaml[key] for key in (*DEFAULT_SAFETY_CONFIG, "step_length", "use_tripinfo", "decision_interval", "steps") if key in sim_yaml}
+    options = simulation_options(sim_yaml)
 
     os.makedirs(output_dir, exist_ok=True)
     master_records_file = os.path.join(output_dir, "benchmark_runs.json")
@@ -469,13 +442,26 @@ def run_full_benchmark_matrix(
                     **options,
                     save_run_details=save_run_details,
                 )
-                fingerprint = compute_run_fingerprint(cfg)
-                requested_keys.add(fingerprint)
-                if resume and fingerprint in executed_keys:
-                    print(f"[{task_idx}/{total_tasks}] Reusing matching run: {scen} | {algo} | {s}")
-                    continue
-                rec = run_single_experiment(cfg)
-                rec.update(run_fingerprint=fingerprint, cohort_fingerprint=compute_cohort_fingerprint(cfg))
+                try:
+                    fingerprint = compute_run_fingerprint(cfg)
+                    requested_keys.add(fingerprint)
+                    if resume and fingerprint in executed_keys:
+                        print(f"[{task_idx}/{total_tasks}] Reusing matching run: {scen} | {algo} | {s}")
+                        continue
+                    rec = run_single_experiment(cfg)
+                    rec.update(run_fingerprint=fingerprint, cohort_fingerprint=compute_cohort_fingerprint(cfg))
+                except Exception as task_err:
+                    fingerprint = getattr(cfg, "run_id", f"{scen}_{algo}_{s}_failed")
+                    requested_keys.add(fingerprint)
+                    rec = {
+                        "scenario_name": scen,
+                        "algorithm": algo,
+                        "seed": s,
+                        "status": "FAILED",
+                        "is_valid": False,
+                        "error_message": str(task_err),
+                        "run_fingerprint": fingerprint,
+                    }
                 all_records.append(rec)
                 _write_json(master_records_file, all_records)
 
@@ -500,21 +486,20 @@ def run_full_benchmark_matrix(
 
     if generate_plots:
         from src.evaluation.plot_comparison import generate_all_phase6_charts
-        generate_all_phase6_charts(output_dir=figures_dir)
+        generate_all_phase6_charts(
+            output_dir=figures_dir,
+            summary_file=summary_file,
+            runs_file=master_records_file,
+            selected_records=selected,
+        )
 
     print(f"\n================================================================================")
     print(f"BENCHMARK COMPLETED: Results saved in '{output_dir}'")
     print(f"================================================================================")
-    return all_records, summary_stats
+    return selected, summary_stats
 
 
-def normalize_algo_name(name: str) -> str:
-    """Normalizes algorithm names including short aliases like ft, mp, ql."""
-    display_names = {"fixed-time": "Fixed-Time", "max-pressure": "Max-Pressure", "q-learning": "Q-Learning"}
-    return display_names.get(algorithm_key(name), name.strip())
-
-
-if __name__ == "__main__":
+def main(argv: Optional[Sequence[str]] = None) -> int:
     import argparse
     parser = argparse.ArgumentParser(description="Experiment Runner")
     parser.add_argument("--scenario", type=str, default="cologne1")
@@ -529,7 +514,7 @@ if __name__ == "__main__":
     parser.add_argument("--save-details", action="store_true", help="Save detailed per-run simulation files (XML/CSV) in runs/")
     parser.add_argument("--report", action=argparse.BooleanOptionalAction, default=True, help="Auto-generate Markdown comparison report")
     parser.add_argument("--plots", action="store_true", default=False, help="Auto-generate publication-quality charts")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     is_multi = args.run_all or (args.scenarios is not None) or (args.algorithms is not None) or (args.seeds is not None)
 
@@ -549,7 +534,7 @@ if __name__ == "__main__":
             if args.seeds
             else ([args.seed] if not args.run_all else None)
         )
-        run_full_benchmark_matrix(
+        current_records, summary_stats = run_full_benchmark_matrix(
             scenarios=scenarios_list,
             algorithms=algorithms_list,
             seeds=seeds_list,
@@ -559,6 +544,8 @@ if __name__ == "__main__":
             generate_report=args.report,
             generate_plots=args.plots,
         )
+        has_failure = any(r.get("status") == "FAILED" or not r.get("is_valid", True) for r in current_records)
+        return 1 if has_failure else 0
     else:
         norm_algo = normalize_algo_name(args.algorithm)
         yaml_cfg = load_experiments_yaml(args.config)
@@ -567,7 +554,18 @@ if __name__ == "__main__":
             scenario_name=args.scenario,
             algorithm=norm_algo,
             seed=args.seed,
-            **{key: sim_yaml[key] for key in (*DEFAULT_SAFETY_CONFIG, "step_length", "use_tripinfo", "decision_interval", "steps") if key in sim_yaml},
+            **simulation_options(sim_yaml),
             save_run_details=args.save_details,
         )
-        run_single_experiment(cfg)
+        record = run_single_experiment(cfg)
+        if record.get("status") == "FAILED" or not record.get("is_valid", True):
+            err_msg = record.get("error_message") or "Unknown error"
+            import sys
+            sys.stderr.write(f"Experiment failed: {err_msg}\n")
+            return 1
+        return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

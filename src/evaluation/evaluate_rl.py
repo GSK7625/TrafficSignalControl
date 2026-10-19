@@ -9,18 +9,14 @@ from src.rl.environment import TrafficSignalRLEnv
 from src.rl.rewards import NegativePressureReward
 
 
-def load_checkpoint_env_params(model_path: Optional[str]) -> Dict[str, Any]:
-    """Inspects checkpoint metadata to extract environment and discretizer configuration."""
-    if model_path is None:
-        return {}
-    return checkpoint_env_params(QLearningController.from_checkpoint(model_path).get_config())
-
-
 def checkpoint_env_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Maps controller metadata to environment options in one place."""
     params: Dict[str, Any] = {}
     if "num_actions" in cfg:
-        params["num_actions"] = int(cfg["num_actions"])
+        try:
+            params["num_actions"] = int(cfg["num_actions"])
+        except (ValueError, TypeError, OverflowError):
+            pass
     if "target_tls_id" in cfg and cfg["target_tls_id"] is not None:
         params["target_tls_id"] = str(cfg["target_tls_id"])
 

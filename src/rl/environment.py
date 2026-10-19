@@ -35,19 +35,13 @@ class TrafficSignalRLEnv:
         save_run_details: bool = False,
         step_length: float = 1.0,
     ):
-        self.scenario_name = scenario_name
         self.decision_interval = float(decision_interval)
         self.min_green = float(min_green)
         self.max_green = float(max_green) if max_green is not None else None
         self.yellow_duration = float(yellow_duration)
         self.all_red_duration = float(all_red_duration)
-        self.max_steps = max_steps
         self.seed = int(seed)
-        self.output_dir = output_dir
-        self.use_tripinfo = use_tripinfo
-        self.gui = gui
         self.gui_delay = float(gui_delay)
-        self.save_run_details = save_run_details
 
         self.config: SimulationConfig = get_scenario_config(
             dataset_name=scenario_name,
@@ -70,16 +64,10 @@ class TrafficSignalRLEnv:
         self.runner = SimulationRunner(self.config)
         self.tls_id = target_tls_id or self.runner.scenario_info.tls_ids[0]
         self.target_tls_id = self.tls_id
-        self.config.target_tls_id = self.tls_id
-        self.config.controlled_tls_ids = [self.tls_id]
         self.runner.set_controlled_tls_ids(self.tls_id)
 
         self.green_phases = self.runner.tls_managers[self.tls_id].green_phases
         self.num_actions = len(self.green_phases)
-        self.incoming_lanes = self.runner.scenario_info.controlled_lanes_per_tls.get(
-            self.tls_id, self.runner.all_controlled_lanes
-        )
-
         self.state_discretizer = state_discretizer or StateDiscretizer(
             min_green=self.min_green,
             max_effective_green=max_effective_green,
@@ -89,8 +77,6 @@ class TrafficSignalRLEnv:
         self.reward_fn = reward_fn or NegativePressureReward(scale=1.0)
         self.reward_config_source = "explicit" if reward_fn else "defaults"
 
-        self.observation_dim = 4
-        self.action_dim = self.num_actions
         self._episode_count = 0
         self._episode_done = True
         self._last_summary: Optional[Dict[str, Any]] = None
@@ -111,20 +97,22 @@ class TrafficSignalRLEnv:
         self._episode_count += 1
         self.reward_fn.reset()
 
-        tls_obs = self.runner.get_observation()[self.tls_id]
-        discrete_state = self.state_discretizer.discretize(tls_obs)
+        info = self._observation_info()
+        info["episode"] = self._episode_count
+        return info["discrete_state"], info
 
-        info = {
+    def _observation_info(self) -> Dict[str, Any]:
+        """Build the shared observation fields for reset and step."""
+        tls_obs = self.runner.get_observation()[self.tls_id]
+        return {
             "tls_id": self.tls_id,
-            "discrete_state": discrete_state,
+            "discrete_state": self.state_discretizer.discretize(tls_obs),
             "valid_actions": self.get_valid_actions(),
             "action_mask": self.get_valid_action_mask(),
             "raw_observation": tls_obs,
             "sim_time": self.runner.sim_time,
             "step": self.runner.current_step,
-            "episode": self._episode_count,
         }
-        return discrete_state, info
 
     def get_valid_actions(self) -> List[int]:
         """Returns valid action indices based on signal timing constraints."""
@@ -174,36 +162,23 @@ class TrafficSignalRLEnv:
             )
 
         reward = self.reward_fn.calculate_reward()
-        tls_obs = self.runner.get_observation()[self.tls_id]
-        discrete_state = self.state_discretizer.discretize(tls_obs)
+        info = self._observation_info()
 
         if self.runner.sim_time >= self.config.end_time:
             terminated = True
         if self.config.max_steps is not None and self.runner.current_step >= self.config.max_steps:
             truncated = True
 
-        info = {
-            "tls_id": self.tls_id,
-            "discrete_state": discrete_state,
-            "valid_actions": self.get_valid_actions(),
-            "action_mask": self.get_valid_action_mask(),
-            "raw_observation": tls_obs,
-            "sim_time": self.runner.sim_time,
-            "step": self.runner.current_step,
-        }
-
         if terminated or truncated:
             self._episode_done = True
-            self._last_summary = self._finalize_episode()
+            self.runner.metrics_collector.set_run_metadata({
+                "reward_config": self.reward_fn.get_config(),
+                "reward_config_source": self.reward_config_source,
+            })
+            self._last_summary = self.runner.finalize()
             info["episode_summary"] = self._last_summary
 
-        return discrete_state, reward, terminated, truncated, info
-
-    def _finalize_episode(self) -> Dict[str, Any]:
-        """Finalizes episode, collects metrics, and exports results."""
-        self.runner.metrics_collector.set_run_metadata({"reward_config": self.reward_fn.get_config(), "reward_config_source": self.reward_config_source})
-        self._last_summary = self.runner.finalize()
-        return self._last_summary
+        return info["discrete_state"], reward, terminated, truncated, info
 
     def get_summary(self) -> Optional[Dict[str, Any]]:
         return self._last_summary

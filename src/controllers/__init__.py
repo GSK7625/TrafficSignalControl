@@ -1,5 +1,4 @@
-"""Traffic signal controllers package."""
-
+import json
 import os
 from typing import Any, Optional, Tuple
 
@@ -24,11 +23,43 @@ def algorithm_key(name: str) -> str:
     return aliases.get(cleaned, cleaned)
 
 
-def resolve_q_learning_checkpoint(dataset_name: str, model_path: Optional[str] = None) -> str:
-    """Prefers an explicit checkpoint, then best, then final, returning the expected best path if absent."""
+def resolve_q_learning_checkpoint(
+    dataset_name: str,
+    model_path: Optional[str] = None,
+    log_dir: str = "results/training",
+    model_dir: str = "models/q_learning",
+) -> str:
+    """Prefers an explicit checkpoint, then best, then final, returning the expected best path if absent.
+
+    Validates candidate checkpoints against latest training log to avoid using stale historical best checkpoints.
+    """
     if model_path:
         return model_path
-    candidates = [f"models/q_learning/q_learning_{dataset_name}_{tag}.json" for tag in ("best", "final")]
+
+    best_candidate = f"{model_dir}/q_learning_{dataset_name}_best.json"
+    final_candidate = f"{model_dir}/q_learning_{dataset_name}_final.json"
+    candidates = [best_candidate, final_candidate]
+
+    log_file = f"{log_dir}/q_learning_{dataset_name}_log.json"
+    if os.path.isfile(log_file):
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                log_data = json.load(f)
+            if log_data.get("best_is_viable") is False:
+                if os.path.isfile(final_candidate):
+                    return final_candidate
+                elif os.path.isfile(best_candidate):
+                    raise ValueError(
+                        f"Latest training log for '{dataset_name}' indicates no viable best checkpoint was found. "
+                        f"Historical checkpoint '{best_candidate}' exists from a previous run; please specify model_path explicitly."
+                    )
+            elif log_data.get("best_is_viable") is True:
+                best_path = log_data.get("best_checkpoint_path") or best_candidate
+                if os.path.isfile(best_path):
+                    return best_path
+        except (json.JSONDecodeError, OSError):
+            pass
+
     return next((path for path in candidates if os.path.isfile(path)), candidates[0])
 
 
@@ -72,29 +103,9 @@ def make_controller(
         allowed = (*DEFAULT_SAFETY_CONFIG, "decision_interval", "target_tls_id")
         ctrl_kwargs = {k: kwargs[k] for k in allowed if k in kwargs}
 
-        if os.path.isfile(target_path):
-            ctrl = QLearningController.from_checkpoint(
-                target_path, eval_mode=kwargs.get("eval_mode", True), seed=kwargs.get("seed"),
-                **ctrl_kwargs,
-            )
-        elif model_path:
-            raise FileNotFoundError(f"Model file not found: {model_path}")
-        else:
-            if "num_actions" in kwargs:
-                num_actions = kwargs["num_actions"]
-            elif scenario_info and getattr(scenario_info, "phases_per_tls", None):
-                target_tls = kwargs.get("target_tls_id") or (
-                    scenario_info.tls_ids[0] if getattr(scenario_info, "tls_ids", None) else next(iter(scenario_info.phases_per_tls))
-                )
-                num_actions = max(1, len(scenario_info.phases_per_tls.get(target_tls, [])))
-            else:
-                num_actions = 2
-            ctrl = QLearningController(
-                num_actions=int(num_actions),
-                eval_mode=kwargs.get("eval_mode", True),
-                seed=kwargs.get("seed"),
-                **ctrl_kwargs,
-            )
+        ctrl = QLearningController.from_checkpoint(
+            target_path, eval_mode=kwargs.get("eval_mode", True), seed=kwargs.get("seed"), **ctrl_kwargs,
+        )
         return ctrl, "agent"
 
     if algo_key == "none":

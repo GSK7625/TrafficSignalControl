@@ -1,7 +1,6 @@
 """Unit tests for SafePhaseManager and phase clearance transition logic."""
 
 import pytest
-from unittest.mock import MagicMock
 from src.phase_manager import SafePhaseManager, build_yellow_state
 
 
@@ -272,4 +271,16 @@ class TestSafePhaseManager:
         assert manager.valid_actions() == [1, 2]
         manager.request_phase(2)
         assert manager.valid_actions() == [2]
+
+    @pytest.mark.parametrize("min_g,max_g,match", [
+        (10.0, 5.0, "max_green must be >= min_green"),
+        (5.0, -1.0, "max_green must be positive"),
+        (float("nan"), 10.0, "finite"),
+        (5.0, float("nan"), "finite"),
+        (5.0, float("inf"), "finite"),
+    ])
+    def test_invalid_green_time_constraints_rejected(self, min_g, max_g, match):
+        with pytest.raises(ValueError, match=match):
+            SafePhaseManager("tls", ["Grr", "rGr"], min_green=min_g, max_green=max_g)
+
 

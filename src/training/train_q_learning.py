@@ -5,7 +5,7 @@ import math
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, fields
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
@@ -18,8 +18,14 @@ from src.rl.environment import TrafficSignalRLEnv
 from src.rl.rewards import BaseRewardFunction, NegativePressureReward
 
 
+def validate_completion_threshold(value: float) -> None:
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError("completion threshold must be finite and within [0, 1]")
+
+
 def is_validation_viable(result: dict, min_completion: float = BENCHMARK_COMPLETION_THRESHOLD) -> tuple[bool, list[str]]:
     """Simple viability check: no collisions/teleports and sufficient vehicle completion rate."""
+    validate_completion_threshold(min_completion)
     s = {**result, **result.get("summary", {})}
     reasons = []
     if s.get("collision_count", 0) > 0:
@@ -50,6 +56,8 @@ def validation_data_errors(result: dict) -> list[str]:
         errors.append("data_invalid")
     if s.get("measurement_errors", 0) > 0:
         errors.append("measurement_errors")
+    if s.get("tripinfo_required") is not True or s.get("tripinfo_reconciliation_status") != "MATCH":
+        errors.append("tripinfo_unverified")
     return errors
 
 
@@ -57,6 +65,7 @@ class ValidationCheckpointSelector:
     """Selects best checkpoint based on validation reward and completion."""
 
     def __init__(self, min_completion: float = BENCHMARK_COMPLETION_THRESHOLD):
+        validate_completion_threshold(min_completion)
         self.min_completion = min_completion
         self.best_reward = -float("inf")
         self.episode = None
@@ -95,7 +104,7 @@ def evaluate_greedy_q_learning(
     output_dir: Optional[str] = None,
     save_run_details: bool = False,
 ) -> Dict[str, Any]:
-    """Evaluates the Q-Learning agent deterministically (epsilon=0, eval_mode=True)."""
+    target_tls = getattr(agent, "target_tls_id", None)
     val_env = TrafficSignalRLEnv(
         scenario_name=scenario_name,
         decision_interval=decision_interval,
@@ -104,14 +113,21 @@ def evaluate_greedy_q_learning(
         yellow_duration=yellow_duration,
         all_red_duration=all_red_duration,
         reward_fn=reward_fn,
-        state_discretizer=state_discretizer,
+        state_discretizer=state_discretizer or getattr(agent, "discretizer", None),
         max_steps=max_steps,
         seed=seed,
         gui=False,
         output_dir=output_dir,
         save_run_details=save_run_details,
+        target_tls_id=target_tls,
     )
     try:
+        env_actions = getattr(val_env, "num_actions", None)
+        agent_actions = getattr(agent, "num_actions", None)
+        if env_actions is not None and agent_actions is not None and env_actions != agent_actions:
+            raise ValueError(
+                f"Action space mismatch: agent expects {agent_actions} actions, but environment target '{val_env.tls_id}' has {env_actions} actions."
+            )
         total_reward, summary = run_greedy_eval_loop(agent, val_env, seed=seed)
     finally:
         val_env.close()
@@ -148,7 +164,7 @@ class TrainingConfig:
     gamma: float = 0.95
     epsilon_start: float = 1.0
     epsilon_min: float = 0.05
-    epsilon_decay: float = 0.85
+    epsilon_decay: float = 0.94
     decision_interval: float = 5.0
     min_green: float = DEFAULT_SAFETY_CONFIG["min_green"]
     max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"]
@@ -159,25 +175,25 @@ class TrainingConfig:
     val_seeds: Optional[List[int]] = None
     min_val_completion: float = BENCHMARK_COMPLETION_THRESHOLD
     reward_scale: float = 1.0
-    pending_weight: float = 0.0
+    pending_weight: float = 0.5
     max_effective_green: float = 25.0
-    serving_thresholds: Tuple[float, ...] = (1.0, 5.0)
-    waiting_thresholds: Tuple[float, ...] = (1.0, 6.0, 15.0)
+    serving_thresholds: Tuple[float, ...] = (2.0, 8.0)
+    waiting_thresholds: Tuple[float, ...] = (4.0, 15.0, 35.0)
     model_dir: str = "models/q_learning"
     log_dir: str = "results/training"
     save_run_details: bool = False
 
+    def __post_init__(self) -> None:
+        validate_completion_threshold(self.min_val_completion)
+        if self.num_episodes <= 0:
+            raise ValueError(f"num_episodes must be positive, got {self.num_episodes}")
+
     @classmethod
     def from_yaml(cls, config_path: str, **overrides: Any) -> "TrainingConfig":
         yaml_cfg = load_yaml_config(config_path)
-        params: Dict[str, Any] = {}
-        hp = yaml_cfg.get("hyperparameters", {})
-        for k in ["learning_rate", "gamma", "epsilon_start", "epsilon_min", "epsilon_decay", "num_episodes", "seed", "max_green", "val_seeds"]:
-            if k in hp:
-                params[k] = hp[k]
-        for k in ["decision_interval", "min_green", "max_green", "yellow_duration", "all_red_duration", "max_steps", "val_interval", "val_seeds"]:
-            if k in yaml_cfg:
-                params[k] = yaml_cfg[k]
+        names = {item.name for item in fields(cls)}
+        params = {key: value for group in (yaml_cfg.get("hyperparameters", {}), yaml_cfg)
+                  for key, value in group.items() if key in names}
         rc = yaml_cfg.get("reward", {})
         if "scale" in rc or "reward_scale" in yaml_cfg:
             params["reward_scale"] = float(rc.get("scale", yaml_cfg.get("reward_scale", 1.0)))
@@ -191,92 +207,22 @@ class TrainingConfig:
         if "waiting_queue_thresholds" in dc:
             params["waiting_thresholds"] = tuple(float(x) for x in dc["waiting_queue_thresholds"])
 
-        params.update({k: v for k, v in overrides.items() if v is not None})
+        params.update(overrides)
         return cls(**params)
 
 
-def train_q_learning(
-    scenario_name: str = "ingolstadt1",
-    num_episodes: Optional[int] = None,
-    seed: Optional[int] = None,
-    learning_rate: Optional[float] = None,
-    gamma: Optional[float] = None,
-    epsilon_start: Optional[float] = None,
-    epsilon_min: Optional[float] = None,
-    epsilon_decay: Optional[float] = None,
-    decision_interval: Optional[float] = None,
-    min_green: Optional[float] = None,
-    max_green: Optional[float] = None,
-    yellow_duration: Optional[float] = None,
-    all_red_duration: Optional[float] = None,
-    max_steps_per_episode: Optional[int] = None,
-    val_interval: Optional[int] = None,
-    val_seeds: Optional[List[int]] = None,
-    min_val_completion: float = BENCHMARK_COMPLETION_THRESHOLD,
-    config_path: Optional[str] = None,
-    model_dir: str = "models/q_learning",
-    log_dir: str = "results/training",
-    save_run_details: bool = False,
-    config: Optional[TrainingConfig] = None,
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Trains a Tabular Q-Learning agent on a specified SUMO scenario."""
-    if config is not None:
-        cfg = config
-    elif config_path is not None:
-        overrides = {
-            "scenario_name": scenario_name,
-            "num_episodes": num_episodes,
-            "seed": seed,
-            "learning_rate": learning_rate,
-            "gamma": gamma,
-            "epsilon_start": epsilon_start,
-            "epsilon_min": epsilon_min,
-            "epsilon_decay": epsilon_decay,
-            "decision_interval": decision_interval,
-            "min_green": min_green,
-            "max_green": max_green,
-            "yellow_duration": yellow_duration,
-            "all_red_duration": all_red_duration,
-            "max_steps": max_steps_per_episode,
-            "val_interval": val_interval,
-            "val_seeds": val_seeds,
-            "min_val_completion": min_val_completion,
-            "model_dir": model_dir,
-            "log_dir": log_dir,
-            "save_run_details": save_run_details,
-            **kwargs,
-        }
-        cfg = TrainingConfig.from_yaml(config_path, **{k: v for k, v in overrides.items() if v is not None})
-    else:
-        init_kwargs = {
-            "scenario_name": scenario_name,
-            "model_dir": model_dir,
-            "log_dir": log_dir,
-            "save_run_details": save_run_details,
-            "min_val_completion": min_val_completion,
-            **kwargs,
-        }
-        for k, v in [
-            ("num_episodes", num_episodes),
-            ("seed", seed),
-            ("learning_rate", learning_rate),
-            ("gamma", gamma),
-            ("epsilon_start", epsilon_start),
-            ("epsilon_min", epsilon_min),
-            ("epsilon_decay", epsilon_decay),
-            ("decision_interval", decision_interval),
-            ("min_green", min_green),
-            ("max_green", max_green),
-            ("yellow_duration", yellow_duration),
-            ("all_red_duration", all_red_duration),
-            ("max_steps", max_steps_per_episode),
-            ("val_interval", val_interval),
-            ("val_seeds", val_seeds),
-        ]:
-            if v is not None:
-                init_kwargs[k] = v
-        cfg = TrainingConfig(**init_kwargs)
+def train_q_learning(config: Optional[TrainingConfig] = None, **legacy_options: Any) -> Dict[str, Any]:
+    """Train from a config; existing keyword calls remain supported by this adapter."""
+    if config is not None and legacy_options:
+        raise TypeError("Pass config or training keyword options, not both")
+    if config is None:
+        config_path = legacy_options.pop("config_path", None)
+        max_steps = legacy_options.pop("max_steps_per_episode", None)
+        options = {k: v for k, v in legacy_options.items() if v is not None or k in ("max_green", "max_steps")}
+        if max_steps is not None:
+            options["max_steps"] = max_steps
+        config = TrainingConfig.from_yaml(config_path, **options) if config_path else TrainingConfig(**options)
+    cfg = config
 
     os.makedirs(cfg.model_dir, exist_ok=True)
     os.makedirs(cfg.log_dir, exist_ok=True)
@@ -295,13 +241,10 @@ def train_q_learning(
     print(f"{'='*56}")
 
     env_output_dir = os.path.join(cfg.log_dir, f"env_{cfg.scenario_name}") if cfg.save_run_details else None
+    timing_options = {key: getattr(cfg, key) for key in (*DEFAULT_SAFETY_CONFIG, "decision_interval")}
     env = TrafficSignalRLEnv(
         scenario_name=cfg.scenario_name,
-        decision_interval=cfg.decision_interval,
-        min_green=cfg.min_green,
-        max_green=cfg.max_green,
-        yellow_duration=cfg.yellow_duration,
-        all_red_duration=cfg.all_red_duration,
+        **timing_options,
         reward_fn=reward_fn,
         state_discretizer=state_discretizer,
         max_steps=cfg.max_steps,
@@ -320,11 +263,7 @@ def train_q_learning(
         epsilon_min=cfg.epsilon_min,
         epsilon_decay=cfg.epsilon_decay,
         discretizer=state_discretizer,
-        decision_interval=cfg.decision_interval,
-        min_green=cfg.min_green,
-        max_green=cfg.max_green,
-        yellow_duration=cfg.yellow_duration,
-        all_red_duration=cfg.all_red_duration,
+        **timing_options,
         seed=cfg.seed,
         eval_mode=False,
     )
@@ -411,11 +350,7 @@ def train_q_learning(
                     evaluate_greedy_q_learning(
                         agent=agent,
                         scenario_name=cfg.scenario_name,
-                        decision_interval=cfg.decision_interval,
-                        min_green=cfg.min_green,
-                        max_green=cfg.max_green,
-                        yellow_duration=cfg.yellow_duration,
-                        all_red_duration=cfg.all_red_duration,
+                        **timing_options,
                         reward_fn=NegativePressureReward(scale=cfg.reward_scale, pending_weight=cfg.pending_weight),
                         state_discretizer=state_discretizer,
                         max_steps=cfg.max_steps,
@@ -479,34 +414,22 @@ def train_q_learning(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train Tabular Q-Learning on SUMO.")
-    parser.add_argument("--dataset", type=str, default="ingolstadt1", choices=["cologne1", "ingolstadt1", "cologne3"])
-    parser.add_argument("--episodes", type=int, default=None)
-    parser.add_argument("--lr", type=float, default=None)
-    parser.add_argument("--gamma", type=float, default=None)
-    parser.add_argument("--decay", type=float, default=None)
-    parser.add_argument("--steps", type=int, default=None)
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--max-green", type=float, default=None, help="Maximum consecutive green duration")
-    parser.add_argument("--min-completion", type=float, default=BENCHMARK_COMPLETION_THRESHOLD, help="Minimum validation completion rate for best checkpoint")
-    parser.add_argument("--config", type=str, default=None, help="Path to YAML configuration file")
-    parser.add_argument("--val-interval", type=int, default=None, help="Interval of episodes for greedy evaluation")
-    parser.add_argument("--val-seeds", type=int, nargs="+", default=None, help="List of validation seeds")
-    parser.add_argument("--save-details", action="store_true", help="Save detailed per-episode simulation files and checkpoints")
-
-    args = parser.parse_args()
-    train_q_learning(
-        scenario_name=args.dataset,
-        num_episodes=args.episodes,
-        learning_rate=args.lr,
-        gamma=args.gamma,
-        epsilon_decay=args.decay,
-        max_steps_per_episode=args.steps,
-        seed=args.seed,
-        max_green=args.max_green,
-        min_val_completion=args.min_completion,
-        config_path=args.config,
-        val_interval=args.val_interval,
-        val_seeds=args.val_seeds,
-        save_run_details=args.save_details,
+    parser = argparse.ArgumentParser(description="Train Tabular Q-Learning on SUMO.", argument_default=argparse.SUPPRESS)
+    parser.add_argument("--dataset", dest="scenario_name", choices=["cologne1", "ingolstadt1", "cologne3"])
+    for flag, dest, value_type in (
+        ("episodes", "num_episodes", int), ("lr", "learning_rate", float),
+        ("gamma", "gamma", float), ("decay", "epsilon_decay", float),
+        ("steps", "max_steps", int), ("seed", "seed", int),
+        ("min-completion", "min_val_completion", float), ("val-interval", "val_interval", int),
+    ):
+        parser.add_argument(f"--{flag}", dest=dest, type=value_type)
+    parser.add_argument("--max-green", type=lambda value: None if value.lower() == "none" else float(value))
+    parser.add_argument(
+        "--config",
+        dest="config_path",
+        default="configs/q_learning.yaml" if os.path.isfile("configs/q_learning.yaml") else None,
+        help="Path to YAML configuration",
     )
+    parser.add_argument("--val-seeds", type=int, nargs="+")
+    parser.add_argument("--save-details", dest="save_run_details", action="store_true")
+    train_q_learning(**vars(parser.parse_args()))

@@ -5,7 +5,6 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import pytest
 
 from src.evaluation.compare_algorithms import generate_comparison_report
 from src.evaluation.experiment_runner import aggregate_benchmark_statistics
@@ -107,6 +106,34 @@ class TestGenerateComparisonReport:
         assert "5 / 5 (max 4)" in md_text
         assert "tổng cộng 5 va chạm" in md_text
 
+    def test_generate_comparison_report_with_algo_aliases(self, tmp_path):
+        mock_summary = {
+            "cologne1": {
+                "ft": {
+                    "tripinfo_mean_waiting_time": {"mean": 70.0, "std": 1.0},
+                    "system_mean_delay": {"mean": 80.0, "std": 1.0},
+                    "mean_queue_length": {"mean": 30.0, "std": 1.0},
+                    "total_completed_vehicles": {"mean": 1000.0},
+                    "completion_rate_pct": {"mean": 95.0},
+                    "status": "SUCCESS",
+                },
+            }
+        }
+        summary_path = tmp_path / "benchmark_summary.json"
+        summary_path.write_text(json.dumps(mock_summary), encoding="utf-8")
+        report_path = tmp_path / "benchmark_comparison.md"
+
+        generate_comparison_report(
+            eval_dir=str(tmp_path),
+            phase6_summary=str(summary_path),
+            output_report=str(report_path),
+        )
+
+        md_text = report_path.read_text(encoding="utf-8")
+        assert "NOT_RUN" not in md_text
+        assert "Fixed-Time" in md_text
+        assert "70.00" in md_text
+
     def test_report_handles_missing_metrics_and_zero_completion(self, tmp_path):
         records = [{
             "scenario_name": "cologne1", "algorithm": "Fixed-Time", "seed": 1,
@@ -120,6 +147,7 @@ class TestGenerateComparisonReport:
         text = report.read_text(encoding="utf-8")
         assert "N/A" in text
         assert "LOW_COMPLETION" in text
+        assert "None" not in text
 
 
 class TestPlottingAndVisualizations:
@@ -165,6 +193,46 @@ class TestPlottingAndVisualizations:
         files = plot_group_b_dynamics(str(path), str(tmp_path))
         assert len(files) == 1
         assert heights == [[50.0, 50.0]]
+
+    def test_phase_allocation_does_not_mix_different_cohorts(self, tmp_path, monkeypatch):
+        runs = [
+            {"scenario_name": "cologne1", "algorithm": "Fixed-Time", "seed": 42, "is_valid": True,
+             "cohort_fingerprint": "cohort_old",
+             "output_dir": None, "phase_durations_per_tls": {"tls": {"0": 100, "1": 0}}},
+            {"scenario_name": "cologne1", "algorithm": "Fixed-Time", "seed": 42, "is_valid": True,
+             "cohort_fingerprint": "cohort_new",
+             "output_dir": None, "phase_durations_per_tls": {"tls": {"0": 0, "1": 100}}},
+        ]
+        path = tmp_path / "runs.json"
+        path.write_text(json.dumps(runs), encoding="utf-8")
+        heights = []
+        original_save = plt.Figure.savefig
+
+        def capture(figure, *args, **kwargs):
+            heights.append([bar.get_height() for bar in figure.axes[0].patches])
+            return original_save(figure, *args, **kwargs)
+
+        monkeypatch.setattr(plt.Figure, "savefig", capture)
+        files = plot_group_b_dynamics(str(path), str(tmp_path))
+        assert len(files) == 1
+        assert heights == [[0.0, 100.0]]
+
+    def test_phase_allocation_with_selected_records(self, tmp_path, monkeypatch):
+        selected = [
+            {"scenario_name": "cologne1", "algorithm": "Fixed-Time", "seed": 42, "is_valid": True,
+             "output_dir": None, "phase_durations_per_tls": {"tls": {"0": 20, "1": 80}}},
+        ]
+        heights = []
+        original_save = plt.Figure.savefig
+
+        def capture(figure, *args, **kwargs):
+            heights.append([bar.get_height() for bar in figure.axes[0].patches])
+            return original_save(figure, *args, **kwargs)
+
+        monkeypatch.setattr(plt.Figure, "savefig", capture)
+        files = plot_group_b_dynamics(output_dir=str(tmp_path), selected_records=selected)
+        assert len(files) == 1
+        assert heights == [[20.0, 80.0]]
 
     def test_comparison_plots_skip_failed_algorithms(self, tmp_path):
         metrics = {

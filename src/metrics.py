@@ -7,15 +7,37 @@ Primary focus on the 3 Core Traffic Signal Control Metrics:
 """
 
 import csv
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 import math
 import json
 import os
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+from src.data_inspector import ScenarioInfo, get_window_demand
 
-METRIC_SCHEMA_VERSION = "5.0.0"
+
+METRIC_SCHEMA_VERSION = "6.0.0"
+
+# Canonical aggregation keys and whether larger values are better.
+BENCHMARK_METRICS = (
+    ("tripinfo_mean_waiting_time", False), ("mean_waiting_time", False),
+    ("mean_queue_length", False), ("total_completed_vehicles", True),
+    ("completion_rate_pct", True), ("throughput_vph", True),
+    ("tripinfo_mean_travel_time", False), ("tripinfo_total_time_loss", False),
+    ("system_mean_delay", False), ("system_total_delay", False),
+    ("collision_count", False), ("teleport_count", False), ("phase_change_count", False),
+)
+
+# key, filename suffix, label, title, display format, display scale.
+COMPARISON_METRICS = (
+    ("tripinfo_mean_waiting_time", "waiting_time", "Waiting Time (s)", "Average Waiting Time", "%.2fs", 1.0),
+    ("mean_queue_length", "queue_length", "Queue Length (veh)", "Average Queue Length", "%.2f", 1.0),
+    ("total_completed_vehicles", "throughput", "Completed Vehicles", "Total Completed Vehicles", "%.0f", 1.0),
+    ("tripinfo_total_time_loss", "time_loss", "Time Loss (×1,000 s)", "Completed Vehicles Total Time Loss", "%.1fk s", 1000.0),
+    ("completion_rate_pct", "completion_rate", "Completion Rate (%)", "Traffic Demand Completion Rate", "%.1f%%", 1.0),
+)
+
 
 # Experiment acceptance and stricter report warnings serve different purposes.
 BENCHMARK_COMPLETION_THRESHOLD = 0.95
@@ -59,50 +81,63 @@ def parse_tripinfo_output(xml_path: str) -> Dict[str, Any]:
         time_losses.append(loss)
 
     count = len(all_trips)
-    if count == 0:
-        return {
-            "tripinfo_completed_vehicles": 0,
-            "tripinfo_completed_ids": [],
-            "tripinfo_unfinished_vehicles": 0,
-            "tripinfo_mean_travel_time": None,
-            "tripinfo_mean_waiting_time": None,
-            "tripinfo_total_waiting_time": 0.0,
-            "tripinfo_mean_time_loss": None,
-            "tripinfo_total_time_loss": 0.0,
-            "tripinfo_metrics_available": False,
-        }
-
     return {
         "tripinfo_completed_vehicles": count,
         "tripinfo_completed_ids": completed_ids,
         "tripinfo_unfinished_vehicles": 0,
-        "tripinfo_mean_travel_time": round(sum(durations) / count, 2),
-        "tripinfo_mean_waiting_time": round(sum(waiting_times) / count, 2),
-        "tripinfo_total_waiting_time": round(sum(waiting_times), 2),
-        "tripinfo_mean_time_loss": round(sum(time_losses) / count, 2),
-        "tripinfo_total_time_loss": round(sum(time_losses), 2),
-        "tripinfo_metrics_available": True,
+        "tripinfo_mean_travel_time": round(sum(durations) / count, 2) if count else None,
+        "tripinfo_mean_waiting_time": round(sum(waiting_times) / count, 2) if count else None,
+        "tripinfo_total_waiting_time": round(sum(waiting_times), 2) if count else 0.0,
+        "tripinfo_mean_time_loss": round(sum(time_losses) / count, 2) if count else None,
+        "tripinfo_total_time_loss": round(sum(time_losses), 2) if count else 0.0,
+        "tripinfo_metrics_available": bool(count),
     }
 
 
 def build_vehicle_accounting(
-    scenario_name: str,
+    scenario_info: ScenarioInfo,
     window_begin: float,
     window_end: float,
-    step_length: float = 1.0,
     total_completed: int = 0,
     running_vehs: int = 0,
     pending_vehs: int = 0,
     total_teleports: int = 0,
     total_collisions: int = 0,
-    scenario_info: Optional[Any] = None,
-    data_dir: str = "data",
-    population: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Builds clean vehicle counts and observation window metadata."""
     duration = max(0.0, float(window_end) - float(window_begin))
     realized = total_completed + running_vehs + pending_vehs
+    demand = get_window_demand(scenario_info, window_begin, window_end)
+    scheduled = demand["scheduled_demand_in_window"]
+
+    accounting_valid = True
+    accounting_error_reasons: List[str] = []
+
+    if any(count < 0 for count in (total_completed, running_vehs, pending_vehs)):
+        accounting_valid = False
+        accounting_error_reasons.append("Negative vehicle counts in simulation accounting.")
+
+    if scheduled == 0:
+        if realized > 0:
+            accounting_valid = False
+            accounting_error_reasons.append(f"Realized vehicles ({realized}) observed when scheduled demand is 0.")
+    else:
+        if total_completed > scheduled:
+            accounting_valid = False
+            accounting_error_reasons.append(f"Completed vehicles ({total_completed}) exceeds scheduled demand ({scheduled}).")
+        if realized > scheduled:
+            accounting_valid = False
+            accounting_error_reasons.append(f"Realized vehicles ({realized}) exceeds scheduled demand ({scheduled}).")
+        elif realized < scheduled:
+            if realized + total_teleports < scheduled:
+                accounting_valid = False
+                accounting_error_reasons.append(
+                    f"Unaccounted missing vehicles: scheduled={scheduled}, realized={realized}, teleports={total_teleports}."
+                )
+
     return {
+        **demand,
+        "demand_denominator": demand["scheduled_demand_in_window"],
         "metric_schema_version": METRIC_SCHEMA_VERSION,
         "observation_window_begin": float(window_begin),
         "observation_window_end": float(window_end),
@@ -113,7 +148,8 @@ def build_vehicle_accounting(
         "pending_insertion_vehicles": pending_vehs,
         "teleport_count": total_teleports,
         "collision_count": total_collisions,
-        "accounting_valid": True,
+        "accounting_valid": accounting_valid,
+        "accounting_error_reasons": accounting_error_reasons,
     }
 
 
@@ -140,10 +176,8 @@ class MetricsCollector:
         self.tripinfo_file = tripinfo_file
         self.step_records: List[StepMetrics] = []
         self._cumulative_completed: int = 0
-        self.departed_ids: set = set()
         self.completed_ids: set = set()
         self.running_ids: set = set()
-        self.pending_ids: set = set()
         self.vehicle_departure_times: Dict[str, float] = {}
         self.completed_travel_times: List[float] = []
         self.vehicle_last_waiting_time: Dict[str, float] = {}
@@ -161,18 +195,6 @@ class MetricsCollector:
         self._reconciled: bool = False
         self._cached_tripinfo_summary: Optional[Dict[str, Any]] = None
 
-    def population_snapshot(self) -> Dict[str, Any]:
-        """Returns a snapshot of vehicle IDs across lifecycle states."""
-        return {
-            "states": {
-                "departed": sorted(self.departed_ids),
-                "completed": sorted(self.completed_ids),
-                "running": list(self.running_ids),
-                "pending": list(self.pending_ids),
-            },
-            "available": True,
-            "errors": [],
-        }
 
     def reconcile_tripinfo(self) -> Dict[str, Any]:
         """Reconciles completed IDs after SUMO has closed its output file."""
@@ -182,13 +204,19 @@ class MetricsCollector:
         if self.tripinfo_file:
             try:
                 stats = parse_tripinfo_output(self.tripinfo_file)
-                result.update(stats)
-                result["tripinfo_reconciliation_status"] = "MATCH"
+                ids = stats["tripinfo_completed_ids"]
+                if set(ids) == self.completed_ids and len(ids) == len(self.completed_ids):
+                    result.update(stats)
+                    result["tripinfo_reconciliation_status"] = "MATCH"
+                else:
+                    result["tripinfo_reconciliation_status"] = "MISMATCH"
             except FileNotFoundError:
                 result["tripinfo_reconciliation_status"] = "MISSING"
             except Exception as error:
                 result["tripinfo_reconciliation_status"] = "PARSE_ERROR"
                 result["tripinfo_error"] = str(error)
+            if result["tripinfo_reconciliation_status"] != "MATCH":
+                self.record_error(f"TripInfo reconciliation: {result['tripinfo_reconciliation_status']}")
         self._reconciled = True
         self._cached_tripinfo_summary = result
         return result
@@ -203,10 +231,6 @@ class MetricsCollector:
         self.is_valid = False
         self.error_messages.append(message)
 
-    def register_departed_vehicles(self, departures: Dict[str, float]) -> None:
-        """Registers departure times for vehicles."""
-        self.vehicle_departure_times.update(departures)
-        self.departed_ids.update(departures)
 
     def record_step(
         self,
@@ -230,6 +254,8 @@ class MetricsCollector:
         waits = {vid: float(traci_module.vehicle.getAccumulatedWaitingTime(vid)) for vid in running}
         losses = {vid: float(traci_module.vehicle.getTimeLoss(vid)) for vid in running}
         for vid in departed:
+            if vid not in running:
+                continue  # Same-step arrivals are measured by final TripInfo.
             dep = float(traci_module.vehicle.getDeparture(vid))
             self.vehicle_departure_times[vid] = dep if dep >= 0 else sim_time
         new_arrived = set(arrived) - self.completed_ids
@@ -239,11 +265,9 @@ class MetricsCollector:
                 self.completed_travel_times.append(max(0.0, sim_time - dep))
             self.completed_waiting_times.append(self.vehicle_last_waiting_time.pop(vid, 0.0))
             self.completed_time_losses.append(self.vehicle_last_time_loss.pop(vid, 0.0))
-        self.departed_ids.update(departed)
         self.completed_ids.update(new_arrived)
         self._cumulative_completed += len(new_arrived)
         self.running_ids = set(running)
-        self.pending_ids = set(pending)
         self.vehicle_last_waiting_time.update(waits)
         self.vehicle_last_time_loss.update(losses)
         self.last_pending_count = len(pending)
@@ -264,12 +288,9 @@ class MetricsCollector:
         """Extracts strictly the 3 core traffic metrics."""
         summary = self.get_summary()
         return {
-            "mean_waiting_time": summary.get("mean_waiting_time"),
-            "total_waiting_time": summary.get("total_waiting_time"),
-            "mean_queue_length": summary.get("mean_queue_length"),
-            "max_queue_length": summary.get("max_queue_length"),
-            "throughput_vph": summary.get("throughput_vph"),
-            "total_completed_vehicles": summary.get("total_completed_vehicles"),
+            key: value
+            for group in summary["core_metrics"].values()
+            for key, value in group.items()
         }
 
     def get_summary(self) -> Dict[str, Any]:
@@ -308,7 +329,7 @@ class MetricsCollector:
             loss = self.step_records[-1].time_loss
 
         sys_delay = net_wait + self.total_pending_delay
-        den = float(self.run_metadata.get("demand_denominator") or (completed + len(self.running_ids) + self.last_pending_count) or 1.0)
+        den = float(self.run_metadata.get("demand_denominator", completed + len(self.running_ids) + self.last_pending_count))
         sys_mean_delay = round(sys_delay / den, 2) if den > 0 else 0.0
 
         summary: Dict[str, Any] = {
@@ -335,7 +356,6 @@ class MetricsCollector:
             "pending_insertion_vehicles": self.last_pending_count,
             "completed_metrics_available": completed > 0,
             "completion_status": "COMPLETED" if completed > 0 else "NO_COMPLETED_VEHICLES",
-            "service_status": "COMPLETED" if completed > 0 else "NO_COMPLETED_VEHICLES",
             "mean_travel_time": mean_travel,
             "total_time_loss": round(loss, 2),
             "is_valid": self.is_valid,
@@ -350,8 +370,17 @@ class MetricsCollector:
         if self.run_metadata:
             summary.update(self.run_metadata)
         summary.update(trip_stats)
+        _, demand, fraction = completion_statistics(summary)
+        summary["completion_rate_pct"] = round(fraction * 100.0, 2) if fraction is not None else None
+        summary["service_status"] = "NO_DEMAND" if demand == 0 else service_status(fraction)
+        if demand == 0:
+            summary.update(service_status="NO_DEMAND", completion_status="NO_DEMAND")
         if summary.get("accounting_valid") is False:
             summary.update(is_valid=False, data_validity="INVALID", status="INVALID")
+            for err in summary.get("accounting_error_reasons", []):
+                if err not in summary["measurement_error_messages"]:
+                    summary["measurement_error_messages"].append(err)
+            summary["measurement_errors"] = len(summary["measurement_error_messages"])
 
         if trip_stats.get("tripinfo_metrics_available"):
             summary["completed_mean_waiting_time"] = trip_stats["tripinfo_mean_waiting_time"]
@@ -370,7 +399,7 @@ class MetricsCollector:
         """Exports metrics summary to JSON and step history to CSV in output_dir."""
         norm_output = os.path.normpath(os.path.abspath(output_dir))
         data_dir_abs = os.path.normpath(os.path.abspath("data"))
-        if norm_output.startswith(data_dir_abs):
+        if norm_output == data_dir_abs or norm_output.startswith(data_dir_abs + os.sep):
             raise ValueError(f"Cannot save results into data directory: {output_dir}")
 
         os.makedirs(output_dir, exist_ok=True)
@@ -382,15 +411,11 @@ class MetricsCollector:
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
 
-        fieldnames = [
-            "step", "sim_time", "running_vehicles", "queue_length", "waiting_time",
-            "time_loss", "step_completed_vehicles", "cumulative_completed_vehicles", "pending_vehicles",
-        ]
+        fieldnames = [field.name for field in fields(StepMetrics)]
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
-            for record in self.step_records:
-                writer.writerow(asdict(record))
+            writer.writerows(asdict(record) for record in self.step_records)
 
         return json_path, csv_path
 

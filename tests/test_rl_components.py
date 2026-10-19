@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from src.config import DEFAULT_SAFETY_CONFIG
-from src.controllers.base import ControlledLink, IntersectionObservation
+from src.controllers.base import ControlledLink
 from src.controllers.q_learning import QLearningController
 from src.evaluation.evaluate_rl import create_evaluation_session, run_greedy_eval_loop
 from src.phase_manager import SafePhaseManager
@@ -65,6 +65,20 @@ class TestStateDiscretizer:
         sample_observation.time_in_phase = 26.0
         assert disc.discretize(sample_observation)[3] == 2
 
+    def test_discretize_recognizes_signal_s_as_green_serving(self, sample_observation):
+        disc = StateDiscretizer(serving_queue_thresholds=(1.0, 5.0), waiting_queue_thresholds=(1.0, 5.0))
+        sample_observation.green_phases = ["srrr"]
+        sample_observation.current_phase = 0
+        sample_observation.controlled_links = [ControlledLink(signal_index=0, from_lane="in_0", to_lane="out_0")]
+        sample_observation.in_lane_queues = {"in_0": 3.0}
+
+        green_lanes = disc._get_green_lanes(sample_observation)
+        assert "in_0" in green_lanes
+
+        state = disc.discretize(sample_observation)
+        assert state[1] == 1  # serving bin
+        assert state[2] == 0  # waiting bin
+
 
 class TestRewards:
     """Test suite for RL Reward functions."""
@@ -118,7 +132,6 @@ class TestTrafficSignalRLEnv:
 
     def test_env_save_run_details_default(self):
         env = TrafficSignalRLEnv(scenario_name="cologne1")
-        assert env.save_run_details is False
         assert env.config.save_run_details is False
 
     def test_env_reset_clears_summary_and_zero_limit_never_steps(self):
@@ -154,7 +167,7 @@ class TestTrafficSignalRLEnv:
         agent.reward_config = {"name": "NegativePressureReward", "scale": 2.0, "pending_weight": 0.5}
         path = str(tmp_path / "agent.json")
         agent.save(path)
-        loaded, env = create_evaluation_session("cologne1", path)
+        _, env = create_evaluation_session("cologne1", path)
         assert env.reward_fn.get_config() == {"name": "NegativePressureReward", "scale": 2.0, "pending_weight": 0.5}
         env.reward_fn.record_step({"in": 3}, pending_vehicles=4)
         assert env.reward_fn.calculate_reward() == -10.0
@@ -199,6 +212,8 @@ class TestQLearningEvaluation:
 
     def test_evaluate_greedy_returns_full_metrics(self, monkeypatch):
         mock_env = MagicMock()
+        mock_env.num_actions = 2
+        mock_env.tls_id = "junction-1"
         mock_env.reset.return_value = (np.zeros(10), {"discrete_state": (0, 0, 0, 0), "valid_actions": [0, 1]})
         mock_env.step.side_effect = [
             (np.zeros(10), -5.0, False, False, {"discrete_state": (0, 0, 0, 1), "valid_actions": [0, 1]}),
@@ -217,6 +232,7 @@ class TestQLearningEvaluation:
         monkeypatch.setattr(tql, "TrafficSignalRLEnv", lambda **kwargs: mock_env)
 
         mock_agent = MagicMock()
+        mock_agent.num_actions = 2
         mock_agent.select_action_for_state.return_value = 0
         mock_agent.eval_mode = False
         mock_agent.epsilon = 0.5
@@ -239,14 +255,50 @@ class TestQLearningEvaluation:
         assert mock_agent.epsilon == 0.5
 
     def test_viability_checkpoint_logic(self):
-        safe_viable = {"collisions": 0, "completion_rate": 0.98, "reward": -100}
-        assert safe_viable["collisions"] == 0 and safe_viable["completion_rate"] >= 0.95
+        selector = tql.ValidationCheckpointSelector(min_completion=0.95)
 
-        starving_policy = {"collisions": 0, "completion_rate": 0.75, "reward": -50}
-        assert not (starving_policy["collisions"] == 0 and starving_policy["completion_rate"] >= 0.95)
+        safe_viable = {
+            "reward": -100,
+            "completion_rate": 0.98,
+            "summary": {
+                "is_valid": True,
+                "scheduled_demand_in_window": 100,
+                "total_completed_vehicles": 98,
+                "tripinfo_required": True,
+                "tripinfo_reconciliation_status": "MATCH",
+            },
+        }
+        assert selector.is_viable([safe_viable]) is True
+        assert selector.consider(1, [safe_viable]) is True
 
-        collision_policy = {"collisions": 2, "completion_rate": 0.99, "reward": -30}
-        assert not (collision_policy["collisions"] == 0 and collision_policy["completion_rate"] >= 0.95)
+        starving_policy = {
+            "reward": -50,
+            "completion_rate": 0.75,
+            "summary": {
+                "is_valid": True,
+                "scheduled_demand_in_window": 100,
+                "total_completed_vehicles": 75,
+                "tripinfo_required": True,
+                "tripinfo_reconciliation_status": "MATCH",
+            },
+        }
+        assert selector.is_viable([starving_policy]) is False
+        assert selector.consider(2, [starving_policy]) is False
+
+        collision_policy = {
+            "reward": -30,
+            "completion_rate": 0.99,
+            "summary": {
+                "is_valid": True,
+                "scheduled_demand_in_window": 100,
+                "total_completed_vehicles": 99,
+                "collision_count": 2,
+                "tripinfo_required": True,
+                "tripinfo_reconciliation_status": "MATCH",
+            },
+        }
+        assert selector.is_viable([collision_policy]) is False
+        assert selector.consider(3, [collision_policy]) is False
 
     def test_run_greedy_eval_loop(self):
         agent = MagicMock()

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import xml.etree.ElementTree as ET
 
 
@@ -32,25 +32,36 @@ class ScenarioInfo:
     controlled_lanes_per_tls: Dict[str, List[str]] = field(default_factory=dict)
     controlled_links_per_tls: Dict[str, int] = field(default_factory=dict)
     trips_or_vehicles_count: int = 0
-    vehicle_depart_range: Optional[Tuple[float, float]] = None
-    auxiliary_files: List[str] = field(default_factory=list)
     rou_files: List[str] = field(default_factory=list)
     departure_times: Optional[List[float]] = None
 
 
-def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo:
-    """Inspects a scenario directory and extracts metadata."""
-    scenario_path = os.path.join(data_dir, scenario_name)
-    if not os.path.isdir(scenario_path):
-        raise FileNotFoundError(f"Scenario directory not found: {scenario_path}")
+def _parse_departures(rou_file: str) -> List[float]:
+    root = ET.parse(rou_file).getroot()
+    if root.findall("flow"):
+        raise ValueError("Exact demand counting supports trip/vehicle routes, not flow definitions")
+    return [float(item.attrib["depart"]) for item in root if item.tag in ("trip", "vehicle")]
 
-    cfg_file = os.path.join(scenario_path, f"{scenario_name}.sumocfg")
-    if not os.path.isfile(cfg_file):
-        candidates = [f for f in os.listdir(scenario_path) if f.endswith(".sumocfg")]
-        cfg_file = os.path.join(scenario_path, candidates[0]) if candidates else cfg_file
+
+def inspect_scenario(scenario_name: str, data_dir: str = "data", cfg_path: Optional[str] = None) -> ScenarioInfo:
+    """Inspects a scenario directory or specific sumocfg and extracts metadata."""
+    if cfg_path and os.path.isfile(cfg_path):
+        cfg_file = os.path.abspath(cfg_path)
+        scenario_path = os.path.dirname(cfg_file)
+    else:
+        scenario_path = os.path.join(data_dir, scenario_name)
+        if not os.path.isdir(scenario_path):
+            raise FileNotFoundError(f"Scenario directory not found: {scenario_path}")
+
+        cfg_file = os.path.join(scenario_path, f"{scenario_name}.sumocfg")
+        if not os.path.isfile(cfg_file):
+            candidates = [f for f in os.listdir(scenario_path) if f.endswith(".sumocfg")]
+            cfg_file = os.path.join(scenario_path, candidates[0]) if candidates else cfg_file
 
     cfg_root = ET.parse(cfg_file).getroot()
     net_node = cfg_root.find(".//net-file")
+    if net_node is None or not net_node.get("value"):
+        raise ValueError(f"Missing required <net-file> entry in configuration: {cfg_file}")
     net_file = os.path.normpath(os.path.join(scenario_path, net_node.get("value", "")))
 
     rou_node = cfg_root.find(".//route-files")
@@ -68,21 +79,22 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
 
     net_root = ET.parse(net_file).getroot()
     tl_nodes = net_root.findall("tlLogic")
-    tls_ids = [tl.get("id") for tl in tl_nodes if tl.get("id")]
+    tls_ids = list(dict.fromkeys(tl.get("id") for tl in tl_nodes if tl.get("id")))
 
-    phases_per_tls: Dict[str, List[PhaseInfo]] = {
-        tl.get("id"): [
-            PhaseInfo(
-                index=idx,
-                duration=float(p.get("duration", 0)),
-                state=p.get("state", ""),
-                min_dur=float(p.get("minDur")) if p.get("minDur") is not None else None,
-                max_dur=float(p.get("maxDur")) if p.get("maxDur") is not None else None,
-            )
-            for idx, p in enumerate(tl.findall("phase"))
-        ]
-        for tl in tl_nodes
-    }
+    phases_per_tls: Dict[str, List[PhaseInfo]] = {}
+    for tl in tl_nodes:
+        tl_id = tl.get("id")
+        if tl_id and tl_id not in phases_per_tls:
+            phases_per_tls[tl_id] = [
+                PhaseInfo(
+                    index=idx,
+                    duration=float(p.get("duration", 0)),
+                    state=p.get("state", ""),
+                    min_dur=float(p.get("minDur")) if p.get("minDur") is not None else None,
+                    max_dur=float(p.get("maxDur")) if p.get("maxDur") is not None else None,
+                )
+                for idx, p in enumerate(tl.findall("phase"))
+            ]
 
     controlled_lanes_per_tls: Dict[str, List[str]] = {}
     controlled_links_per_tls: Dict[str, int] = {}
@@ -90,26 +102,17 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
         connections = net_root.findall(f".//connection[@tl='{tl_id}']")
         phases = phases_per_tls.get(tl_id, [])
         controlled_links_per_tls[tl_id] = len(phases[0].state) if phases and phases[0].state else len(connections)
-        controlled_lanes_per_tls[tl_id] = sorted(list({
+        controlled_lanes_per_tls[tl_id] = sorted({
             f"{c.get('from')}_{c.get('fromLane')}"
             for c in connections
             if c.get("from") and c.get("fromLane") is not None
-        }))
+        })
 
     # Demand count and departure range
     all_departs: List[float] = []
-    demand_count = 0
     for r_file in rou_files:
-        rou_root = ET.parse(r_file).getroot()
-        if rou_root.findall("flow"):
-            raise ValueError("Exact demand counting supports trip/vehicle routes, not flow definitions")
-        items = rou_root.findall("trip") + rou_root.findall("vehicle")
-        demand_count += len(items)
-        all_departs.extend(float(item.attrib["depart"]) for item in items)
-
-    depart_range = (min(all_departs), max(all_departs)) if all_departs else None
-    primary_files = {os.path.basename(cfg_file), os.path.basename(net_file)} | {os.path.basename(f) for f in rou_files}
-    aux = [f for f in os.listdir(scenario_path) if f not in primary_files]
+        all_departs.extend(_parse_departures(r_file))
+    demand_count = len(all_departs)
 
     return ScenarioInfo(
         name=scenario_name,
@@ -125,8 +128,6 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
         controlled_lanes_per_tls=controlled_lanes_per_tls,
         controlled_links_per_tls=controlled_links_per_tls,
         trips_or_vehicles_count=demand_count,
-        vehicle_depart_range=depart_range,
-        auxiliary_files=aux,
         rou_files=rou_files,
         departure_times=all_departs,
     )
@@ -143,11 +144,8 @@ def get_window_demand(
     departures = info.departure_times
     if departures is None:
         departures = []
-        for path in info.rou_files or [info.rou_path]:
-            root = ET.parse(path).getroot()
-            if root.findall("flow"):
-                raise ValueError("Exact demand counting does not support flow definitions")
-            departures.extend(float(item.attrib["depart"]) for item in root if item.tag in ("trip", "vehicle"))
+        for path in info.rou_files or ([info.rou_path] if info.rou_path else []):
+            departures.extend(_parse_departures(path))
     return {
         "scheduled_demand_in_window": sum(window_begin <= departure < window_end for departure in departures),
         "demand_counting_mode": "exact",

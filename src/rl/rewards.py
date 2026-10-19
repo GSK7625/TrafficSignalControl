@@ -48,21 +48,18 @@ class NegativePressureReward(BaseRewardFunction):
         pending_vehicles: int = 0,
         controlled_links: Optional[List[Any]] = None,
     ) -> None:
-        if not in_lane_queues:
-            self._interval_pressures.append(self.pending_weight * float(pending_vehicles))
-            return
-
         out_q = out_lane_queues or {}
-
-        if controlled_links:
-            outs_per_in: Dict[str, List[str]] = {}
+        if not in_lane_queues:
+            pressure = 0.0
+        elif controlled_links:
+            outs_per_in: Dict[str, set] = {}
             for link in controlled_links:
                 if link.from_lane and link.to_lane:
-                    outs_per_in.setdefault(link.from_lane, []).append(link.to_lane)
+                    outs_per_in.setdefault(link.from_lane, set()).add(link.to_lane)
 
             pressure = 0.0
             for from_l, q_in in in_lane_queues.items():
-                outs = outs_per_in.get(from_l, [])
+                outs = outs_per_in.get(from_l, set())
                 q_out_bar = sum(out_q.get(to_l, 0.0) for to_l in outs) / len(outs) if outs else 0.0
                 pressure += abs(q_in - q_out_bar)
         elif out_q:

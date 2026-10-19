@@ -3,7 +3,6 @@
 import json
 import os
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
@@ -120,6 +119,11 @@ class TestFixedTimeController:
         errors = controller.validate_compatibility(min_green=5.0, max_green=60.0)
         assert len(errors) > 0
         assert any("exceeds max_green" in e for e in errors)
+
+        controller_min = FixedTimeController(default_green_time=2.0)
+        errors_min = controller_min.validate_compatibility(min_green=5.0, max_green=60.0)
+        assert len(errors_min) > 0
+        assert any("less than min_green" in e for e in errors_min)
 
         controller_seq = FixedTimeController(phase_sequences={"tls_1": [0, 3]})
         errors_seq = controller_seq.validate_compatibility(num_phases_per_tls={"tls_1": 2})
@@ -335,10 +339,43 @@ class TestQLearningController:
         assert agent.discretizer.min_green == 7.0
 
     def test_checkpoint_metadata_keeps_explicit_disabled_max_green(self, tmp_path):
-        from src.evaluation.evaluate_rl import load_checkpoint_env_params
+        from src.evaluation.evaluate_rl import checkpoint_env_params
         path = str(tmp_path / "agent.json")
         QLearningController(num_actions=2, max_green=None).save(path)
-        assert load_checkpoint_env_params(path)["max_green"] is None
+        assert checkpoint_env_params(QLearningController.from_checkpoint(path).get_config())["max_green"] is None
+
+    @pytest.mark.parametrize("bad_cfg,match", [
+        ({"learning_rate": -1.0}, "learning_rate"),
+        ({"learning_rate": 0.0}, "learning_rate"),
+        ({"gamma": 2.0}, "gamma"),
+        ({"gamma": -0.1}, "gamma"),
+        ({"learning_rate": float("nan")}, "finite"),
+        ({"gamma": float("nan")}, "finite"),
+        ({"num_actions": 0}, "num_actions"),
+        ({"min_green": -5.0}, "min_green"),
+        ({"min_green": 10.0, "max_green": 5.0}, "max_green"),
+    ])
+    def test_checkpoint_loading_rejects_invalid_hyperparameters(self, tmp_path, bad_cfg, match):
+        base_cfg = {
+            "num_actions": 2,
+            "learning_rate": 0.1,
+            "gamma": 0.95,
+            "epsilon": 0.1,
+            "epsilon_min": 0.01,
+            "epsilon_decay": 0.995,
+            "min_green": 5.0,
+            "max_green": 60.0,
+            "yellow_duration": 3.0,
+            "all_red_duration": 1.0,
+            "decision_interval": 5.0,
+            "tie_break_strategy": "first",
+        }
+        base_cfg.update(bad_cfg)
+        path = tmp_path / "bad_checkpoint.json"
+        path.write_text(json.dumps({"config": base_cfg, "q_table": {}}), encoding="utf-8")
+        with pytest.raises(ValueError, match=match):
+            QLearningController.from_checkpoint(str(path))
+
 
 
 class TestMakeController:
@@ -365,28 +402,9 @@ class TestMakeController:
         with pytest.raises(ValueError, match="Unsupported algorithm"):
             make_controller("invalid-algo", "cologne1")
 
-    def test_make_controller_q_learning_explicit_num_actions_precedence(self):
-        mock_info = MagicMock()
-        mock_info.tls_ids = ["tls_main", "tls_side"]
-        mock_info.phases_per_tls = {"tls_main": [1, 2, 3, 4], "tls_side": [1, 2]}
-
-        ctrl, mode = make_controller(
-            "q-learning",
-            "cologne1",
-            scenario_info=mock_info,
-            num_actions=6,
-        )
-        assert isinstance(ctrl, QLearningController)
-        assert ctrl.num_actions == 6
-        assert mode == "agent"
-
-        ctrl2, _ = make_controller(
-            "q-learning",
-            "cologne1",
-            scenario_info=mock_info,
-            target_tls_id="tls_side",
-        )
-        assert ctrl2.num_actions == 2
+    def test_factory_does_not_silently_create_untrained_policy(self):
+        with pytest.raises(FileNotFoundError):
+            make_controller("q-learning", "missing-dataset", num_actions=6)
 
     @pytest.mark.parametrize("algorithm", ["max-pressure", "q-learning"])
     def test_factory_distinguishes_default_and_disabled_max_green(self, algorithm, tmp_path):
@@ -398,10 +416,51 @@ class TestMakeController:
         assert disabled.max_green is None
 
     @pytest.mark.parametrize("name", ["ql", "Q Learning", "q_learning", "QLearning"])
-    def test_algorithm_aliases_use_same_factory_and_benchmark_path(self, name):
+    def test_algorithm_aliases_use_same_factory_and_benchmark_path(self, name, tmp_path):
         from src.evaluation.experiment_runner import ExperimentConfig, resolve_effective_decision_interval, resolve_model_path
-        agent, _ = make_controller(name)
+        path = str(tmp_path / "agent.json")
+        QLearningController(2).save(path)
+        agent, _ = make_controller(name, model_path=path)
         assert isinstance(agent, QLearningController)
         cfg = ExperimentConfig(scenario_name="cologne1", algorithm=name)
         assert resolve_effective_decision_interval(cfg) == 5.0
         assert resolve_model_path(cfg) == "models/q_learning/q_learning_cologne1_best.json"
+
+    def test_resolve_q_learning_checkpoint_avoids_stale_best_when_validation_failed(self, tmp_path):
+        from src.controllers import resolve_q_learning_checkpoint
+        model_dir = tmp_path / "models" / "q_learning"
+        log_dir = tmp_path / "results" / "training"
+        model_dir.mkdir(parents=True)
+        log_dir.mkdir(parents=True)
+
+        old_best = model_dir / "q_learning_cologne1_best.json"
+        old_best.write_text('{"min_green": 5}', encoding="utf-8")
+
+        new_final = model_dir / "q_learning_cologne1_final.json"
+        new_final.write_text('{"min_green": 7}', encoding="utf-8")
+
+        log_file = log_dir / "q_learning_cologne1_log.json"
+        log_file.write_text(json.dumps({
+            "scenario_name": "cologne1",
+            "best_is_viable": False,
+            "best_checkpoint_path": None,
+            "final_checkpoint_path": str(new_final),
+        }), encoding="utf-8")
+
+        resolved = resolve_q_learning_checkpoint("cologne1", log_dir=str(log_dir), model_dir=str(model_dir))
+        from pathlib import Path
+        assert Path(resolved) == new_final
+
+        new_final.unlink()
+        with pytest.raises(ValueError, match="no viable best checkpoint"):
+            resolve_q_learning_checkpoint("cologne1", log_dir=str(log_dir), model_dir=str(model_dir))
+
+    def test_fixed_time_validate_compatibility_checks_phase_durations(self):
+        ctrl = FixedTimeController(
+            default_green_time=30.0,
+            phase_durations={"tls_1": {0: 90.0, 1: 3.0, 2: float("nan")}},
+        )
+        errors = ctrl.validate_compatibility(min_green=5.0, max_green=60.0)
+        assert any("exceeds max_green" in err for err in errors)
+        assert any("less than min_green" in err for err in errors)
+        assert any("finite" in err for err in errors)

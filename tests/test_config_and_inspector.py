@@ -30,6 +30,17 @@ class TestSimulationConfig:
         with pytest.raises(ValueError, match=error_match):
             SimulationConfig(dataset_name="cologne1", **invalid_kwargs)
 
+    @pytest.mark.parametrize("invalid_kwargs,error_match", [
+        ({"min_green": 10.0, "max_green": 5.0}, "max_green must be >= min_green"),
+        ({"max_green": -1.0}, "max_green must be positive"),
+        ({"min_green": float("nan")}, "finite"),
+        ({"max_green": float("nan")}, "finite"),
+        ({"min_green": float("inf")}, "finite"),
+    ])
+    def test_invalid_green_time_constraints(self, invalid_kwargs, error_match):
+        with pytest.raises(ValueError, match=error_match):
+            SimulationConfig(dataset_name="cologne1", **invalid_kwargs)
+
     def test_missing_dataset_raises_error(self):
         with pytest.raises(ValueError, match="Dataset 'non_existent_dataset' not found"):
             SimulationConfig(dataset_name="non_existent_dataset")
@@ -40,6 +51,28 @@ class TestSimulationConfig:
     def test_config_rejects_invalid_inputs_once(self, options):
         with pytest.raises(ValueError):
             SimulationConfig("cologne1", **options)
+
+    @pytest.mark.parametrize("dec_int,step_len,should_pass", [
+        (5.0, 1.0, True),
+        (2.0, 0.5, True),
+        (1.0, 1.0, True),
+        (5.0, 2.0, False),  # 2.5x -> must be rejected
+        (0.5, 1.0, False),  # 0.5x < 1 -> must be rejected
+        (3.0, 2.0, False),  # 1.5x -> must be rejected
+    ])
+    def test_decision_interval_step_length_multiple(self, dec_int, step_len, should_pass):
+        if should_pass:
+            cfg = SimulationConfig("cologne1", decision_interval=dec_int, step_length=step_len)
+            assert cfg.decision_interval == dec_int
+            assert cfg.step_length == step_len
+        else:
+            with pytest.raises(ValueError, match="must be a positive integer multiple"):
+                SimulationConfig("cologne1", decision_interval=dec_int, step_length=step_len)
+
+    def test_config_rejects_negative_max_steps(self):
+        with pytest.raises(ValueError, match="max_steps must be non-negative"):
+            SimulationConfig("cologne1", max_steps=-5)
+
 
 
 class TestYamlConfigLoader:
@@ -92,3 +125,34 @@ class TestDataInspector:
         all_info = inspect_all_scenarios()
         assert "cologne1" in all_info
         assert "ingolstadt1" in all_info
+
+    def test_simulation_config_custom_sumocfg_inspects_custom_config(self, tmp_path):
+        from src.config import SimulationConfig
+        custom_rou = tmp_path / "custom.rou.xml"
+        custom_rou.write_text("<routes></routes>", encoding="utf-8")
+
+        real_net = os.path.abspath("data/cologne1/cologne1.net.xml").replace("\\", "/")
+        custom_cfg = tmp_path / "custom.sumocfg"
+        custom_cfg.write_text(f"""<configuration>
+    <input>
+        <net-file value="{real_net}"/>
+        <route-files value="{custom_rou.name}"/>
+    </input>
+    <time>
+        <begin value="100"/>
+        <end value="200"/>
+    </time>
+</configuration>""", encoding="utf-8")
+
+        cfg = SimulationConfig(dataset_name="cologne1", sumocfg_path=str(custom_cfg))
+        assert cfg.scenario_info.trips_or_vehicles_count == 0
+        assert cfg.scenario_info.begin_time == 100.0
+        assert cfg.scenario_info.end_time == 200.0
+        assert cfg.begin_time == 100.0
+        assert cfg.end_time == 200.0
+
+    def test_inspect_scenario_missing_net_file_raises_value_error(self, tmp_path):
+        cfg = tmp_path / "test.sumocfg"
+        cfg.write_text("<configuration><input></input></configuration>", encoding="utf-8")
+        with pytest.raises(ValueError, match="net-file"):
+            inspect_scenario("test", cfg_path=str(cfg))

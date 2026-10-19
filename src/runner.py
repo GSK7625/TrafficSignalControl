@@ -23,7 +23,7 @@ except ImportError:
 
 from src.config import SimulationConfig
 from src.controllers.base import ControlledLink, IntersectionObservation
-from src.data_inspector import PhaseInfo, ScenarioInfo, inspect_scenario
+from src.data_inspector import PhaseInfo, ScenarioInfo
 from src.metrics import MetricsCollector, StepMetrics, build_vehicle_accounting
 from src.phase_manager import SafePhaseManager
 
@@ -61,6 +61,8 @@ class SimulationRunner:
         self.config = config
         self.controller = controller
         self.control_mode = "agent" if controller is not None else (control_mode or config.control_mode)
+        if self.control_mode not in ("original", "agent"):
+            raise ValueError(f"Unknown control_mode: {self.control_mode}; use FixedTimeController for cyclic schedules")
 
         self.scenario_info: ScenarioInfo = config.scenario_info
         self.all_controlled_lanes: List[str] = sorted({
@@ -134,8 +136,6 @@ class SimulationRunner:
 
         if self.control_mode == "original":
             self._controlled_tls_ids = set()
-        elif self.control_mode == "cyclic":
-            self._controlled_tls_ids = set(self.tls_managers.keys())
         elif self.controlled_tls_ids:
             self._controlled_tls_ids = set(self.controlled_tls_ids)
         elif self.target_tls_id:
@@ -153,11 +153,8 @@ class SimulationRunner:
         self.decision_interval: float = float(self.config.decision_interval)
         self._last_selected_actions: Optional[Dict[str, int]] = None
         self._steps_since_last_decision: int = 0
-        self.last_action_results: Dict[str, bool] = {}
-        self.safety_events: List[Dict[str, Any]] = []
 
         self.total_teleports: int = 0
-        self.total_collisions: int = 0
         self.total_collision_incidents: int = 0
         self.total_collision_steps: int = 0
         self.total_collision_vehicle_involvements: int = 0
@@ -242,7 +239,7 @@ class SimulationRunner:
                 for s_idx, conns in enumerate(raw) for c in conns
             ]
 
-        if self.control_mode in ("agent", "cyclic"):
+        if self.control_mode == "agent":
             for tls_id in self._controlled_tls_ids:
                 if tls_id in self.tls_managers:
                     self.tls_managers[tls_id].apply_to_traci(self.traci)
@@ -295,21 +292,13 @@ class SimulationRunner:
             self._last_selected_actions = actions
             self._steps_since_last_decision = 1
 
-        self.last_action_results = {}
-
         if actions is not None:
             if self.control_mode == "original":
                 raise ValueError("Cannot pass external actions when control_mode='original'.")
             if actions.keys() - self._controlled_tls_ids:
                 raise ValueError("Actions must target configured controlled TLS IDs")
             for tls_id, target_phase in actions.items():
-                self.last_action_results[tls_id] = self.tls_managers[tls_id].request_phase(target_phase)
-        elif self.control_mode == "cyclic":
-            for manager in self.tls_managers.values():
-                if not manager.is_in_transition() and manager.time_in_current_phase() >= 30.0 and len(manager.green_phases) > 1:
-                    next_p = (manager.get_current_phase() + 1) % len(manager.green_phases)
-                    manager.request_phase(next_p)
-
+                self.tls_managers[tls_id].request_phase(target_phase)
         # Max green fallback enforcement
         for tls_id in self._controlled_tls_ids:
             mgr = self.tls_managers.get(tls_id)
@@ -318,7 +307,7 @@ class SimulationRunner:
                 mgr.request_phase(forced_p)
 
         # Apply signals to TraCI
-        if self.control_mode in ("agent", "cyclic"):
+        if self.control_mode == "agent":
             for tls_id in self._controlled_tls_ids:
                 if tls_id in self.tls_managers:
                     self.tls_managers[tls_id].apply_to_traci(self.traci)
@@ -334,7 +323,6 @@ class SimulationRunner:
         if collisions:
             self.total_collision_steps += 1
             self.total_collision_incidents += len(collisions)
-            self.total_collisions += len(collisions)
             for collision in collisions:
                 involved = [vid for vid in (collision.collider, collision.victim) if vid]
                 self.total_collision_vehicle_involvements += len(involved)
@@ -357,10 +345,7 @@ class SimulationRunner:
         )
 
     def safety_metadata(self) -> Dict[str, Any]:
-        return {
-            "max_green": self.config.max_green,
-            "safety_events": self.safety_events,
-        }
+        return {"max_green": self.config.max_green, "safety_events": []}
 
     def run(
         self,
@@ -396,24 +381,18 @@ class SimulationRunner:
 
     def _build_final_summary(self) -> Dict[str, Any]:
         """Aggregate accounting before closing SUMO and reading its final XML."""
-        running_vehs = 0
-        pending_vehs = 0
-        if self.is_running:
-            running_vehs = len(self.traci.vehicle.getIDList())
-            pending_vehs = len(self.traci.simulation.getPendingVehicles())
+        running_vehs = len(self.traci.vehicle.getIDList()) if self.is_running else 0
+        pending_vehs = len(self.traci.simulation.getPendingVehicles()) if self.is_running else 0
 
         accounting_meta = build_vehicle_accounting(
-            scenario_name=self.config.dataset_name,
+            scenario_info=self.scenario_info,
             window_begin=self.config.begin_time,
             window_end=self.sim_time,
-            step_length=self.config.step_length,
             total_completed=self.metrics_collector._cumulative_completed,
             running_vehs=running_vehs,
             pending_vehs=pending_vehs,
             total_teleports=self.total_teleports,
             total_collisions=self.total_collision_incidents,
-            scenario_info=self.scenario_info,
-            population=self.metrics_collector.population_snapshot(),
         )
 
         metadata = {
@@ -434,6 +413,7 @@ class SimulationRunner:
             "total_transition_time": round(sum(mgr.total_transition_time for mgr in self.tls_managers.values()), 2),
             "actual_yellow_time": round(sum(mgr.actual_yellow_time for mgr in self.tls_managers.values()), 2),
             "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.tls_managers.items()},
+            "controlled_tls_ids": sorted(list(self._controlled_tls_ids)),
         }
         metadata.update(accounting_meta)
         if self.controller is not None:
@@ -458,6 +438,13 @@ class SimulationRunner:
                 shutil.copy2(self.tripinfo_path, final_tripinfo)
                 self.metrics_collector.tripinfo_file = final_tripinfo
             json_path, csv_path = self.metrics_collector.export_results(run_folder)
+
+        for path in (self.tripinfo_path, self.sumo_log_path):
+            if path:
+                try:
+                    Path(path).unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         summary = self.metrics_collector.get_summary()
         summary["output_json"] = json_path

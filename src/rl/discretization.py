@@ -26,7 +26,7 @@ class StateDiscretizer:
         return {
             link.from_lane
             for link in obs.controlled_links
-            if link.from_lane and 0 <= link.signal_index < len(phase_str) and phase_str[link.signal_index] in ("G", "g")
+            if link.from_lane and 0 <= link.signal_index < len(phase_str) and phase_str[link.signal_index] in ("G", "g", "s")
         }
 
     def _bin_value(self, val: float, thresholds: Tuple[float, ...]) -> int:

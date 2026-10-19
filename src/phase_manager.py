@@ -5,6 +5,7 @@ và toàn đỏ (all-red) nếu có.
 """
 
 from enum import Enum
+import math
 from typing import List, Optional
 
 
@@ -52,8 +53,15 @@ class SafePhaseManager:
             raise ValueError("yellow_duration must be positive")
         if all_red_duration < 0:
             raise ValueError("all_red_duration must be non-negative")
-        if min_green < 0:
-            raise ValueError("min_green must be non-negative")
+        if not math.isfinite(min_green) or min_green < 0:
+            raise ValueError(f"min_green must be non-negative and finite, got {min_green}")
+        if max_green is not None:
+            if not math.isfinite(max_green):
+                raise ValueError(f"max_green must be finite, got {max_green}")
+            if max_green <= 0:
+                raise ValueError(f"max_green must be positive, got {max_green}")
+            if max_green < min_green:
+                raise ValueError(f"max_green must be >= min_green ({max_green} < {min_green})")
         if not (0 <= initial_phase < len(green_phases)):
             raise IndexError("initial_phase out of bounds")
 

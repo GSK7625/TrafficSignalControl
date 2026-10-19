@@ -16,7 +16,6 @@ from src.evaluation.experiment_runner import (
     aggregate_benchmark_statistics,
     compute_improvement,
     compute_run_fingerprint,
-    get_sumo_version,
     load_experiments_yaml,
     run_full_benchmark_matrix,
     run_single_experiment,
@@ -27,17 +26,6 @@ from src.metrics import REPORT_COMPLETION_THRESHOLD, completion_statistics, serv
 class TestExperimentRunnerUtilities:
     """Test suite for helper utilities in experiment runner."""
 
-    def test_get_sumo_version(self):
-        ver = get_sumo_version()
-        assert ver != "unknown"
-        assert ver != "2", f"SUMO version should not be '2', got '{ver}'"
-        assert "." in ver, f"SUMO version should contain a dot, got '{ver}'"
-
-    def test_missing_sumo_version_is_unknown(self, monkeypatch):
-        def unavailable(*args, **kwargs):
-            raise FileNotFoundError("sumo")
-        monkeypatch.setattr(evaluation.subprocess, "check_output", unavailable)
-        assert evaluation.get_sumo_version() == "unknown"
 
     def test_compute_improvement(self):
         # Lower is better (waiting time, queue, collisions)
@@ -97,6 +85,21 @@ class TestBenchmarkExecution:
         assert result["failed_count"] == 1
         assert result["error_messages"] == ["lost connection"]
 
+    def test_aggregate_benchmark_statistics_normalizes_aliases(self):
+        r1 = {"scenario_name": "cologne1", "algorithm": "ft", "seed": 42, "status": "SUCCESS", "is_valid": True, "mean_queue_length": 5.0}
+        r2 = {"scenario_name": "cologne1", "algorithm": "mp", "seed": 42, "status": "SUCCESS", "is_valid": True, "mean_queue_length": 3.0}
+        stats = aggregate_benchmark_statistics([r1, r2])
+        assert "Fixed-Time" in stats["cologne1"]
+        assert "Max-Pressure" in stats["cologne1"]
+        assert "ft" not in stats["cologne1"]
+        assert "mp" not in stats["cologne1"]
+
+    def test_experiment_config_normalizes_algorithm(self):
+        cfg = ExperimentConfig(scenario_name="cologne1", algorithm="ft")
+        assert cfg.algorithm == "Fixed-Time"
+        cfg2 = ExperimentConfig(scenario_name="cologne1", algorithm="ql")
+        assert cfg2.algorithm == "Q-Learning"
+
     def test_matrix_honors_yaml_timing_and_does_not_reuse_old_steps(self, tmp_path, monkeypatch):
         path = tmp_path / "experiment.yaml"
         path.write_text(
@@ -120,7 +123,7 @@ class TestBenchmarkExecution:
         run_full_benchmark_matrix(**args)
         assert seen[0].step_length == 0.5
         assert seen[0].use_tripinfo is False
-        assert seen[0].max_green is None
+        assert seen[0].timing_overrides["max_green"] is None
 
         run_full_benchmark_matrix(**args)
         assert len(seen) == 1
@@ -225,4 +228,168 @@ class TestEvaluateRL:
             create_evaluation_session("cologne1", path)
         env.close.assert_called_once()
 
+    def test_cli_single_experiment_failure_exits_nonzero(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            evaluation,
+            "run_single_experiment",
+            lambda cfg: {"status": "FAILED", "is_valid": False, "error_message": "Checkpoint not found"},
+        )
+        monkeypatch.setattr(
+            evaluation,
+            "load_experiments_yaml",
+            lambda path: {"simulation": {"steps": 10}},
+        )
+        ret = evaluation.main(["--algorithm", "Q-Learning", "--scenario", "cologne1"])
+        assert ret != 0
+        captured = capsys.readouterr()
+        assert "Checkpoint not found" in captured.err
 
+    def test_aggregate_benchmark_statistics_rejects_controlled_tls_mismatch(self):
+        base_record = {
+            "scenario_name": "cologne3",
+            "algorithm": "Fixed-Time",
+            "seed": 42,
+            "status": "SUCCESS",
+            "is_valid": True,
+            "controlled_tls_ids": ["360082", "360086", "360089"],
+            "mean_waiting_time": 20.0,
+            "completion_rate_pct": 98.0,
+            "total_steps": 3600,
+            "effective_config": {"steps": 3600, "step_length": 1.0},
+            "observation_window_begin": 0.0,
+            "observation_window_end": 3600.0,
+            "observation_window_duration": 3600.0,
+        }
+        mismatched_ql = {
+            "scenario_name": "cologne3",
+            "algorithm": "Q-Learning",
+            "seed": 42,
+            "status": "SUCCESS",
+            "is_valid": True,
+            "controlled_tls_ids": ["360082"],
+            "mean_waiting_time": 15.0,
+            "completion_rate_pct": 99.0,
+        }
+        mismatched_ql["total_steps"] = 3600
+        mismatched_ql["effective_config"] = {"steps": 3600, "step_length": 1.0}
+        mismatched_ql["observation_window_begin"] = 0.0
+        mismatched_ql["observation_window_end"] = 3600.0
+        mismatched_ql["observation_window_duration"] = 3600.0
+        stats = aggregate_benchmark_statistics([base_record, mismatched_ql], baseline_algo="Fixed-Time")
+        assert "Controlled TLS mismatch" in stats["cologne3"]["Q-Learning"]["comparison_unavailable_reason"]
+        assert "improvements_vs_baseline" not in stats["cologne3"]["Q-Learning"]
+
+        matched_ql = {
+            **base_record, **mismatched_ql,
+            "controlled_tls_ids": ["360082", "360086", "360089"],
+        }
+        stats = aggregate_benchmark_statistics([base_record, matched_ql], baseline_algo="Fixed-Time")
+        assert "Q-Learning" in stats["cologne3"]
+        assert "mean_waiting_time_improvement_pct" in stats["cologne3"]["Q-Learning"]["improvements_vs_baseline"]
+
+    def test_broken_checkpoint_does_not_crash_fingerprint_or_benchmark_matrix(self, tmp_path):
+        bad_ckpt = tmp_path / "bad_agent.json"
+        bad_ckpt.write_text(json.dumps({"config": {"num_actions": 1e309}, "q_table": {}}), encoding="utf-8")
+        cfg = ExperimentConfig(scenario_name="cologne1", algorithm="Q-Learning", model_path=str(bad_ckpt))
+        fp = compute_run_fingerprint(cfg)
+        assert isinstance(fp, str)
+
+    def test_cli_does_not_fail_due_to_past_historical_records(self, tmp_path, monkeypatch):
+        # Historical record that failed
+        monkeypatch.chdir(tmp_path)
+        eval_dir = tmp_path / "results" / "evaluation"
+        eval_dir.mkdir(parents=True)
+        master = eval_dir / "benchmark_runs.json"
+        master.write_text(json.dumps([{
+            "scenario_name": "old_scenario",
+            "algorithm": "Fixed-Time",
+            "seed": 999,
+            "status": "FAILED",
+            "is_valid": False,
+            "run_fingerprint": "old_failed_hash",
+        }]), encoding="utf-8")
+
+        monkeypatch.setattr(
+            evaluation,
+            "run_single_experiment",
+            lambda cfg: {"status": "SUCCESS", "is_valid": True, "scenario_name": cfg.scenario_name, "algorithm": cfg.algorithm, "seed": cfg.seed},
+        )
+        monkeypatch.setattr(
+            evaluation,
+            "load_experiments_yaml",
+            lambda path: {"simulation": {"steps": 10}},
+        )
+        ret = evaluation.main(["--run-all", "--scenario", "cologne1", "--algorithm", "Fixed-Time", "--seed", "42", "--config", str(tmp_path / "dummy.yaml")])
+        assert ret == 0
+        persisted = json.loads(master.read_text(encoding="utf-8"))
+        assert any(record.get("run_fingerprint") == "old_failed_hash" for record in persisted)
+        assert any(record.get("scenario_name") == "cologne1" for record in persisted)
+
+
+def comparable_record(algorithm="Fixed-Time", seed=42, **changes):
+    return {
+        "scenario_name": "audit", "algorithm": algorithm, "seed": seed,
+        "status": "SUCCESS", "is_valid": True, "mean_waiting_time": 100.0,
+        "total_steps": 3600, "effective_config": {"steps": 3600, "step_length": 1.0},
+        "observation_window_begin": 0.0, "observation_window_end": 3600.0,
+        "observation_window_duration": 3600.0, **changes,
+    }
+
+
+@pytest.mark.parametrize("changes", [
+    {"seed": 99}, {"total_steps": 60},
+    {"effective_config": {"steps": 60, "step_length": 1.0}},
+    {"effective_config": {"steps": 3600, "step_length": 0.5}},
+    {"observation_window_begin": 100.0, "observation_window_end": 3700.0},
+    {"observation_window_duration": 60.0},
+    {"metric_schema_version": "old"},
+])
+def test_improvements_reject_incompatible_experiments(changes):
+    with pytest.raises(ValueError, match="Cannot compare"):
+        aggregate_benchmark_statistics([
+            comparable_record(), comparable_record("Max-Pressure", **changes),
+        ])
+
+
+def test_improvements_require_simulation_metadata():
+    records = [{key: value for key, value in comparable_record(algo).items()
+                if key not in ("effective_config", "total_steps")}
+               for algo in ("Fixed-Time", "Max-Pressure")]
+    stats = aggregate_benchmark_statistics(records)["audit"]["Max-Pressure"]
+    assert not stats.get("improvements_vs_baseline")
+
+
+def test_improvements_match_seeds_independently_of_record_order():
+    records = [comparable_record(seed=1), comparable_record(seed=2),
+               comparable_record("Max-Pressure", seed=2, mean_waiting_time=20.0),
+               comparable_record("Max-Pressure", seed=1, mean_waiting_time=40.0)]
+    stats = aggregate_benchmark_statistics(records)["audit"]["Max-Pressure"]
+    assert stats["improvements_vs_baseline"]["mean_waiting_time_improvement_pct"] == 70.0
+
+
+def test_improvements_reject_unequal_successful_seed_sets():
+    with pytest.raises(ValueError, match="Cannot compare"):
+        aggregate_benchmark_statistics([
+            comparable_record(seed=1), comparable_record(seed=2),
+            comparable_record("Max-Pressure", seed=1),
+            comparable_record("Max-Pressure", seed=2, status="FAILED", is_valid=False),
+        ])
+
+
+def test_real_short_runs_keep_summary_status_and_comparison_window_consistent(tmp_path):
+    records = []
+    for algorithm in ("Fixed-Time", "Max-Pressure"):
+        record, summary = run_single_experiment(
+            ExperimentConfig("cologne1", algorithm, steps=60, output_dir=str(tmp_path)),
+            include_summary=True,
+        )
+        assert record["status"] == "SUCCESS"
+        assert summary["tripinfo_reconciliation_status"] == "MATCH"
+        assert record["service_status"] == summary["service_status"] == "LOW_COMPLETION"
+        for key in ("observation_window_begin", "observation_window_end", "observation_window_duration"):
+            assert record[key] == summary[key]
+        assert record["observation_window_duration"] == 60.0
+        records.append(record)
+    stats = aggregate_benchmark_statistics(records)["cologne1"]["Max-Pressure"]
+    assert "throughput_vph_improvement_pct" in stats["improvements_vs_baseline"]
