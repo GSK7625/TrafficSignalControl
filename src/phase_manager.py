@@ -100,6 +100,17 @@ class SafePhaseManager:
             and self._time_in_phase >= self.max_green
         )
 
+    def valid_actions(self) -> List[int]:
+        """The single source of timing rules for controller and environment masks."""
+        if self.is_in_transition():
+            return [self._target_phase]
+        if self._time_in_phase < self.min_green:
+            return [self._current_phase]
+        actions = list(range(len(self.green_phases)))
+        if self.is_max_green_exceeded() and len(actions) > 1:
+            actions.remove(self._current_phase)
+        return actions
+
     def request_phase(self, target_phase_idx: int) -> bool:
         if not (0 <= target_phase_idx < len(self.green_phases)):
             raise IndexError(f"Target phase index {target_phase_idx} out of range")

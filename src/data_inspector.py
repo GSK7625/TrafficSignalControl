@@ -35,6 +35,7 @@ class ScenarioInfo:
     vehicle_depart_range: Optional[Tuple[float, float]] = None
     auxiliary_files: List[str] = field(default_factory=list)
     rou_files: List[str] = field(default_factory=list)
+    departure_times: Optional[List[float]] = None
 
 
 def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo:
@@ -99,17 +100,12 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
     all_departs: List[float] = []
     demand_count = 0
     for r_file in rou_files:
-        if os.path.isfile(r_file):
-            rou_root = ET.parse(r_file).getroot()
-            items = rou_root.findall("trip") + rou_root.findall("vehicle") + rou_root.findall("flow")
-            demand_count += len(items)
-            for item in items:
-                d = item.get("depart") or item.get("begin")
-                if d is not None:
-                    try:
-                        all_departs.append(float(d))
-                    except ValueError:
-                        pass
+        rou_root = ET.parse(r_file).getroot()
+        if rou_root.findall("flow"):
+            raise ValueError("Exact demand counting supports trip/vehicle routes, not flow definitions")
+        items = rou_root.findall("trip") + rou_root.findall("vehicle")
+        demand_count += len(items)
+        all_departs.extend(float(item.attrib["depart"]) for item in items)
 
     depart_range = (min(all_departs), max(all_departs)) if all_departs else None
     primary_files = {os.path.basename(cfg_file), os.path.basename(net_file)} | {os.path.basename(f) for f in rou_files}
@@ -132,6 +128,7 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data") -> ScenarioInfo
         vehicle_depart_range=depart_range,
         auxiliary_files=aux,
         rou_files=rou_files,
+        departure_times=all_departs,
     )
 
 
@@ -143,27 +140,20 @@ def get_window_demand(
 ) -> Dict[str, Any]:
     """Calculates scheduled traffic demand within [window_begin, window_end)."""
     info = scenario_name_or_info if isinstance(scenario_name_or_info, ScenarioInfo) else inspect_scenario(scenario_name_or_info, data_dir)
-    rou_files = info.rou_files or ([info.rou_path] if info.rou_path else [])
-    count, total = 0, 0
-    for r in rou_files:
-        if os.path.isfile(r):
-            for elem in ET.parse(r).getroot().findall("*"):
-                if elem.tag in ("trip", "vehicle", "flow"):
-                    total += 1
-                    d = elem.get("depart") or elem.get("begin")
-                    if d is not None:
-                        try:
-                            if window_begin <= float(d) < window_end:
-                                count += 1
-                        except ValueError:
-                            pass
+    departures = info.departure_times
+    if departures is None:
+        departures = []
+        for path in info.rou_files or [info.rou_path]:
+            root = ET.parse(path).getroot()
+            if root.findall("flow"):
+                raise ValueError("Exact demand counting does not support flow definitions")
+            departures.extend(float(item.attrib["depart"]) for item in root if item.tag in ("trip", "vehicle"))
     return {
-        "scheduled_demand_in_window": count,
+        "scheduled_demand_in_window": sum(window_begin <= departure < window_end for departure in departures),
         "demand_counting_mode": "exact",
-        "window_begin": float(window_begin),
-        "window_end": float(window_end),
+        "window_begin": float(window_begin), "window_end": float(window_end),
         "window_duration": max(0.0, float(window_end) - float(window_begin)),
-        "total_route_demand": total,
+        "total_route_demand": info.trips_or_vehicles_count,
     }
 
 
@@ -176,8 +166,5 @@ def inspect_all_scenarios(data_dir: str = "data") -> Dict[str, ScenarioInfo]:
     for entry in sorted(os.listdir(data_dir)):
         subpath = os.path.join(data_dir, entry)
         if os.path.isdir(subpath):
-            try:
-                results[entry] = inspect_scenario(entry, data_dir)
-            except Exception:
-                pass
+            results[entry] = inspect_scenario(entry, data_dir)
     return results

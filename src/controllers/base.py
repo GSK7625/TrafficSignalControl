@@ -30,6 +30,7 @@ class IntersectionObservation:
     sim_time: float
     step: int
     pending_vehicles: int = 0
+    valid_actions: Optional[List[int]] = None
 
 
 class BaseTrafficController(ABC):

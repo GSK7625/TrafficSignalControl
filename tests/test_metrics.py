@@ -11,8 +11,9 @@ from src.metrics import MetricsCollector, StepMetrics, parse_tripinfo_output
 class TestParseTripinfoOutput:
     """Test suite for parse_tripinfo_output function."""
 
-    def test_missing_file_returns_empty_dict(self):
-        assert parse_tripinfo_output("non_existent_file.xml") == {}
+    def test_missing_file_raises(self):
+        with pytest.raises(FileNotFoundError):
+            parse_tripinfo_output("non_existent_file.xml")
 
     def test_empty_tripinfo_xml(self):
         with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
@@ -22,7 +23,7 @@ class TestParseTripinfoOutput:
         try:
             res = parse_tripinfo_output(tmp_path)
             assert res["tripinfo_completed_vehicles"] == 0
-            assert res["tripinfo_mean_waiting_time"] == 0.0
+            assert res["tripinfo_mean_waiting_time"] is None
             assert res["tripinfo_total_waiting_time"] == 0.0
         finally:
             if os.path.isfile(tmp_path):

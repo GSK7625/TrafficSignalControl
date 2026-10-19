@@ -1,6 +1,7 @@
 """Simulation configuration module for RESCO datasets and SUMO/TraCI execution."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import math
 import os
 import shutil
 from typing import List, Optional
@@ -10,7 +11,7 @@ try:
 except ImportError:
     sumolib = None
 
-from src.data_inspector import inspect_scenario
+from src.data_inspector import ScenarioInfo, inspect_scenario
 
 DEFAULT_SAFETY_CONFIG = {
     "yellow_duration": 3.0,
@@ -35,8 +36,8 @@ class SimulationConfig:
     max_steps: Optional[int] = None
     seed: Optional[int] = 42
     output_dir: str = "results"
-    begin_time: float = 0.0
-    end_time: float = 3600.0
+    begin_time: Optional[float] = None
+    end_time: Optional[float] = None
     sumocfg_path: str = ""
     scenario_dir: str = ""
     sumo_binary: str = "sumo"
@@ -47,33 +48,25 @@ class SimulationConfig:
     controlled_tls_ids: Optional[List[str]] = None
     use_libsumo: bool = True
     save_run_details: bool = False
+    scenario_info: Optional[ScenarioInfo] = field(default=None, repr=False)
 
     def __post_init__(self):
-        # Basic sanity checks
         if self.step_length <= 0:
             raise ValueError(f"step_length must be positive, got {self.step_length}")
         if self.decision_interval <= 0:
             raise ValueError(f"decision_interval must be positive, got {self.decision_interval}")
         if self.yellow_duration <= 0:
             raise ValueError(f"yellow_duration must be positive, got {self.yellow_duration}")
+        if self.control_mode not in ("original", "agent", "cyclic"):
+            raise ValueError(f"Unknown control_mode: {self.control_mode}")
 
-        # Resolve scenario and configuration paths
         self.scenario_dir = os.path.abspath(os.path.join(self.data_dir, self.dataset_name))
         if not os.path.isdir(self.scenario_dir):
             raise ValueError(f"Dataset '{self.dataset_name}' not found under '{self.data_dir}'")
-
-        if not self.sumocfg_path:
-            candidate = os.path.join(self.scenario_dir, f"{self.dataset_name}.sumocfg")
-            if os.path.isfile(candidate):
-                self.sumocfg_path = os.path.abspath(candidate)
-            else:
-                for f in os.listdir(self.scenario_dir):
-                    if f.endswith(".sumocfg"):
-                        self.sumocfg_path = os.path.abspath(os.path.join(self.scenario_dir, f))
-                        break
-
-        if not self.sumocfg_path or not os.path.isfile(self.sumocfg_path):
-            raise ValueError(f"No valid .sumocfg found for dataset '{self.dataset_name}'")
+        self.scenario_info = self.scenario_info or inspect_scenario(self.dataset_name, self.data_dir)
+        self.sumocfg_path = os.path.abspath(self.sumocfg_path or self.scenario_info.cfg_path)
+        self.begin_time = self.scenario_info.begin_time if self.begin_time is None else self.begin_time
+        self.end_time = self.scenario_info.end_time if self.end_time is None else self.end_time
 
         # Resolve SUMO binary
         binary = "sumo-gui" if self.gui else "sumo"
@@ -82,13 +75,6 @@ class SimulationConfig:
 
 def get_scenario_config(dataset_name: str, data_dir: str = "data", **kwargs) -> SimulationConfig:
     """Creates a SimulationConfig populated with metadata from dataset inspection."""
-    try:
-        info = inspect_scenario(dataset_name, data_dir)
-        kwargs.setdefault("begin_time", info.begin_time)
-        kwargs.setdefault("end_time", info.end_time)
-        kwargs.setdefault("sumocfg_path", info.cfg_path)
-    except Exception:
-        pass
     return SimulationConfig(dataset_name=dataset_name, data_dir=data_dir, **kwargs)
 
 

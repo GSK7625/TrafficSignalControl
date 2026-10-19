@@ -7,7 +7,7 @@ Generates benchmark charts across Groups A, B, and C:
 """
 
 import os
-from typing import List
+from typing import Any, List, Optional
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -32,6 +32,48 @@ ALGO_COLORS = {
 }
 
 
+def _draw_metric_bar(
+    ax: plt.Axes,
+    categories: List[str],
+    means: List[float],
+    stds: Optional[List[float]] = None,
+    ylabel: str = "",
+    title: str = "",
+    fmt: str = "%.2f",
+    colors: Optional[List[str]] = None,
+    fontsize: int = 9,
+    padding: int = 4,
+    yerr_capsize: int = 5,
+    title_fontsize: int = 12,
+    ylabel_fontsize: int = 11,
+) -> Any:
+    """Draws a standardized bar chart with error bars and value labels."""
+    bars = ax.bar(
+        categories,
+        means,
+        yerr=stds,
+        capsize=yerr_capsize,
+        color=colors,
+        alpha=0.9,
+        edgecolor="black",
+        linewidth=0.6,
+    )
+    ax.bar_label(bars, padding=padding, fmt=fmt, fontsize=fontsize, fontweight="bold")
+    ax.set_ylabel(ylabel, fontsize=ylabel_fontsize, fontweight="bold")
+    pad = 12 if title_fontsize >= 12 else None
+    ax.set_title(title, fontsize=title_fontsize, fontweight="bold", pad=pad)
+    ax.grid(True, axis="y")
+    return bars
+
+
+def _save_plot(fig: plt.Figure, filepath: str) -> str:
+    """Standardized figure save and resource cleanup."""
+    fig.tight_layout()
+    fig.savefig(filepath)
+    plt.close(fig)
+    return filepath
+
+
 def plot_group_a_comparisons(
     summary_file: str = "results/evaluation/benchmark_summary.json",
     output_dir: str = "results/figures",
@@ -45,112 +87,61 @@ def plot_group_a_comparisons(
         return []
 
     generated = []
-    scenarios = [s for s in ["cologne1", "ingolstadt1"] if s in data]
+    scenarios = list(data)
     algos_order = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
 
     for scen in scenarios:
         scen_data = data[scen]
-        active_algos = [a for a in algos_order if a in scen_data]
+        active_algos = [a for a in algos_order if a in scen_data and scen_data[a].get("is_valid", True) and scen_data[a].get("status") != "FAILED"]
         if not active_algos:
             continue
 
-        colors = [ALGO_COLORS.get(a, "#333333") for a in active_algos]
-
-        # 1. Average Waiting Time
-        fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-        means = [scen_data[a]["tripinfo_mean_waiting_time"]["mean"] for a in active_algos]
-        stds = [scen_data[a]["tripinfo_mean_waiting_time"]["std"] for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=5, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=4, fmt="%.2fs", fontsize=9, fontweight="bold")
-        ax.set_ylabel("Average Waiting Time (seconds)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Average Waiting Time — {scen.upper()} (TripInfo Ground Truth)", fontsize=12, fontweight="bold", pad=12)
-        ax.grid(True, axis="y")
-        plt.tight_layout()
-        p1 = os.path.join(output_dir, f"{scen}_waiting_time_comparison.png")
-        plt.savefig(p1)
-        plt.close(fig)
-        generated.append(p1)
-
-        # 2. Average Queue Length
-        fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-        means = [scen_data[a]["mean_queue_length"]["mean"] for a in active_algos]
-        stds = [scen_data[a]["mean_queue_length"]["std"] for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=5, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=4, fmt="%.2f", fontsize=9, fontweight="bold")
-        ax.set_ylabel("Average Queue Length (vehicles)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Average Queue Length — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
-        ax.grid(True, axis="y")
-        plt.tight_layout()
-        p2 = os.path.join(output_dir, f"{scen}_queue_length_comparison.png")
-        plt.savefig(p2)
-        plt.close(fig)
-        generated.append(p2)
-
-        # 3. Throughput
-        fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-        means = [scen_data[a]["total_completed_vehicles"]["mean"] for a in active_algos]
-        stds = [scen_data[a]["total_completed_vehicles"]["std"] for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=5, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=4, fmt="%.0f", fontsize=9, fontweight="bold")
-        ax.set_ylabel("Completed Vehicles (veh)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Throughput (Completed Vehicles) — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
-        ax.grid(True, axis="y")
-        plt.tight_layout()
-        p3 = os.path.join(output_dir, f"{scen}_throughput_comparison.png")
-        plt.savefig(p3)
-        plt.close(fig)
-        generated.append(p3)
-
-        # 4. Average Time Loss
-        fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-        means = [scen_data[a]["tripinfo_total_time_loss"]["mean"] / 1000.0 for a in active_algos]
-        stds = [scen_data[a]["tripinfo_total_time_loss"]["std"] / 1000.0 for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=5, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=4, fmt="%.1fk s", fontsize=9, fontweight="bold")
-        ax.set_ylabel("Total Time Loss (×1,000 seconds)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Completed Vehicles Total Time Loss — {scen.upper()} (TripInfo)", fontsize=12, fontweight="bold", pad=12)
-        ax.grid(True, axis="y")
-        plt.tight_layout()
-        p4 = os.path.join(output_dir, f"{scen}_time_loss_comparison.png")
-        plt.savefig(p4)
-        plt.close(fig)
-        generated.append(p4)
-
-        # 5. Completion Rate
-        fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-        means = [scen_data[a]["completion_rate_pct"]["mean"] for a in active_algos]
-        stds = [scen_data[a]["completion_rate_pct"]["std"] for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=5, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=4, fmt="%.1f%%", fontsize=9, fontweight="bold")
-        ax.set_ylabel("Completion Rate (%)", fontsize=11, fontweight="bold")
-        ax.set_ylim(0, 110)
-        ax.set_title(f"Traffic Demand Completion Rate — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
-        ax.grid(True, axis="y")
-        plt.tight_layout()
-        p5 = os.path.join(output_dir, f"{scen}_completion_rate_comparison.png")
-        plt.savefig(p5)
-        plt.close(fig)
-        generated.append(p5)
+        # Metric definitions keep filenames, units and scaling together.
+        metric_charts = (
+            ("tripinfo_mean_waiting_time", "waiting_time", "Average Waiting Time (seconds)",
+             f"Average Waiting Time — {scen.upper()} (TripInfo Ground Truth)", "%.2fs", 1.0),
+            ("mean_queue_length", "queue_length", "Average Queue Length (vehicles)",
+             f"Average Queue Length — {scen.upper()}", "%.2f", 1.0),
+            ("total_completed_vehicles", "throughput", "Completed Vehicles (veh)",
+             f"Throughput (Completed Vehicles) — {scen.upper()}", "%.0f", 1.0),
+            ("tripinfo_total_time_loss", "time_loss", "Total Time Loss (×1,000 seconds)",
+             f"Completed Vehicles Total Time Loss — {scen.upper()} (TripInfo)", "%.1fk s", 1000.0),
+            ("completion_rate_pct", "completion_rate", "Completion Rate (%)",
+             f"Traffic Demand Completion Rate — {scen.upper()}", "%.1f%%", 1.0),
+        )
+        for key, suffix, ylabel, title, fmt, scale in metric_charts:
+            available_algos = [a for a in active_algos if scen_data[a].get(key, {}).get("mean") is not None]
+            if not available_algos:
+                continue
+            fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
+            _draw_metric_bar(
+                ax, available_algos,
+                [scen_data[a][key]["mean"] / scale for a in available_algos],
+                [(scen_data[a][key].get("std") or 0.0) / scale for a in available_algos],
+                ylabel=ylabel, title=title, fmt=fmt,
+                colors=[ALGO_COLORS.get(a, "#333333") for a in available_algos],
+            )
+            if suffix == "completion_rate":
+                ax.set_ylim(0, 110)
+            generated.append(_save_plot(fig, os.path.join(output_dir, f"{scen}_{suffix}_comparison.png")))
 
         # 6. Percentage Improvement vs Fixed-Time
-        fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-        compared_algos = [a for a in active_algos if a != "Fixed-Time"]
-        c_colors = [ALGO_COLORS.get(a, "#333333") for a in compared_algos]
-        imps = [
-            scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0)
-            for a in compared_algos
-        ]
-        bars = ax.bar(compared_algos, imps, color=c_colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=4, fmt="%+.1f%%", fontsize=9, fontweight="bold")
-        ax.axhline(0, color="gray", linewidth=1.0, linestyle="--")
-        ax.set_ylabel("Waiting Time Improvement (%)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Relative Improvement vs Fixed-Time — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
-        ax.grid(True, axis="y")
-        plt.tight_layout()
-        p6 = os.path.join(output_dir, f"{scen}_improvement_vs_fixed_time.png")
-        plt.savefig(p6)
-        plt.close(fig)
-        generated.append(p6)
+        compared_algos = [a for a in active_algos if a != "Fixed-Time" and scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct") is not None]
+        if compared_algos:
+            fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
+            c_colors = [ALGO_COLORS.get(a, "#333333") for a in compared_algos]
+            imps = [
+                scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0)
+                for a in compared_algos
+            ]
+            _draw_metric_bar(
+                ax, compared_algos, imps,
+                ylabel="Waiting Time Improvement (%)",
+                title=f"Relative Improvement vs Fixed-Time — {scen.upper()}",
+                fmt="%+.1f%%", colors=c_colors,
+            )
+            ax.axhline(0, color="gray", linewidth=1.0, linestyle="--")
+            generated.append(_save_plot(fig, os.path.join(output_dir, f"{scen}_improvement_vs_fixed_time.png")))
 
     return generated
 
@@ -167,7 +158,7 @@ def plot_group_b_dynamics(
         return []
 
     generated = []
-    scenarios = ["cologne1", "ingolstadt1"]
+    scenarios = sorted({run["scenario_name"] for run in runs})
 
     for scen in scenarios:
         allowed_algos = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
@@ -180,10 +171,13 @@ def plot_group_b_dynamics(
         if not scen_runs:
             continue
 
-        fig_q, ax_q = plt.subplots(figsize=(10, 5), dpi=300)
-        fig_r, ax_r = plt.subplots(figsize=(10, 5), dpi=300)
-        fig_c, ax_c = plt.subplots(figsize=(10, 5), dpi=300)
-        fig_pending, ax_pending = plt.subplots(figsize=(10, 5), dpi=300)
+        dynamics = (
+            ("queue_length", "Queue Length Trajectory Over Time", "Total Queue Length (vehicles)", "queue_length_over_time"),
+            ("running_vehicles", "Active Running Vehicles in Network", "Running Vehicles", "running_vehicles_over_time"),
+            ("cumulative_completed_vehicles", "Cumulative Completed Vehicles", "Completed Vehicles", "cumulative_completed_over_time"),
+            ("pending_vehicles", "Pending Uninserted Vehicles", "Pending Vehicles", "pending_vehicles_over_time"),
+        )
+        figures = {}
 
         for algo in allowed_algos:
             algo_runs = [r for r in scen_runs if r.get("algorithm") == algo]
@@ -193,7 +187,9 @@ def plot_group_b_dynamics(
             color = ALGO_COLORS.get(algo, "#333333")
             dfs = []
             for r in algo_runs:
-                r_dir = r.get("output_dir", "")
+                r_dir = r.get("output_dir")
+                if not r_dir:
+                    continue
                 csv_path = os.path.join(r_dir, "step_metrics.csv")
                 if not os.path.isfile(csv_path):
                     for root, _, files in os.walk(r_dir):
@@ -202,11 +198,7 @@ def plot_group_b_dynamics(
                             break
 
                 if os.path.isfile(csv_path):
-                    try:
-                        df_single = pd.read_csv(csv_path)
-                        dfs.append(df_single)
-                    except Exception:
-                        pass
+                    dfs.append(pd.read_csv(csv_path))
 
             if not dfs:
                 continue
@@ -226,104 +218,46 @@ def plot_group_b_dynamics(
 
             times = grouped["sim_time"]["mean"]
 
-            # Queue length
-            q_m = grouped["queue_length"]["mean"]
-            q_s = grouped["queue_length"]["std"].fillna(0)
-            ax_q.plot(times, q_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
-            ax_q.fill_between(times, (q_m - q_s).clip(lower=0), q_m + q_s, color=color, alpha=0.15)
+            for key, _, _, _ in dynamics:
+                if key not in figures:
+                    figures[key] = plt.subplots(figsize=(10, 5), dpi=300)
+                _, ax = figures[key]
+                means = grouped[key]["mean"]
+                stds = grouped[key]["std"].fillna(0)
+                ax.plot(times, means, label=algo, color=color, linewidth=1.8, alpha=0.9)
+                ax.fill_between(times, (means - stds).clip(lower=0), means + stds, color=color, alpha=0.15)
 
-            # Running vehicles
-            r_m = grouped["running_vehicles"]["mean"]
-            r_s = grouped["running_vehicles"]["std"].fillna(0)
-            ax_r.plot(times, r_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
-            ax_r.fill_between(times, (r_m - r_s).clip(lower=0), r_m + r_s, color=color, alpha=0.15)
-
-            # Cumulative completed
-            c_m = grouped["cumulative_completed_vehicles"]["mean"]
-            c_s = grouped["cumulative_completed_vehicles"]["std"].fillna(0)
-            ax_c.plot(times, c_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
-            ax_c.fill_between(times, (c_m - c_s).clip(lower=0), c_m + c_s, color=color, alpha=0.15)
-
-            # Pending vehicles
-            p_m = grouped["pending_vehicles"]["mean"]
-            p_s = grouped["pending_vehicles"]["std"].fillna(0)
-            ax_pending.plot(times, p_m, label=algo, color=color, linewidth=1.8, alpha=0.9)
-            ax_pending.fill_between(times, (p_m - p_s).clip(lower=0), p_m + p_s, color=color, alpha=0.15)
-
-        # 7. Queue Length over Time
-        ax_q.set_title(f"Queue Length Trajectory Over Time — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
-        ax_q.set_xlabel("Simulation Time (seconds)", fontsize=11)
-        ax_q.set_ylabel("Total Queue Length (vehicles)", fontsize=11)
-        ax_q.grid(True)
-        ax_q.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
-        fig_q.tight_layout()
-        p7 = os.path.join(output_dir, f"{scen}_queue_length_over_time.png")
-        fig_q.savefig(p7)
-        plt.close(fig_q)
-        generated.append(p7)
-
-        # 8. Running Vehicles over Time
-        ax_r.set_title(f"Active Running Vehicles in Network — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
-        ax_r.set_xlabel("Simulation Time (seconds)", fontsize=11)
-        ax_r.set_ylabel("Running Vehicles", fontsize=11)
-        ax_r.grid(True)
-        ax_r.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
-        fig_r.tight_layout()
-        p8 = os.path.join(output_dir, f"{scen}_running_vehicles_over_time.png")
-        fig_r.savefig(p8)
-        plt.close(fig_r)
-        generated.append(p8)
-
-        # 9. Cumulative Completed Vehicles over Time
-        ax_c.set_title(f"Cumulative Completed Vehicles — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
-        ax_c.set_xlabel("Simulation Time (seconds)", fontsize=11)
-        ax_c.set_ylabel("Completed Vehicles", fontsize=11)
-        ax_c.grid(True)
-        ax_c.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
-        fig_c.tight_layout()
-        p9 = os.path.join(output_dir, f"{scen}_cumulative_completed_over_time.png")
-        fig_c.savefig(p9)
-        plt.close(fig_c)
-        generated.append(p9)
-
-        # 10. Pending Vehicles over Time
-        ax_pending.set_title(f"Pending Uninserted Vehicles — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
-        ax_pending.set_xlabel("Simulation Time (seconds)", fontsize=11)
-        ax_pending.set_ylabel("Pending Vehicles", fontsize=11)
-        ax_pending.grid(True)
-        ax_pending.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
-        fig_pending.tight_layout()
-        p_pending = os.path.join(output_dir, f"{scen}_pending_vehicles_over_time.png")
-        fig_pending.savefig(p_pending)
-        plt.close(fig_pending)
-        generated.append(p_pending)
-
-        # 10. Green Time Allocation per Phase
-        for r in scen_runs:
-            durations = r.get("phase_durations", {})
-            if not durations:
+        for key, title, ylabel, suffix in dynamics:
+            if key not in figures:
                 continue
-            first_tls = list(durations.keys())[0]
-            phase_times = durations[first_tls]
-            if not phase_times:
+            fig, ax = figures[key]
+            ax.set_title(f"{title} — {scen.upper()} (All Seeds Mean ± Std)", fontsize=12, fontweight="bold", pad=12)
+            ax.set_xlabel("Simulation Time (seconds)", fontsize=11)
+            ax.set_ylabel(ylabel, fontsize=11)
+            ax.grid(True)
+            ax.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
+            generated.append(_save_plot(fig, os.path.join(output_dir, f"{scen}_{suffix}.png")))
+
+        # Combine seeds per TLS before drawing; no last-seed overwrite.
+        allocations = {}
+        for run in scen_runs:
+            for tls_id, phases in run.get("phase_durations_per_tls", {}).items():
+                values = allocations.setdefault((run["algorithm"], tls_id), {})
+                for phase, duration in phases.items():
+                    values[str(phase)] = values.get(str(phase), 0.0) + duration
+        for (algorithm, tls_id), durations in allocations.items():
+            total = sum(durations.values())
+            if total <= 0:
                 continue
-
-            fig_p, ax_p = plt.subplots(figsize=(7, 4), dpi=300)
-            p_indices = sorted([int(k) for k in phase_times.keys()])
-            p_vals = [phase_times.get(str(k), phase_times.get(k, 0.0)) for k in p_indices]
-            total_sec = sum(p_vals) if sum(p_vals) > 0 else 1.0
-            p_pcts = [v / total_sec * 100.0 for v in p_vals]
-
-            bars = ax_p.bar([f"Phase {k}" for k in p_indices], p_pcts, color="#1f77b4", alpha=0.85, edgecolor="black")
-            ax_p.bar_label(bars, padding=3, fmt="%.1f%%", fontsize=9)
-            ax_p.set_ylabel("Green Time Allocation (%)", fontsize=10, fontweight="bold")
-            ax_p.set_title(f"Green Time Allocation — {r['algorithm']} on {scen.upper()}", fontsize=11, fontweight="bold")
-            ax_p.grid(True, axis="y")
-            fig_p.tight_layout()
-            p10 = os.path.join(output_dir, f"{scen}_{r['algorithm'].lower().replace('-', '_').replace(' ', '_')}_phase_allocation.png")
-            fig_p.savefig(p10)
-            plt.close(fig_p)
-            generated.append(p10)
+            fig, ax = plt.subplots(figsize=(7, 4), dpi=300)
+            phases = sorted(durations, key=int)
+            _draw_metric_bar(ax, [f"Phase {phase}" for phase in phases],
+                             [durations[phase] / total * 100 for phase in phases],
+                             ylabel="Green Time Allocation (%)",
+                             title=f"Green Time Allocation — {algorithm} on {scen.upper()} ({tls_id})", fmt="%.1f%%")
+            suffix = algorithm.lower().replace("-", "_").replace(" ", "_")
+            tls_suffix = f"_{tls_id}" if sum(key[0] == algorithm for key in allocations) > 1 else ""
+            generated.append(_save_plot(fig, os.path.join(output_dir, f"{scen}_{suffix}{tls_suffix}_phase_allocation.png")))
 
     return generated
 
@@ -356,7 +290,7 @@ def plot_group_c_rl(
                 )
                 ax.set_title(f"RL Training Reward Progression — {scen.upper()}", fontsize=12, fontweight="bold", pad=12)
                 ax.set_xlabel("Training Episode", fontsize=11)
-                ax.set_ylabel("Episode Cumulative Reward (- Queue)", fontsize=11)
+                ax.set_ylabel("Episode Cumulative Reward (Negative Pressure + Pending Penalty)", fontsize=11)
                 ax.grid(True)
                 ax.legend(frameon=True, facecolor="white", edgecolor="#cccccc")
                 plt.tight_layout()
@@ -399,64 +333,47 @@ def plot_benchmark_dashboard(
         return []
 
     generated = []
-    scenarios = [s for s in ["cologne1", "ingolstadt1"] if s in data]
+    scenarios = list(data)
     algos_order = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
 
     for scen in scenarios:
         scen_data = data[scen]
-        active_algos = [a for a in algos_order if a in scen_data]
+        active_algos = [a for a in algos_order if a in scen_data and scen_data[a].get("is_valid", True) and scen_data[a].get("status") != "FAILED"]
         if not active_algos:
             continue
 
-        colors = [ALGO_COLORS.get(a, "#333333") for a in active_algos]
-
         fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=300)
 
-        # 1. Average Waiting Time
-        ax = axes[0, 0]
-        means = [scen_data[a].get("tripinfo_mean_waiting_time", {}).get("mean", scen_data[a].get("mean_waiting_time", {}).get("mean", 0.0)) for a in active_algos]
-        stds = [scen_data[a].get("tripinfo_mean_waiting_time", {}).get("std", scen_data[a].get("mean_waiting_time", {}).get("std", 0.0)) for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=4, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=3, fmt="%.1fs", fontsize=8, fontweight="bold")
-        ax.set_ylabel("Waiting Time (s)", fontsize=10, fontweight="bold")
-        ax.set_title("Average Waiting Time", fontsize=11, fontweight="bold")
-        ax.grid(True, axis="y")
-
-        # 2. Average Queue Length
-        ax = axes[0, 1]
-        means = [scen_data[a].get("mean_queue_length", {}).get("mean", 0.0) for a in active_algos]
-        stds = [scen_data[a].get("mean_queue_length", {}).get("std", 0.0) for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=4, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=3, fmt="%.1f", fontsize=8, fontweight="bold")
-        ax.set_ylabel("Queue Length (veh)", fontsize=10, fontweight="bold")
-        ax.set_title("Average Queue Length", fontsize=11, fontweight="bold")
-        ax.grid(True, axis="y")
-
-        # 3. Total Completed Vehicles
-        ax = axes[1, 0]
-        means = [scen_data[a].get("total_completed_vehicles", {}).get("mean", 0.0) for a in active_algos]
-        stds = [scen_data[a].get("total_completed_vehicles", {}).get("std", 0.0) for a in active_algos]
-        bars = ax.bar(active_algos, means, yerr=stds, capsize=4, color=colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-        ax.bar_label(bars, padding=3, fmt="%.0f", fontsize=8, fontweight="bold")
-        ax.set_ylabel("Completed Vehicles", fontsize=10, fontweight="bold")
-        ax.set_title("Total Completed Vehicles", fontsize=11, fontweight="bold")
-        ax.grid(True, axis="y")
+        dashboard_metrics = (
+            ("tripinfo_mean_waiting_time", "mean_waiting_time", "Waiting Time (s)", "Average Waiting Time", "%.1fs"),
+            ("mean_queue_length", None, "Queue Length (veh)", "Average Queue Length", "%.1f"),
+            ("total_completed_vehicles", None, "Completed Vehicles", "Total Completed Vehicles", "%.0f"),
+        )
+        for ax, (key, fallback, ylabel, title, fmt) in zip(axes.flat, dashboard_metrics):
+            values = []
+            for algo in active_algos:
+                stats = scen_data[algo].get(key, {})
+                if stats.get("mean") is None and fallback:
+                    stats = scen_data[algo].get(fallback, {})
+                if stats.get("mean") is not None:
+                    values.append((algo, stats["mean"], stats.get("std") or 0.0))
+            _draw_metric_bar(
+                ax, [v[0] for v in values], [v[1] for v in values], [v[2] for v in values],
+                ylabel=ylabel, title=title, fmt=fmt,
+                colors=[ALGO_COLORS.get(v[0], "#333333") for v in values],
+                fontsize=8, padding=3, yerr_capsize=4, title_fontsize=11, ylabel_fontsize=10,
+            )
 
         # 4. Relative Improvement vs Fixed-Time
-        ax = axes[1, 1]
-        compared_algos = [a for a in active_algos if a != "Fixed-Time"]
+        compared_algos = [a for a in active_algos if a != "Fixed-Time" and scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct") is not None]
         if compared_algos:
             c_colors = [ALGO_COLORS.get(a, "#333333") for a in compared_algos]
             imps = [
                 scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0)
                 for a in compared_algos
             ]
-            bars = ax.bar(compared_algos, imps, color=c_colors, alpha=0.9, edgecolor="black", linewidth=0.6)
-            ax.bar_label(bars, padding=3, fmt="%+.1f%%", fontsize=8, fontweight="bold")
-            ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
-            ax.set_ylabel("Improvement (%)", fontsize=10, fontweight="bold")
-            ax.set_title("Waiting Time Improvement vs Fixed-Time", fontsize=11, fontweight="bold")
-            ax.grid(True, axis="y")
+            _draw_metric_bar(axes[1, 1], compared_algos, imps, ylabel="Improvement (%)", title="Waiting Time Improvement vs Fixed-Time", fmt="%+.1f%%", colors=c_colors, fontsize=8, padding=3, yerr_capsize=4, title_fontsize=11, ylabel_fontsize=10)
+            axes[1, 1].axhline(0, color="gray", linewidth=0.8, linestyle="--")
 
         fig.suptitle(f"Benchmark Performance Dashboard — {scen.upper()}", fontsize=14, fontweight="bold", y=0.98)
         plt.tight_layout(rect=[0, 0, 1, 0.96])

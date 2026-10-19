@@ -217,18 +217,20 @@ class TestQLearningEvaluation:
         mgr = MagicMock()
         mgr.get_current_phase.return_value = 0
         mgr.is_in_transition.return_value = False
+        from src.phase_manager import SafePhaseManager
+        mgr = SafePhaseManager("tls_0", ["Grr", "rGr", "rrG"], min_green=5, max_green=60)
         env.runner.tls_managers = {"tls_0": mgr}
 
         # Below min_green: must stay in current phase [0]
-        mgr.time_in_current_phase.return_value = 3.0
+        mgr.update(3.0)
         assert TrafficSignalRLEnv.get_valid_actions(env) == [0]
 
         # Normal window [5.0, 60.0): all actions [0, 1, 2] valid
-        mgr.time_in_current_phase.return_value = 25.0
+        mgr.update(22.0)
         assert TrafficSignalRLEnv.get_valid_actions(env) == [0, 1, 2]
 
         # Exceeded max_green (>= 60.0): anti-starvation excludes current phase [1, 2]
-        mgr.time_in_current_phase.return_value = 60.0
+        mgr.update(35.0)
         assert TrafficSignalRLEnv.get_valid_actions(env) == [1, 2]
 
     def test_env_save_run_details_default(self):
@@ -237,4 +239,39 @@ class TestQLearningEvaluation:
         assert env.save_run_details is False
         assert env.config.save_run_details is False
 
+    def test_run_greedy_eval_loop(self):
+        from unittest.mock import MagicMock
+        from src.evaluation.evaluate_rl import run_greedy_eval_loop
+
+        agent = MagicMock()
+        agent.eval_mode = False
+        agent.epsilon = 0.5
+        agent.select_action_for_state.return_value = 1
+
+        env = MagicMock()
+        env.reset.return_value = ((0, 1, 2, 0), {"discrete_state": (0, 1, 2, 0), "valid_actions": [0, 1]})
+        env.step.return_value = (
+            (0, 1, 2, 0),
+            12.5,
+            True,
+            False,
+            {"discrete_state": (0, 1, 2, 0), "valid_actions": [0, 1]},
+        )
+        env.get_summary.return_value = {"total_completed_vehicles": 10, "mean_waiting_time": 4.2}
+
+        total_reward, summary = run_greedy_eval_loop(agent, env, seed=123)
+
+        assert total_reward == 12.5
+        assert summary["total_completed_vehicles"] == 10
+        # Agent exploration flags should be restored after evaluation
+        assert agent.eval_mode is False
+        assert agent.epsilon == 0.5
+        env.reset.assert_called_once_with(seed=123)
+        agent.select_action_for_state.assert_called_once_with(
+            (0, 1, 2, 0), valid_actions=[0, 1], current_phase=0
+        )
+
+    def test_no_observation_builder_dependency(self):
+        import src.rl
+        assert not hasattr(src.rl, "ObservationBuilder")
 

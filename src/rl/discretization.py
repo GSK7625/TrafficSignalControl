@@ -59,3 +59,13 @@ class StateDiscretizer:
             "serving_thresholds": list(self.serving_thresholds),
             "waiting_thresholds": list(self.waiting_thresholds),
         }
+
+    @classmethod
+    def from_config(cls, config: Dict[str, Any], min_green: float = 5.0) -> "StateDiscretizer":
+        """Restores checkpoint thresholds, including defaults for legacy checkpoints."""
+        return cls(
+            min_green=config.get("min_green", min_green),
+            max_effective_green=config.get("max_effective_green", 25.0),
+            serving_queue_thresholds=tuple(config.get("serving_thresholds", (1.0, 5.0))),
+            waiting_queue_thresholds=tuple(config.get("waiting_thresholds", (1.0, 6.0, 15.0))),
+        )

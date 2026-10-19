@@ -4,29 +4,25 @@ import argparse
 import json
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from src.config import DEFAULT_SAFETY_CONFIG
 from src.controllers.q_learning import QLearningController
+from src.rl.discretization import StateDiscretizer
 from src.rl.environment import TrafficSignalRLEnv
+from src.rl.rewards import NegativePressureReward
 
 
 def load_checkpoint_env_params(model_path: Optional[str]) -> Dict[str, Any]:
     """Inspects checkpoint metadata to extract environment and discretizer configuration."""
+    if model_path is None:
+        return {}
+    return checkpoint_env_params(QLearningController.from_checkpoint(model_path).get_config())
+
+
+def checkpoint_env_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Maps controller metadata to environment options in one place."""
     params: Dict[str, Any] = {}
-    if not model_path or not os.path.isfile(model_path):
-        return params
-
-    try:
-        with open(model_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return params
-
-    cfg = data.get("config", {}) if isinstance(data, dict) else {}
-    if not isinstance(cfg, dict):
-        return params
-
     if "num_actions" in cfg:
         params["num_actions"] = int(cfg["num_actions"])
     if "target_tls_id" in cfg and cfg["target_tls_id"] is not None:
@@ -36,18 +32,92 @@ def load_checkpoint_env_params(model_path: Optional[str]) -> Dict[str, Any]:
     params["yellow_duration"] = float(cfg.get("yellow_duration", DEFAULT_SAFETY_CONFIG["yellow_duration"]))
     params["all_red_duration"] = float(cfg.get("all_red_duration", DEFAULT_SAFETY_CONFIG["all_red_duration"]))
     params["min_green"] = float(cfg.get("min_green", DEFAULT_SAFETY_CONFIG["min_green"]))
-    params["max_green"] = float(cfg["max_green"]) if cfg.get("max_green") is not None else DEFAULT_SAFETY_CONFIG["max_green"]
+    max_green = cfg.get("max_green", DEFAULT_SAFETY_CONFIG["max_green"])
+    params["max_green"] = float(max_green) if max_green is not None else None
 
     d_cfg = cfg.get("discretizer_config", {})
     if isinstance(d_cfg, dict) and d_cfg:
-        from src.rl.discretization import StateDiscretizer
-        params["state_discretizer"] = StateDiscretizer(
-            min_green=float(d_cfg.get("min_green", params["min_green"])),
-            max_effective_green=float(d_cfg.get("max_effective_green", 25.0)),
-            serving_queue_thresholds=tuple(float(x) for x in d_cfg.get("serving_thresholds", [1.0, 5.0])),
-            waiting_queue_thresholds=tuple(float(x) for x in d_cfg.get("waiting_thresholds", [1.0, 6.0, 15.0])),
-        )
+        params["state_discretizer"] = StateDiscretizer.from_config(d_cfg, params["min_green"])
     return params
+
+
+def create_evaluation_session(
+    scenario_name: str,
+    model_path: Optional[str] = None,
+    seed: int = 42,
+    timing_overrides: Optional[Dict[str, Any]] = None,
+    **env_options: Any,
+) -> Tuple[QLearningController, TrafficSignalRLEnv]:
+    """Creates a compatible agent/environment pair for CLI and benchmark evaluation.
+
+    Explicit timing options override checkpoint metadata. An explicit max_green=None
+    disables the limit; an absent key inherits checkpoint or project defaults.
+    The caller owns the returned environment and must close it.
+    """
+    if not model_path:
+        raise FileNotFoundError("Evaluation requires a trained Q-Learning checkpoint")
+    agent = QLearningController.from_checkpoint(model_path, seed=seed, **(timing_overrides or {}))
+    params = checkpoint_env_params(agent.get_config())
+    params.pop("num_actions", None)
+    params.update(timing_overrides or {})
+    params["state_discretizer"] = agent.discretizer
+    reward = dict(agent.reward_config or {})
+    if reward.pop("name", "NegativePressureReward") != "NegativePressureReward":
+        raise ValueError("Unsupported checkpoint reward function")
+    env_options.setdefault("reward_fn", NegativePressureReward(**reward))
+    env = TrafficSignalRLEnv(
+        scenario_name=scenario_name, seed=seed, **{**params, **env_options},
+    )
+    env.reward_config_source = "checkpoint" if agent.reward_config else "legacy_defaults"
+    try:
+        if agent.num_actions != env.num_actions:
+            raise ValueError(f"Checkpoint actions ({agent.num_actions}) do not match environment actions ({env.num_actions})")
+        agent.target_tls_id = env.tls_id
+        return agent, env
+    except Exception:
+        env.close()
+        raise
+
+
+def run_greedy_eval_loop(
+    agent: Any,
+    env: Any,
+    seed: Optional[int] = None,
+) -> Tuple[float, Dict[str, Any]]:
+    """Runs a single deterministic greedy evaluation episode on the environment.
+
+    Temporarily sets agent.eval_mode=True and agent.epsilon=0.0 during execution.
+    Returns:
+        (total_cumulative_reward, env_summary_dict)
+    """
+    prev_mode = agent.eval_mode
+    prev_eps = agent.epsilon
+    agent.eval_mode = True
+    agent.epsilon = 0.0
+
+    total_reward = 0.0
+    try:
+        _, info = env.reset(seed=seed)
+        valid_actions = info["valid_actions"]
+        discrete_state = info["discrete_state"]
+
+        while True:
+            curr_phase = discrete_state[0]
+            action = agent.select_action_for_state(
+                discrete_state, valid_actions=valid_actions, current_phase=curr_phase
+            )
+            _, reward, terminated, truncated, next_info = env.step(action)
+            total_reward += reward
+            valid_actions = next_info["valid_actions"]
+            discrete_state = next_info["discrete_state"]
+            if terminated or truncated:
+                break
+    finally:
+        agent.eval_mode = prev_mode
+        agent.epsilon = prev_eps
+
+    summary = env.get_summary() or {}
+    return float(round(total_reward, 2)), summary
 
 
 def evaluate_agent(
@@ -70,83 +140,35 @@ def evaluate_agent(
     """Runs an evaluation episode with greedy exploitation (epsilon=0.0)."""
     os.makedirs(output_dir, exist_ok=True)
     algo_key = algorithm.lower().replace("-", "_")
-    ckpt_params = load_checkpoint_env_params(model_path)
-
-    # Resolve timing parameters gracefully without throwing constraint exceptions
-    dec_int = float(decision_interval) if decision_interval is not None else ckpt_params.get("decision_interval", 5.0)
-    m_green = float(min_green) if min_green is not None else ckpt_params.get("min_green", DEFAULT_SAFETY_CONFIG["min_green"])
-    mx_green = float(max_green) if max_green is not None else ckpt_params.get("max_green", DEFAULT_SAFETY_CONFIG["max_green"])
-    y_dur = float(yellow_duration) if yellow_duration is not None else ckpt_params.get("yellow_duration", DEFAULT_SAFETY_CONFIG["yellow_duration"])
-    ar_dur = float(all_red_duration) if all_red_duration is not None else ckpt_params.get("all_red_duration", DEFAULT_SAFETY_CONFIG["all_red_duration"])
-    effective_tls = target_tls_id or ckpt_params.get("target_tls_id")
-
-    env_kwargs: Dict[str, Any] = {
-        "scenario_name": scenario_name,
-        "decision_interval": dec_int,
-        "min_green": m_green,
-        "max_green": mx_green,
-        "yellow_duration": y_dur,
-        "all_red_duration": ar_dur,
-        "target_tls_id": effective_tls,
-        "max_steps": steps,
-        "seed": seed,
-        "output_dir": os.path.join(output_dir, f"eval_{scenario_name}_{algo_key}") if save_run_details else None,
-        "save_run_details": save_run_details,
-        "use_tripinfo": True,
-        "gui": gui,
-        "gui_delay": gui_delay,
+    timing_overrides = {
+        key: value for key, value in {
+            "decision_interval": decision_interval, "min_green": min_green,
+            "max_green": max_green, "yellow_duration": yellow_duration,
+            "all_red_duration": all_red_duration,
+        }.items() if value is not None
     }
-    if "state_discretizer" in ckpt_params:
-        env_kwargs["state_discretizer"] = ckpt_params["state_discretizer"]
-
-    env = TrafficSignalRLEnv(**env_kwargs)
+    env_options = {"target_tls_id": target_tls_id} if target_tls_id else {}
+    agent, env = create_evaluation_session(
+        scenario_name, model_path, seed=seed, timing_overrides=timing_overrides,
+        max_steps=steps, gui=gui, gui_delay=gui_delay, use_tripinfo=True,
+        output_dir=os.path.join(output_dir, f"eval_{scenario_name}_{algo_key}") if save_run_details else None,
+        save_run_details=save_run_details, **env_options,
+    )
     try:
-        agent = QLearningController(
-            num_actions=env.num_actions,
-            discretizer=env.state_discretizer,
-            min_green=m_green,
-            max_green=mx_green,
-            yellow_duration=y_dur,
-            all_red_duration=ar_dur,
-            target_tls_id=env.tls_id,
-            seed=seed,
-            eval_mode=True,
-            tie_break_strategy="first",
-        )
-        if model_path and os.path.isfile(model_path):
-            agent.load(model_path)
-        agent.decision_interval = dec_int
-        agent.eval_mode = True
-        agent.epsilon = 0.0
-
         start_time = time.time()
-        _, info = env.reset(seed=seed)
-        valid_actions = info.get("valid_actions")
-        discrete_state = info.get("discrete_state")
-
-        total_reward = 0.0
-        while True:
-            action = agent.select_action_for_state(
-                discrete_state, valid_actions=valid_actions, current_phase=discrete_state[0] if discrete_state else 0
-            )
-            _, reward, terminated, truncated, next_info = env.step(action)
-            total_reward += reward
-            valid_actions = next_info.get("valid_actions")
-            discrete_state = next_info.get("discrete_state")
-            if terminated or truncated:
-                break
-
+        total_reward, summary = run_greedy_eval_loop(agent, env, seed=seed)
         wall_clock = time.time() - start_time
-        summary = env.get_summary() or {}
 
         eval_result = {
             "scenario_name": scenario_name,
             "algorithm": "Q-Learning",
             "model_path": model_path,
             "seed": seed,
-            "status": "SUCCESS",
-            "is_valid": True,
+            "status": "SUCCESS" if summary.get("is_valid", True) else "FAILED",
+            "is_valid": summary.get("is_valid", True),
             "episode_reward": round(total_reward, 2),
+            "reward_config": env.reward_fn.get_config(),
+            "reward_config_source": env.reward_config_source,
             "wall_clock_time_seconds": round(wall_clock, 2),
             "summary": summary,
         }
@@ -166,7 +188,8 @@ def evaluate_agent(
             json.dump(eval_result, f, indent=2)
 
         mw = eval_result.get("tripinfo_mean_waiting_time", eval_result.get("mean_waiting_time", 0.0))
-        print(f"[{scenario_name.upper()}] Q-Learning eval finished in {wall_clock:.1f}s | Completed: {eval_result.get('total_completed_vehicles', 0)} | Mean Wait: {mw:.2f}s")
+        wait_label = f"{mw:.2f}s" if mw is not None else "N/A"
+        print(f"[{scenario_name.upper()}] Q-Learning eval finished in {wall_clock:.1f}s | Completed: {eval_result.get('total_completed_vehicles', 0)} | Mean Wait: {wait_label}")
         return eval_result
     finally:
         env.close()

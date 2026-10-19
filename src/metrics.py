@@ -8,32 +8,55 @@ Primary focus on the 3 Core Traffic Signal Control Metrics:
 
 import csv
 from dataclasses import asdict, dataclass
+import math
 import json
 import os
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
 
-METRIC_SCHEMA_VERSION = "4.0.0"
+METRIC_SCHEMA_VERSION = "5.0.0"
+
+# Experiment acceptance and stricter report warnings serve different purposes.
+BENCHMARK_COMPLETION_THRESHOLD = 0.95
+REPORT_COMPLETION_THRESHOLD = 0.98
+
+
+def completion_statistics(
+    summary: Dict[str, Any], fallback_demand: Optional[int] = None,
+) -> Tuple[int, Optional[int], float]:
+    """Returns completed vehicles, demand and completion fraction (not percent)."""
+    completed = summary.get("total_completed_vehicles", summary.get("completed_vehicles", summary.get("tripinfo_completed_vehicles", 0))) or 0
+    demand = next((summary[key] for key in ("scheduled_demand_in_window", "total_scenario_demand", "total_demand") if summary.get(key) is not None), fallback_demand)
+    if demand is None and all(summary.get(key) is not None for key in ("running_vehicles_at_end", "pending_insertion_vehicles")):
+        demand = completed + summary["running_vehicles_at_end"] + summary["pending_insertion_vehicles"]
+    return completed, demand, completed / demand if demand and demand > 0 else 0.0
+
+
+def service_status(completion_rate: float, threshold: float = BENCHMARK_COMPLETION_THRESHOLD) -> str:
+    """Classifies a completion fraction using the caller's named policy."""
+    if completion_rate is None:
+        return "NO_DATA"
+    return "COMPLETED" if completion_rate >= threshold else "LOW_COMPLETION"
 
 
 def parse_tripinfo_output(xml_path: str) -> Dict[str, Any]:
     """Parses SUMO native --tripinfo-output XML file for ground-truth statistics."""
-    if not os.path.isfile(xml_path):
-        return {}
-    try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        all_trips = root.findall("tripinfo")
-    except Exception:
-        return {}
+    root = ET.parse(xml_path).getroot()
+    if root.tag != "tripinfos":
+        raise ValueError("Expected a tripinfos XML root")
+    all_trips = root.findall("tripinfo")
 
     completed_ids, durations, waiting_times, time_losses = [], [], [], []
     for trip in all_trips:
-        completed_ids.append(trip.get("id", ""))
-        durations.append(float(trip.get("duration", 0.0)))
-        waiting_times.append(float(trip.get("waitingTime", 0.0)))
-        time_losses.append(float(trip.get("timeLoss", 0.0)))
+        completed_ids.append(trip.attrib["id"])
+        values = [float(trip.attrib[key]) for key in ("duration", "waitingTime", "timeLoss")]
+        if not all(math.isfinite(value) and value >= 0 for value in values):
+            raise ValueError("TripInfo metrics must be finite and non-negative")
+        duration, wait, loss = values
+        durations.append(duration)
+        waiting_times.append(wait)
+        time_losses.append(loss)
 
     count = len(all_trips)
     if count == 0:
@@ -41,10 +64,10 @@ def parse_tripinfo_output(xml_path: str) -> Dict[str, Any]:
             "tripinfo_completed_vehicles": 0,
             "tripinfo_completed_ids": [],
             "tripinfo_unfinished_vehicles": 0,
-            "tripinfo_mean_travel_time": 0.0,
-            "tripinfo_mean_waiting_time": 0.0,
+            "tripinfo_mean_travel_time": None,
+            "tripinfo_mean_waiting_time": None,
             "tripinfo_total_waiting_time": 0.0,
-            "tripinfo_mean_time_loss": 0.0,
+            "tripinfo_mean_time_loss": None,
             "tripinfo_total_time_loss": 0.0,
             "tripinfo_metrics_available": False,
         }
@@ -76,32 +99,21 @@ def build_vehicle_accounting(
     data_dir: str = "data",
     population: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Builds vehicle accounting metadata for an observation window [window_begin, window_end)."""
-    realized = total_completed + running_vehs + pending_vehs
-    route_demand = getattr(scenario_info, "trips_or_vehicles_count", realized) if scenario_info else realized
+    """Builds clean vehicle counts and observation window metadata."""
     duration = max(0.0, float(window_end) - float(window_begin))
-
+    realized = total_completed + running_vehs + pending_vehs
     return {
         "metric_schema_version": METRIC_SCHEMA_VERSION,
         "observation_window_begin": float(window_begin),
         "observation_window_end": float(window_end),
         "observation_window_duration": duration,
-        "total_route_demand": route_demand,
-        "total_scenario_demand": route_demand,
-        "scheduled_demand_in_window": route_demand,
-        "demand_counting_mode": "exact",
         "realized_demand_in_window": realized,
+        "total_completed_vehicles": total_completed,
         "running_vehicles_at_end": running_vehs,
         "pending_insertion_vehicles": pending_vehs,
         "teleport_count": total_teleports,
         "collision_count": total_collisions,
-        "demand_denominator": float(realized if realized > 0 else 1.0),
-        "demand_denominator_source": "realized_in_window",
-        "conservation_error": 0,
         "accounting_valid": True,
-        "accounting_errors": [],
-        "population": population or {},
-        "incomplete_vehicles": running_vehs + pending_vehs,
     }
 
 
@@ -128,6 +140,7 @@ class MetricsCollector:
         self.tripinfo_file = tripinfo_file
         self.step_records: List[StepMetrics] = []
         self._cumulative_completed: int = 0
+        self.departed_ids: set = set()
         self.completed_ids: set = set()
         self.running_ids: set = set()
         self.pending_ids: set = set()
@@ -152,7 +165,8 @@ class MetricsCollector:
         """Returns a snapshot of vehicle IDs across lifecycle states."""
         return {
             "states": {
-                "completed": list(self.completed_ids),
+                "departed": sorted(self.departed_ids),
+                "completed": sorted(self.completed_ids),
                 "running": list(self.running_ids),
                 "pending": list(self.pending_ids),
             },
@@ -161,15 +175,21 @@ class MetricsCollector:
         }
 
     def reconcile_tripinfo(self) -> Dict[str, Any]:
-        """Loads and reconciles tripinfo XML file if provided."""
+        """Reconciles completed IDs after SUMO has closed its output file."""
         if self._reconciled:
-            return self._cached_tripinfo_summary or {}
-        self._reconciled = True
+            return self._cached_tripinfo_summary
         result = {"tripinfo_required": bool(self.tripinfo_file), "tripinfo_reconciliation_status": "NOT_REQUIRED"}
-        if self.tripinfo_file and os.path.isfile(self.tripinfo_file):
-            stats = parse_tripinfo_output(self.tripinfo_file)
-            result.update(stats)
-            result["tripinfo_reconciliation_status"] = "MATCH"
+        if self.tripinfo_file:
+            try:
+                stats = parse_tripinfo_output(self.tripinfo_file)
+                result.update(stats)
+                result["tripinfo_reconciliation_status"] = "MATCH"
+            except FileNotFoundError:
+                result["tripinfo_reconciliation_status"] = "MISSING"
+            except Exception as error:
+                result["tripinfo_reconciliation_status"] = "PARSE_ERROR"
+                result["tripinfo_error"] = str(error)
+        self._reconciled = True
         self._cached_tripinfo_summary = result
         return result
 
@@ -186,6 +206,7 @@ class MetricsCollector:
     def register_departed_vehicles(self, departures: Dict[str, float]) -> None:
         """Registers departure times for vehicles."""
         self.vehicle_departure_times.update(departures)
+        self.departed_ids.update(departures)
 
     def record_step(
         self,
@@ -196,95 +217,45 @@ class MetricsCollector:
         step_length: float = 1.0,
     ) -> StepMetrics:
         """Queries TraCI for current step performance metrics and records them."""
-        self.observed_duration += step_length
-
-        # 1. Departed
-        try:
-            for vid in traci_module.simulation.getDepartedIDList():
-                if vid not in self.vehicle_departure_times:
-                    try:
-                        dep = traci_module.vehicle.getDeparture(vid)
-                        self.vehicle_departure_times[vid] = float(dep) if dep >= 0 else sim_time
-                    except Exception:
-                        self.vehicle_departure_times[vid] = sim_time
-        except Exception:
-            pass
-
-        # 2. Arrived
-        new_arrived = []
-        try:
-            for vid in traci_module.simulation.getArrivedIDList():
-                if vid not in self.completed_ids:
-                    self.completed_ids.add(vid)
-                    new_arrived.append(vid)
-                    dep = self.vehicle_departure_times.pop(vid, None)
-                    if dep is not None:
-                        self.completed_travel_times.append(max(0.0, sim_time - dep))
-                    self.completed_waiting_times.append(self.vehicle_last_waiting_time.pop(vid, 0.0))
-                    self.completed_time_losses.append(self.vehicle_last_time_loss.pop(vid, 0.0))
-        except Exception:
-            pass
+        # Required observations fail the run instead of manufacturing zero metrics.
+        departed = traci_module.simulation.getDepartedIDList()
+        arrived = traci_module.simulation.getArrivedIDList()
+        running = traci_module.vehicle.getIDList()
+        pending = traci_module.simulation.getPendingVehicles()
+        total_queue = (
+            sum(traci_module.lane.getLastStepHaltingNumber(lane) for lane in controlled_lanes)
+            if controlled_lanes else
+            sum(traci_module.vehicle.getSpeed(vid) < 0.1 for vid in running)
+        )
+        waits = {vid: float(traci_module.vehicle.getAccumulatedWaitingTime(vid)) for vid in running}
+        losses = {vid: float(traci_module.vehicle.getTimeLoss(vid)) for vid in running}
+        for vid in departed:
+            dep = float(traci_module.vehicle.getDeparture(vid))
+            self.vehicle_departure_times[vid] = dep if dep >= 0 else sim_time
+        new_arrived = set(arrived) - self.completed_ids
+        for vid in new_arrived:
+            dep = self.vehicle_departure_times.pop(vid, None)
+            if dep is not None:
+                self.completed_travel_times.append(max(0.0, sim_time - dep))
+            self.completed_waiting_times.append(self.vehicle_last_waiting_time.pop(vid, 0.0))
+            self.completed_time_losses.append(self.vehicle_last_time_loss.pop(vid, 0.0))
+        self.departed_ids.update(departed)
+        self.completed_ids.update(new_arrived)
         self._cumulative_completed += len(new_arrived)
-
-        # 3. Queue length
-        total_queue = 0
-        try:
-            if controlled_lanes:
-                total_queue = sum(traci_module.lane.getLastStepHaltingNumber(lid) for lid in controlled_lanes)
-            else:
-                total_queue = sum(1 for vid in traci_module.vehicle.getIDList() if traci_module.vehicle.getSpeed(vid) < 0.1)
-        except Exception:
-            pass
+        self.running_ids = set(running)
+        self.pending_ids = set(pending)
+        self.vehicle_last_waiting_time.update(waits)
+        self.vehicle_last_time_loss.update(losses)
+        self.last_pending_count = len(pending)
+        self.observed_duration += step_length
         self.total_delay_seconds += total_queue * step_length
-
-        # 4. Running vehicles
-        total_wait, total_loss, running_count = 0.0, 0.0, 0
-        try:
-            running_vehs = traci_module.vehicle.getIDList()
-            self.running_ids = set(running_vehs)
-            running_count = len(running_vehs)
-            for vid in running_vehs:
-                try:
-                    w = float(traci_module.vehicle.getAccumulatedWaitingTime(vid))
-                except Exception:
-                    try:
-                        w = float(traci_module.vehicle.getWaitingTime(vid))
-                    except Exception:
-                        w = 0.0
-                loss = 0.0
-                try:
-                    loss = float(traci_module.vehicle.getTimeLoss(vid))
-                except Exception:
-                    pass
-                total_wait += w
-                total_loss += loss
-                self.vehicle_last_waiting_time[vid] = w
-                self.vehicle_last_time_loss[vid] = loss
-                self.vehicle_departure_times.setdefault(vid, sim_time)
-        except Exception:
-            pass
-
-        # 5. Pending vehicles
-        pending_count = 0
-        try:
-            pending = traci_module.simulation.getPendingVehicles()
-            self.pending_ids = set(pending or [])
-            pending_count = len(self.pending_ids)
-        except Exception:
-            pass
-        self.last_pending_count = pending_count
-        self.total_pending_delay += pending_count * step_length
-
+        self.total_pending_delay += len(pending) * step_length
         record = StepMetrics(
-            step=step,
-            sim_time=sim_time,
-            running_vehicles=running_count,
-            queue_length=total_queue,
-            waiting_time=total_wait,
-            time_loss=total_loss,
-            step_completed_vehicles=len(new_arrived),
+            step=step, sim_time=sim_time, running_vehicles=len(running),
+            queue_length=total_queue, waiting_time=sum(waits.values()),
+            time_loss=sum(losses.values()), step_completed_vehicles=len(new_arrived),
             cumulative_completed_vehicles=self._cumulative_completed,
-            pending_vehicles=pending_count,
+            pending_vehicles=len(pending),
         )
         self.step_records.append(record)
         return record
@@ -303,10 +274,10 @@ class MetricsCollector:
 
     def get_summary(self) -> Dict[str, Any]:
         """Calculates aggregate statistical metrics across the simulation run."""
-        trip_stats = (
-            self.reconcile_tripinfo() if (self.tripinfo_file or self._reconciled)
-            else {"tripinfo_required": False, "tripinfo_reconciliation_status": "NOT_REQUIRED"}
-        )
+        trip_stats = self._cached_tripinfo_summary or {
+            "tripinfo_required": bool(self.tripinfo_file),
+            "tripinfo_reconciliation_status": "PENDING" if self.tripinfo_file else "NOT_REQUIRED",
+        }
 
         steps = len(self.step_records)
         qlens = [r.queue_length for r in self.step_records]
@@ -323,7 +294,7 @@ class MetricsCollector:
         )
         throughput = round(completed * (3600.0 / dur), 1) if dur > 0 else 0.0
 
-        comp_wait = sum(self.completed_waiting_times)
+        comp_wait = trip_stats.get("tripinfo_total_waiting_time", sum(self.completed_waiting_times))
         run_wait = sum(self.vehicle_last_waiting_time.values())
         net_wait = comp_wait + run_wait
         total_wait = net_wait if (self.completed_waiting_times or self.vehicle_last_waiting_time) else (
@@ -331,8 +302,8 @@ class MetricsCollector:
         )
         mean_wait = round(comp_wait / completed, 2) if completed > 0 else None
 
-        mean_travel = round(sum(self.completed_travel_times) / len(self.completed_travel_times), 2) if self.completed_travel_times else None
-        loss = sum(self.completed_time_losses) + sum(self.vehicle_last_time_loss.values())
+        mean_travel = trip_stats.get("tripinfo_mean_travel_time", round(sum(self.completed_travel_times) / len(self.completed_travel_times), 2) if self.completed_travel_times else None)
+        loss = trip_stats.get("tripinfo_total_time_loss", sum(self.completed_time_losses)) + sum(self.vehicle_last_time_loss.values())
         if loss == 0.0 and self.step_records:
             loss = self.step_records[-1].time_loss
 
@@ -379,6 +350,8 @@ class MetricsCollector:
         if self.run_metadata:
             summary.update(self.run_metadata)
         summary.update(trip_stats)
+        if summary.get("accounting_valid") is False:
+            summary.update(is_valid=False, data_validity="INVALID", status="INVALID")
 
         if trip_stats.get("tripinfo_metrics_available"):
             summary["completed_mean_waiting_time"] = trip_stats["tripinfo_mean_waiting_time"]

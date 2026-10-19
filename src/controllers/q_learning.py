@@ -1,11 +1,13 @@
 """Tabular Q-Learning Traffic Signal Controller."""
 
+import ast
 import json
 import os
 import random
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
+from src.config import DEFAULT_SAFETY_CONFIG
 from src.controllers.base import BaseTrafficController, IntersectionObservation
 from src.rl.discretization import StateDiscretizer
 
@@ -24,10 +26,10 @@ class QLearningController(BaseTrafficController):
         discretizer: Optional[StateDiscretizer] = None,
         target_tls_id: Optional[str] = None,
         decision_interval: float = 5.0,
-        min_green: float = 5.0,
-        max_green: Optional[float] = 60.0,
-        yellow_duration: float = 3.0,
-        all_red_duration: float = 1.0,
+        min_green: float = DEFAULT_SAFETY_CONFIG["min_green"],
+        max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"],
+        yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"],
+        all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"],
         seed: Optional[int] = None,
         eval_mode: bool = False,
         tie_break_strategy: str = "first",
@@ -46,7 +48,7 @@ class QLearningController(BaseTrafficController):
         self.epsilon = float(epsilon)
         self.epsilon_min = float(epsilon_min)
         self.epsilon_decay = float(epsilon_decay)
-        self.discretizer = discretizer or StateDiscretizer()
+        self.discretizer = discretizer or StateDiscretizer(min_green=min_green)
         self.target_tls_id = target_tls_id
         self.decision_interval = float(decision_interval)
         self.min_green = float(min_green)
@@ -62,6 +64,7 @@ class QLearningController(BaseTrafficController):
         self.q_table: Dict[Tuple[int, ...], np.ndarray] = {}
         self.action_counts: np.ndarray = np.zeros(self.num_actions, dtype=int)
         self.total_updates: int = 0
+        self.reward_config = None
 
     def set_seed(self, seed: int) -> None:
         """Sets random seed for reproducible exploration."""
@@ -85,14 +88,16 @@ class QLearningController(BaseTrafficController):
         current_phase: Optional[int] = None,
     ) -> int:
         """Selects action via epsilon-greedy strategy with anti-chatter tie breaking."""
-        candidates = [a for a in valid_actions if 0 <= a < self.num_actions] if valid_actions else list(range(self.num_actions))
-        if not candidates:
-            candidates = list(range(self.num_actions))
+        candidates = list(range(self.num_actions)) if valid_actions is None else list(valid_actions)
+        if not candidates or any(not 0 <= action < self.num_actions for action in candidates):
+            raise ValueError("Action mask must contain valid action indices")
 
         if not self.eval_mode and random.random() < self.epsilon:
             chosen = random.choice(candidates)
         else:
-            q_vals = self.get_q_values(state)
+            # Evaluation must not insert unseen states into the learned Q-table.
+            q_vals = (self.q_table.get(state, np.zeros(self.num_actions))
+                      if self.eval_mode else self.get_q_values(state))
             cand_q = [q_vals[a] for a in candidates]
             max_q = max(cand_q)
             best = [a for a, q in zip(candidates, cand_q) if abs(q - max_q) <= 1e-8]
@@ -103,7 +108,8 @@ class QLearningController(BaseTrafficController):
             else:
                 chosen = best[0]
 
-        self.action_counts[chosen] += 1
+        if not self.eval_mode:
+            self.action_counts[chosen] += 1
         return chosen
 
     def update(
@@ -128,7 +134,9 @@ class QLearningController(BaseTrafficController):
             target = float(reward)
         else:
             next_q = self.get_q_values(next_state)
-            cand = [a for a in valid_next_actions if 0 <= a < self.num_actions] if valid_next_actions else range(self.num_actions)
+            cand = list(range(self.num_actions)) if valid_next_actions is None else list(valid_next_actions)
+            if not cand or any(not 0 <= a < self.num_actions for a in cand):
+                raise ValueError("Next action mask must contain valid action indices")
             target = float(reward + self.gamma * max(next_q[a] for a in cand))
 
         td_error = target - q_curr[action]
@@ -151,9 +159,16 @@ class QLearningController(BaseTrafficController):
                 continue
             state = self.discretizer.discretize(obs)
             actions[tls_id] = self.select_action_for_state(
-                state, current_phase=obs.current_phase
+                state, valid_actions=obs.valid_actions, current_phase=obs.current_phase
             )
         return actions
+
+    def validate_compatibility(self, min_green=None, max_green=None, num_phases_per_tls=None) -> List[str]:
+        """Check the checkpoint action space once, before opening SUMO."""
+        phases = num_phases_per_tls or {}
+        targets = [self.target_tls_id] if self.target_tls_id else list(phases)
+        return [f"Checkpoint actions ({self.num_actions}) do not match TLS {tls} phases ({phases.get(tls)})"
+                for tls in targets if phases.get(tls) != self.num_actions]
 
     def get_config(self) -> Dict[str, Any]:
         """Returns controller configuration dictionary."""
@@ -174,7 +189,7 @@ class QLearningController(BaseTrafficController):
             "all_red_duration": self.all_red_duration,
             "tie_break_strategy": self.tie_break_strategy,
             "num_states_in_table": len(self.q_table),
-            "discretizer_config": self.discretizer.get_config() if hasattr(self.discretizer, "get_config") else {},
+            "discretizer_config": self.discretizer.get_config(),
         }
 
     def save(self, filepath: str) -> None:
@@ -184,6 +199,7 @@ class QLearningController(BaseTrafficController):
             "config": self.get_config(),
             "q_table": {str(k): v.tolist() for k, v in self.q_table.items()},
             "action_counts": self.action_counts.tolist(),
+            "reward_config": self.reward_config,
             "total_updates": self.total_updates,
         }
         with open(filepath, "w", encoding="utf-8") as f:
@@ -197,32 +213,75 @@ class QLearningController(BaseTrafficController):
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        self._load_checkpoint_data(data)
+
+    def _load_checkpoint_data(self, data: Dict[str, Any]) -> None:
+        """Restores an already decoded checkpoint without reopening the file."""
+        self.reward_config = data.get("reward_config")
         cfg = data.get("config", {})
-        for attr in (
-            "num_actions", "learning_rate", "gamma", "epsilon", "epsilon_min",
-            "epsilon_decay", "decision_interval", "min_green", "yellow_duration",
-            "all_red_duration", "tie_break_strategy", "target_tls_id"
-        ):
+        converters = {
+            "num_actions": int, "learning_rate": float, "gamma": float,
+            "epsilon": float, "epsilon_min": float, "epsilon_decay": float,
+            "decision_interval": float, "min_green": float, "yellow_duration": float,
+            "all_red_duration": float, "tie_break_strategy": str,
+        }
+        for attr, convert in converters.items():
             if attr in cfg and cfg[attr] is not None:
-                setattr(self, attr, type(getattr(self, attr, cfg[attr]))(cfg[attr]))
+                setattr(self, attr, convert(cfg[attr]))
+        if "target_tls_id" in cfg:
+            self.target_tls_id = str(cfg["target_tls_id"]) if cfg["target_tls_id"] is not None else None
         if "max_green" in cfg:
             self.max_green = float(cfg["max_green"]) if cfg["max_green"] is not None else None
 
-        if "discretizer_config" in cfg and hasattr(self, "discretizer"):
-            d_cfg = cfg["discretizer_config"]
-            self.discretizer = StateDiscretizer(
-                min_green=d_cfg.get("min_green", 5.0),
-                max_effective_green=d_cfg.get("max_effective_green", 25.0),
-                serving_queue_thresholds=tuple(d_cfg.get("serving_thresholds", [1.0, 5.0])),
-                waiting_queue_thresholds=tuple(d_cfg.get("waiting_thresholds", [1.0, 6.0, 15.0])),
-            )
+        self.discretizer = StateDiscretizer.from_config(
+            cfg.get("discretizer_config") or {}, min_green=self.min_green,
+        )
 
         self.q_table.clear()
         for k_str, v_list in data.get("q_table", {}).items():
-            k_tuple = tuple(int(x.strip()) for x in k_str.strip("() ").split(","))
-            self.q_table[k_tuple] = np.array(v_list, dtype=np.float64)
+            k_tuple = ast.literal_eval(k_str)
+            values = np.asarray(v_list, dtype=np.float64)
+            if not isinstance(k_tuple, tuple) or len(k_tuple) != 4 or any(type(x) is not int or x < 0 for x in k_tuple):
+                raise ValueError("Checkpoint state must contain four non-negative integers")
+            if values.shape != (self.num_actions,) or not np.isfinite(values).all():
+                raise ValueError("Checkpoint Q-vector shape or values are invalid")
+            self.q_table[k_tuple] = values
 
-        if "action_counts" in data:
-            self.action_counts = np.array(data["action_counts"], dtype=int)
-        if "total_updates" in data:
-            self.total_updates = data["total_updates"]
+        self.action_counts = np.array(data.get("action_counts", [0] * self.num_actions), dtype=int)
+        if self.action_counts.shape != (self.num_actions,) or (self.action_counts < 0).any():
+            raise ValueError("Checkpoint action_counts shape or values are invalid")
+        self.total_updates = int(data.get("total_updates", 0))
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        filepath: str,
+        eval_mode: bool = True,
+        seed: Optional[int] = None,
+        **override_kwargs: Any,
+    ) -> "QLearningController":
+        """Loads a QLearningController directly from a JSON checkpoint file."""
+        if not os.path.isfile(filepath):
+            raise FileNotFoundError(f"Model file not found: {filepath}")
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        cfg = data.get("config", {})
+        num_actions = int(cfg.get("num_actions", 2))
+
+        inst = cls(num_actions=num_actions, seed=seed, eval_mode=eval_mode)
+        inst._load_checkpoint_data(data)
+        if eval_mode:
+            inst.eval_mode = True
+            inst.epsilon = 0.0
+
+        allowed = {*DEFAULT_SAFETY_CONFIG, "decision_interval", "target_tls_id"}
+        if override_kwargs.keys() - allowed:
+            raise TypeError(f"Unknown checkpoint overrides: {override_kwargs.keys() - allowed}")
+        if override_kwargs.get("min_green", inst.min_green) != inst.discretizer.min_green:
+            raise ValueError("min_green override changes the learned discretizer state encoding")
+        for key, value in override_kwargs.items():
+            setattr(inst, key, value)
+
+        return inst

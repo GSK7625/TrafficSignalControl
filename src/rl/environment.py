@@ -1,14 +1,11 @@
 """Reinforcement Learning Environment for Traffic Signal Control in SUMO."""
 
-import os
-import shutil
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
-from src.config import SimulationConfig, get_scenario_config
+from src.config import DEFAULT_SAFETY_CONFIG, SimulationConfig, get_scenario_config
 from src.rl.discretization import StateDiscretizer
 from src.rl.rewards import BaseRewardFunction, NegativePressureReward
-from src.metrics import build_vehicle_accounting
 from src.runner import SimulationRunner
 
 
@@ -19,10 +16,10 @@ class TrafficSignalRLEnv:
         self,
         scenario_name: str,
         decision_interval: float = 5.0,
-        min_green: float = 5.0,
-        yellow_duration: float = 3.0,
-        all_red_duration: float = 0.0,
-        max_green: Optional[float] = 60.0,
+        min_green: float = DEFAULT_SAFETY_CONFIG["min_green"],
+        yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"],
+        all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"],
+        max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"],
         max_steps: Optional[int] = None,
         seed: int = 42,
         reward_fn: Optional[BaseRewardFunction] = None,
@@ -36,7 +33,7 @@ class TrafficSignalRLEnv:
         waiting_queue_thresholds: Optional[Tuple[float, float, float]] = None,
         target_tls_id: Optional[str] = None,
         save_run_details: bool = False,
-        **kwargs: Any,
+        step_length: float = 1.0,
     ):
         self.scenario_name = scenario_name
         self.decision_interval = float(decision_interval)
@@ -56,7 +53,7 @@ class TrafficSignalRLEnv:
             dataset_name=scenario_name,
             gui=gui,
             gui_delay=self.gui_delay,
-            step_length=1.0,
+            step_length=step_length,
             yellow_duration=yellow_duration,
             all_red_duration=all_red_duration,
             min_green=min_green,
@@ -90,10 +87,12 @@ class TrafficSignalRLEnv:
             waiting_queue_thresholds=waiting_queue_thresholds or (1.0, 6.0, 15.0),
         )
         self.reward_fn = reward_fn or NegativePressureReward(scale=1.0)
+        self.reward_config_source = "explicit" if reward_fn else "defaults"
 
         self.observation_dim = 4
         self.action_dim = self.num_actions
         self._episode_count = 0
+        self._episode_done = True
         self._last_summary: Optional[Dict[str, Any]] = None
 
     def reset(self, seed: Optional[int] = None) -> Tuple[Any, Dict[str, Any]]:
@@ -107,6 +106,8 @@ class TrafficSignalRLEnv:
         self.runner.set_controlled_tls_ids(self.tls_id)
         self.runner.start()
 
+        self._last_summary = None
+        self._episode_done = False
         self._episode_count += 1
         self.reward_fn.reset()
 
@@ -127,20 +128,10 @@ class TrafficSignalRLEnv:
 
     def get_valid_actions(self) -> List[int]:
         """Returns valid action indices based on signal timing constraints."""
-        if not getattr(self.runner, "is_running", False):
+        if not self.runner.is_running:
             return list(range(self.num_actions))
 
-        mgr = self.runner.tls_managers[self.tls_id]
-        curr = mgr.get_current_phase()
-
-        if mgr.is_in_transition():
-            return [mgr.get_target_phase()]
-        if mgr.time_in_current_phase() < self.min_green:
-            return [curr]
-        if self.max_green and mgr.time_in_current_phase() >= self.max_green and self.num_actions > 1:
-            return [a for a in range(self.num_actions) if a != curr]
-
-        return list(range(self.num_actions))
+        return self.runner.tls_managers[self.tls_id].valid_actions()
 
     def get_valid_action_mask(self) -> np.ndarray:
         """Returns boolean mask where True denotes a valid action."""
@@ -152,7 +143,10 @@ class TrafficSignalRLEnv:
 
     def step(self, action: int) -> Tuple[Any, float, bool, bool, Dict[str, Any]]:
         """Applies control action and advances simulation by decision_interval seconds."""
-        action = int(action)
+        if self._episode_done or not self.runner.is_running:
+            raise RuntimeError("Call reset() before stepping a new episode")
+        if not isinstance(action, (int, np.integer)) or not 0 <= action < self.num_actions:
+            raise ValueError(f"Action must be an integer in [0, {self.num_actions})")
         self.reward_fn.reset()
 
         steps_to_run = max(1, int(round(self.decision_interval / self.config.step_length)))
@@ -163,15 +157,15 @@ class TrafficSignalRLEnv:
             if self.runner.sim_time >= self.config.end_time:
                 terminated = True
                 break
-            if self.config.max_steps and self.runner.current_step >= self.config.max_steps:
+            if self.config.max_steps is not None and self.runner.current_step >= self.config.max_steps:
                 truncated = True
                 break
 
-            act_dict = {self.tls_id: action} if step_idx == 0 and 0 <= action < self.num_actions else {}
+            act_dict = {self.tls_id: action} if step_idx == 0 else {}
             step_metrics = self.runner.step(actions=act_dict)
 
             tls_obs = self.runner.get_observation()[self.tls_id]
-            pending = getattr(step_metrics, "pending_vehicles", 0) if step_metrics else 0
+            pending = step_metrics.pending_vehicles
             self.reward_fn.record_step(
                 in_lane_queues=tls_obs.in_lane_queues,
                 out_lane_queues=tls_obs.out_lane_queues,
@@ -185,7 +179,7 @@ class TrafficSignalRLEnv:
 
         if self.runner.sim_time >= self.config.end_time:
             terminated = True
-        if self.config.max_steps and self.runner.current_step >= self.config.max_steps:
+        if self.config.max_steps is not None and self.runner.current_step >= self.config.max_steps:
             truncated = True
 
         info = {
@@ -199,6 +193,7 @@ class TrafficSignalRLEnv:
         }
 
         if terminated or truncated:
+            self._episode_done = True
             self._last_summary = self._finalize_episode()
             info["episode_summary"] = self._last_summary
 
@@ -206,83 +201,16 @@ class TrafficSignalRLEnv:
 
     def _finalize_episode(self) -> Dict[str, Any]:
         """Finalizes episode, collects metrics, and exports results."""
-        running_vehs = 0
-        pending_vehs = 0
-        try:
-            if getattr(self.runner, "traci", None) and self.runner.is_running:
-                running_vehs = len(self.runner.traci.vehicle.getIDList())
-                pending_vehs = len(self.runner.traci.simulation.getPendingVehicles())
-        except Exception:
-            pass
-
-        accounting_meta = build_vehicle_accounting(
-            scenario_name=self.config.dataset_name,
-            window_begin=self.runner.config.begin_time,
-            window_end=self.runner.sim_time,
-            step_length=self.config.step_length,
-            total_completed=self.runner.metrics_collector._cumulative_completed,
-            running_vehs=running_vehs,
-            pending_vehs=pending_vehs,
-            total_teleports=self.runner.total_teleports,
-            total_collisions=self.runner.total_collision_incidents,
-            scenario_info=self.runner.scenario_info,
-            population=self.runner.metrics_collector.population_snapshot(),
-        )
-
-        metadata = {
-            "control_mode": "agent",
-            "sim_interface": "libsumo" if getattr(self.runner, "is_libsumo", False) else "traci",
-            "seed": self.config.seed,
-            "step_length": self.config.step_length,
-            "yellow_duration": self.config.yellow_duration,
-            "all_red_duration": self.config.all_red_duration,
-            "min_green": self.config.min_green,
-            "decision_interval": self.decision_interval,
-            "collision_count": self.runner.total_collision_incidents,
-            "phase_change_count": sum(m.phase_switch_count for m in self.runner.tls_managers.values()),
-        }
-        metadata.update(accounting_meta)
-        metadata.update(self.runner.safety_metadata())
-        self.runner.close()
-        self.runner.metrics_collector.set_run_metadata(metadata)
-
-        # Reconcile tripinfo from tempfile if present
-        if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
-            self.runner.metrics_collector.tripinfo_file = self.runner.tripinfo_path
-            self.runner.metrics_collector.reconcile_tripinfo()
-
-        run_folder = None
-        json_path = None
-        csv_path = None
-
-        if getattr(self.config, "save_run_details", False) and getattr(self.config, "output_dir", None):
-            run_folder = os.path.join(self.config.output_dir, self.runner.run_folder_name)
-            os.makedirs(run_folder, exist_ok=True)
-            if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
-                final_tripinfo = os.path.join(run_folder, "tripinfo.xml")
-                shutil.copy2(self.runner.tripinfo_path, final_tripinfo)
-                self.runner.metrics_collector.tripinfo_file = final_tripinfo
-            json_path, csv_path = self.runner.metrics_collector.export_results(run_folder)
-
-        if self.runner.tripinfo_path and os.path.isfile(self.runner.tripinfo_path):
-            try:
-                os.remove(self.runner.tripinfo_path)
-            except Exception:
-                pass
-
-        summary = self.runner.metrics_collector.get_summary()
-        summary["output_json"] = json_path
-        summary["output_csv"] = csv_path
-        summary["output_dir"] = run_folder
-        self._last_summary = summary
-        return summary
+        self.runner.metrics_collector.set_run_metadata({"reward_config": self.reward_fn.get_config(), "reward_config_source": self.reward_config_source})
+        self._last_summary = self.runner.finalize()
+        return self._last_summary
 
     def get_summary(self) -> Optional[Dict[str, Any]]:
         return self._last_summary
 
     def close(self) -> None:
-        if self.runner is not None and getattr(self.runner, "is_running", False):
-            self.runner.close()
+        self.runner.close()
+        self._episode_done = True
 
     def __enter__(self):
         return self

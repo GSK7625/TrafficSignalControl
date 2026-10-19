@@ -4,6 +4,10 @@ from datetime import datetime
 import os
 import shutil
 import tempfile
+import copy
+import sys
+import warnings
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 import uuid
 
@@ -40,7 +44,9 @@ def extract_green_phases(scenario_name: str, tl_id: str, phases: List[PhaseInfo]
             if num_g > num_y and p.state not in greens:
                 greens.append(p.state)
 
-    return greens or [phases[0].state] if phases else ["G"]
+    if not greens:
+        raise ValueError(f"No selectable green phases for TLS {tl_id}")
+    return greens
 
 
 class SimulationRunner:
@@ -56,9 +62,7 @@ class SimulationRunner:
         self.controller = controller
         self.control_mode = "agent" if controller is not None else (control_mode or config.control_mode)
 
-        self.scenario_info: ScenarioInfo = inspect_scenario(
-            config.dataset_name, data_dir=config.data_dir
-        )
+        self.scenario_info: ScenarioInfo = config.scenario_info
         self.all_controlled_lanes: List[str] = sorted({
             lane for lanes in self.scenario_info.controlled_lanes_per_tls.values() for lane in lanes
         })
@@ -70,11 +74,11 @@ class SimulationRunner:
         self.reset()
 
     def _resolve_sim_interface(self):
-        if getattr(self.config, "gui", False):
+        if self.config.gui:
             if traci is None:
                 raise RuntimeError("TraCI is required for GUI mode")
             return traci
-        if getattr(self.config, "use_libsumo", True) and libsumo is not None:
+        if self.config.use_libsumo and libsumo is not None:
             return libsumo
         if traci is not None:
             return traci
@@ -105,11 +109,8 @@ class SimulationRunner:
                 yellow_duration=self.config.yellow_duration,
                 all_red_duration=self.config.all_red_duration,
                 min_green=self.config.min_green,
-                max_green=getattr(self.config, "max_green", 60.0),
+                max_green=self.config.max_green,
             )
-
-        if self.controller is not None:
-            self._validate_controller_compatibility(self.controller)
 
         self.tripinfo_path: Optional[str] = (
             os.path.join(tempfile.gettempdir(), f"tripinfo_{self.run_folder_name}.xml")
@@ -128,9 +129,12 @@ class SimulationRunner:
         self.sim_time: float = float(self.config.begin_time)
         self.is_running: bool = False
         self.has_run: bool = False
+        self._final_summary = None
         self.tls_controlled_links: Dict[str, List[ControlledLink]] = {}
 
-        if self.control_mode == "cyclic":
+        if self.control_mode == "original":
+            self._controlled_tls_ids = set()
+        elif self.control_mode == "cyclic":
             self._controlled_tls_ids = set(self.tls_managers.keys())
         elif self.controlled_tls_ids:
             self._controlled_tls_ids = set(self.controlled_tls_ids)
@@ -140,6 +144,11 @@ class SimulationRunner:
             self._controlled_tls_ids = {self.controller.target_tls_id}
         else:
             self._controlled_tls_ids = set(self.tls_managers.keys())
+
+        if self._controlled_tls_ids - self.tls_managers.keys():
+            raise ValueError("Controlled TLS not found in scenario")
+        if self.controller is not None:
+            self._validate_controller_compatibility(self.controller)
 
         self.decision_interval: float = float(self.config.decision_interval)
         self._last_selected_actions: Optional[Dict[str, int]] = None
@@ -156,10 +165,10 @@ class SimulationRunner:
 
     def _validate_controller_compatibility(self, controller: Any) -> None:
         if hasattr(controller, "validate_compatibility"):
-            num_phases = {tl: len(m.green_phases) for tl, m in self.tls_managers.items()}
+            num_phases = {tl: len(self.tls_managers[tl].green_phases) for tl in self._controlled_tls_ids}
             errors = controller.validate_compatibility(
-                min_green=getattr(self.config, "min_green", 5.0),
-                max_green=getattr(self.config, "max_green", 60.0),
+                min_green=self.config.min_green,
+                max_green=self.config.max_green,
                 num_phases_per_tls=num_phases,
             )
             if errors:
@@ -168,13 +177,16 @@ class SimulationRunner:
     def set_controller(self, controller: Any) -> None:
         self.controller = controller
         self.control_mode = "agent"
-        self._validate_controller_compatibility(controller)
         target = getattr(controller, "target_tls_id", None)
-        self._controlled_tls_ids = {target} if target else set(self.tls_managers.keys())
+        ids = self.config.controlled_tls_ids or ([self.config.target_tls_id] if self.config.target_tls_id else ([target] if target else list(self.tls_managers)))
+        self.set_controlled_tls_ids(ids)
+        self._validate_controller_compatibility(controller)
         self.controller.reset()
 
     def set_controlled_tls_ids(self, tls_ids: Union[str, Sequence[str]]) -> None:
         ids = [tls_ids] if isinstance(tls_ids, str) else list(tls_ids)
+        if set(ids) - self.tls_managers.keys():
+            raise ValueError(f"Unknown controlled TLS IDs: {set(ids) - self.tls_managers.keys()}")
         self.config.controlled_tls_ids = ids
         if len(ids) == 1:
             self.config.target_tls_id = ids[0]
@@ -205,7 +217,7 @@ class SimulationRunner:
             cmd.extend(["--seed", str(self.config.seed)])
         if self.config.gui:
             cmd.extend(["--start", "--quit-on-end"])
-            if getattr(self.config, "gui_delay", 0.0) > 0:
+            if self.config.gui_delay > 0:
                 cmd.extend(["--delay", str(self.config.gui_delay)])
         return cmd
 
@@ -224,20 +236,11 @@ class SimulationRunner:
         self.sim_time = self.config.begin_time
 
         for tl_id in self.tls_managers:
-            try:
-                raw = self.traci.trafficlight.getControlledLinks(tl_id)
-                self.tls_controlled_links[tl_id] = [
-                    ControlledLink(
-                        signal_index=s_idx,
-                        from_lane=c[0] if len(c) > 0 else "",
-                        to_lane=c[1] if len(c) > 1 else "",
-                        via_lane=c[2] if len(c) > 2 else None,
-                    )
-                    for s_idx, conns in enumerate(raw)
-                    for c in conns
-                ]
-            except Exception:
-                self.tls_controlled_links[tl_id] = []
+            raw = self.traci.trafficlight.getControlledLinks(tl_id)
+            self.tls_controlled_links[tl_id] = [
+                ControlledLink(s_idx, c[0], c[1], c[2] if len(c) > 2 else None)
+                for s_idx, conns in enumerate(raw) for c in conns
+            ]
 
         if self.control_mode in ("agent", "cyclic"):
             for tls_id in self._controlled_tls_ids:
@@ -245,34 +248,16 @@ class SimulationRunner:
                     self.tls_managers[tls_id].apply_to_traci(self.traci)
 
     def get_observation(self) -> Dict[str, IntersectionObservation]:
-        pending_cnt = 0
-        try:
-            pending_ids = self.traci.simulation.getPendingVehicles()
-            pending_cnt = len(pending_ids) if pending_ids else 0
-        except Exception:
-            pending_cnt = None
-
+        pending_cnt = len(self.traci.simulation.getPendingVehicles())
         obs = {}
         for tl_id, mgr in self.tls_managers.items():
-            links = self.tls_controlled_links.get(tl_id, [])
-            in_lanes = {l.from_lane for l in links if l.from_lane}
-            out_lanes = {l.to_lane for l in links if l.to_lane}
-
-            in_q, in_v = {}, {}
-            for l in in_lanes:
-                try:
-                    in_q[l] = float(self.traci.lane.getLastStepHaltingNumber(l))
-                    in_v[l] = float(self.traci.lane.getLastStepVehicleNumber(l))
-                except Exception:
-                    in_q[l], in_v[l] = 0.0, 0.0
-
-            out_q, out_v = {}, {}
-            for l in out_lanes:
-                try:
-                    out_q[l] = float(self.traci.lane.getLastStepHaltingNumber(l))
-                    out_v[l] = float(self.traci.lane.getLastStepVehicleNumber(l))
-                except Exception:
-                    out_q[l], out_v[l] = 0.0, 0.0
+            links = self.tls_controlled_links[tl_id]
+            in_lanes = {link.from_lane for link in links}
+            out_lanes = {link.to_lane for link in links}
+            in_q = {lane: float(self.traci.lane.getLastStepHaltingNumber(lane)) for lane in in_lanes}
+            out_q = {lane: float(self.traci.lane.getLastStepHaltingNumber(lane)) for lane in out_lanes}
+            in_v = {lane: float(self.traci.lane.getLastStepVehicleNumber(lane)) for lane in in_lanes}
+            out_v = {lane: float(self.traci.lane.getLastStepVehicleNumber(lane)) for lane in out_lanes}
 
             obs[tl_id] = IntersectionObservation(
                 tls_id=tl_id,
@@ -288,6 +273,7 @@ class SimulationRunner:
                 sim_time=self.sim_time,
                 step=self.current_step,
                 pending_vehicles=pending_cnt,
+                valid_actions=mgr.valid_actions(),
             )
         return obs
 
@@ -299,7 +285,7 @@ class SimulationRunner:
             decision_steps = max(1, int(round(self.decision_interval / self.config.step_length)))
             if self._last_selected_actions is None or self._steps_since_last_decision >= decision_steps:
                 obs = self.get_observation()
-                actions = self.controller.select_action(obs)
+                actions = self.controller.select_action({tls: obs[tls] for tls in self._controlled_tls_ids})
                 self._last_selected_actions = actions
                 self._steps_since_last_decision = 1
             else:
@@ -314,12 +300,10 @@ class SimulationRunner:
         if actions is not None:
             if self.control_mode == "original":
                 raise ValueError("Cannot pass external actions when control_mode='original'.")
+            if actions.keys() - self._controlled_tls_ids:
+                raise ValueError("Actions must target configured controlled TLS IDs")
             for tls_id, target_phase in actions.items():
-                if tls_id in self.tls_managers:
-                    mgr = self.tls_managers[tls_id]
-                    accepted = mgr.request_phase(target_phase)
-                    self.last_action_results[tls_id] = accepted
-                    self._controlled_tls_ids.add(tls_id)
+                self.last_action_results[tls_id] = self.tls_managers[tls_id].request_phase(target_phase)
         elif self.control_mode == "cyclic":
             for manager in self.tls_managers.values():
                 if not manager.is_in_transition() and manager.time_in_current_phase() >= 30.0 and len(manager.green_phases) > 1:
@@ -344,49 +328,25 @@ class SimulationRunner:
         self.current_step += 1
         self.sim_time = self.traci.simulation.getTime()
 
-        # Teleport and collision tracking
-        try:
-            self.total_teleports += int(self.traci.simulation.getStartingTeleportNumber())
-        except Exception:
-            pass
-
-        try:
-            cols = self.traci.simulation.getCollisions()
-            if cols:
-                self.total_collision_steps += 1
-                self.total_collision_incidents += len(cols)
-                self.total_collisions += len(cols)
-                for col in cols:
-                    for vid in (getattr(col, "collider", None), getattr(col, "victim", None)):
-                        if vid:
-                            self.unique_colliding_vehicles.add(vid)
-        except Exception:
-            try:
-                vehs = self.traci.simulation.getCollidingVehiclesIDList()
-                if vehs:
-                    self.total_collision_steps += 1
-                    self.total_collision_incidents += max(1, len(vehs) // 2)
-                    self.total_collisions += len(vehs)
-                    self.total_collision_vehicle_involvements += len(vehs)
-                    self.unique_colliding_vehicles.update(vehs)
-            except Exception:
-                pass
-
-        # Update phase managers
+        # Required safety observations fail the run if they cannot be measured.
+        self.total_teleports += int(self.traci.simulation.getStartingTeleportNumber())
+        collisions = self.traci.simulation.getCollisions()
+        if collisions:
+            self.total_collision_steps += 1
+            self.total_collision_incidents += len(collisions)
+            self.total_collisions += len(collisions)
+            for collision in collisions:
+                involved = [vid for vid in (collision.collider, collision.victim) if vid]
+                self.total_collision_vehicle_involvements += len(involved)
+                self.unique_colliding_vehicles.update(involved)
         for tls_id, manager in self.tls_managers.items():
             if tls_id in self._controlled_tls_ids:
                 manager.update(step_duration=self.config.step_length)
             else:
-                try:
-                    curr_phase = self.traci.trafficlight.getPhase(tls_id)
-                    curr_state = self.traci.trafficlight.getRedYellowGreenState(tls_id)
-                    manager.sync_external_phase(
-                        phase_index=int(curr_phase) if isinstance(curr_phase, (int, float)) else None,
-                        signal_state=curr_state if isinstance(curr_state, str) else None,
-                        step_duration=self.config.step_length,
-                    )
-                except Exception:
-                    manager.update(step_duration=self.config.step_length)
+                manager.sync_external_phase(
+                    signal_state=self.traci.trafficlight.getRedYellowGreenState(tls_id),
+                    step_duration=self.config.step_length,
+                )
 
         return self.metrics_collector.record_step(
             step=self.current_step,
@@ -398,7 +358,7 @@ class SimulationRunner:
 
     def safety_metadata(self) -> Dict[str, Any]:
         return {
-            "max_green": getattr(self.config, "max_green", None),
+            "max_green": self.config.max_green,
             "safety_events": self.safety_events,
         }
 
@@ -420,67 +380,77 @@ class SimulationRunner:
                 if self.sim_time >= self.config.end_time:
                     break
                 self.step()
-        finally:
-            running_vehs = 0
-            pending_vehs = 0
-            if self.traci is not None and self.is_running:
-                try:
-                    running_vehs = len(self.traci.vehicle.getIDList())
-                    pending_vehs = len(self.traci.simulation.getPendingVehicles())
-                except Exception:
-                    pass
-
-            accounting_meta = build_vehicle_accounting(
-                scenario_name=self.config.dataset_name,
-                window_begin=self.config.begin_time,
-                window_end=self.sim_time,
-                step_length=self.config.step_length,
-                total_completed=self.metrics_collector._cumulative_completed,
-                running_vehs=running_vehs,
-                pending_vehs=pending_vehs,
-                total_teleports=self.total_teleports,
-                total_collisions=self.total_collision_incidents,
-                scenario_info=self.scenario_info,
-                population=self.metrics_collector.population_snapshot(),
-            )
-
-            metadata = {
-                "control_mode": self.control_mode,
-                "sim_interface": "libsumo" if self.is_libsumo else "traci",
-                "seed": self.config.seed,
-                "step_length": self.config.step_length,
-                "yellow_duration": self.config.yellow_duration,
-                "all_red_duration": self.config.all_red_duration,
-                "min_green": self.config.min_green,
-                "collision_count": self.total_collision_incidents,
-                "collision_incidents": self.total_collision_incidents,
-                "collision_steps": self.total_collision_steps,
-                "collision_vehicle_involvements": self.total_collision_vehicle_involvements,
-                "unique_colliding_vehicles_count": len(self.unique_colliding_vehicles),
-                "phase_change_count": sum(mgr.phase_switch_count for mgr in self.tls_managers.values()),
-                "total_transition_time": round(sum(mgr.total_transition_time for mgr in self.tls_managers.values()), 2),
-                "actual_yellow_time": round(sum(mgr.actual_yellow_time for mgr in self.tls_managers.values()), 2),
-                "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.tls_managers.items()},
-            }
-            metadata.update(accounting_meta)
-            if self.controller is not None:
-                metadata["controller_name"] = self.controller.name
-                metadata["controller_config"] = self.controller.get_config()
-
+        except BaseException:
             self.close()
-            metadata.update(self.safety_metadata())
-            self.metrics_collector.set_run_metadata(metadata)
+            raise
+        return self.finalize()
 
-        # Reconcile tripinfo from tempfile if present
-        if self.tripinfo_path and os.path.isfile(self.tripinfo_path):
-            self.metrics_collector.tripinfo_file = self.tripinfo_path
-            self.metrics_collector.reconcile_tripinfo()
+    def finalize(self) -> Dict[str, Any]:
+        """Capture final accounting once and always release owned resources."""
+        if self._final_summary is None:
+            try:
+                self._final_summary = self._build_final_summary()
+            finally:
+                self.close()
+        return copy.deepcopy(self._final_summary)
+
+    def _build_final_summary(self) -> Dict[str, Any]:
+        """Aggregate accounting before closing SUMO and reading its final XML."""
+        running_vehs = 0
+        pending_vehs = 0
+        if self.is_running:
+            running_vehs = len(self.traci.vehicle.getIDList())
+            pending_vehs = len(self.traci.simulation.getPendingVehicles())
+
+        accounting_meta = build_vehicle_accounting(
+            scenario_name=self.config.dataset_name,
+            window_begin=self.config.begin_time,
+            window_end=self.sim_time,
+            step_length=self.config.step_length,
+            total_completed=self.metrics_collector._cumulative_completed,
+            running_vehs=running_vehs,
+            pending_vehs=pending_vehs,
+            total_teleports=self.total_teleports,
+            total_collisions=self.total_collision_incidents,
+            scenario_info=self.scenario_info,
+            population=self.metrics_collector.population_snapshot(),
+        )
+
+        metadata = {
+            "control_mode": self.control_mode,
+            "sim_interface": "libsumo" if self.is_libsumo else "traci",
+            "seed": self.config.seed,
+            "step_length": self.config.step_length,
+            "decision_interval": self.config.decision_interval,
+            "yellow_duration": self.config.yellow_duration,
+            "all_red_duration": self.config.all_red_duration,
+            "min_green": self.config.min_green,
+            "collision_count": self.total_collision_incidents,
+            "collision_incidents": self.total_collision_incidents,
+            "collision_steps": self.total_collision_steps,
+            "collision_vehicle_involvements": self.total_collision_vehicle_involvements,
+            "unique_colliding_vehicles_count": len(self.unique_colliding_vehicles),
+            "phase_change_count": sum(mgr.phase_switch_count for mgr in self.tls_managers.values()),
+            "total_transition_time": round(sum(mgr.total_transition_time for mgr in self.tls_managers.values()), 2),
+            "actual_yellow_time": round(sum(mgr.actual_yellow_time for mgr in self.tls_managers.values()), 2),
+            "phase_durations_per_tls": {tl_id: mgr.phase_durations for tl_id, mgr in self.tls_managers.items()},
+        }
+        metadata.update(accounting_meta)
+        if self.controller is not None:
+            metadata["controller_name"] = self.controller.name
+            metadata["controller_config"] = self.controller.get_config()
+
+        self.close(clean_temp=False)
+        metadata.update(self.safety_metadata())
+        self.metrics_collector.set_run_metadata(metadata)
+
+        self.metrics_collector.reconcile_tripinfo()
 
         run_folder = None
         json_path = None
         csv_path = None
 
-        if getattr(self.config, "save_run_details", False) and getattr(self.config, "output_dir", None):
+        if self.config.save_run_details and self.config.output_dir:
             run_folder = os.path.join(self.config.output_dir, self.run_folder_name)
             os.makedirs(run_folder, exist_ok=True)
             if self.tripinfo_path and os.path.isfile(self.tripinfo_path):
@@ -489,26 +459,32 @@ class SimulationRunner:
                 self.metrics_collector.tripinfo_file = final_tripinfo
             json_path, csv_path = self.metrics_collector.export_results(run_folder)
 
-        if self.tripinfo_path and os.path.isfile(self.tripinfo_path):
-            try:
-                os.remove(self.tripinfo_path)
-            except Exception:
-                pass
-
         summary = self.metrics_collector.get_summary()
         summary["output_json"] = json_path
         summary["output_csv"] = csv_path
         summary["output_dir"] = run_folder
         return summary
 
-    def close(self) -> None:
-        if self.is_running and self.traci is not None:
-            try:
+    def close(self, clean_temp: bool = True) -> None:
+        """Close once; cleanup failures cannot replace an active simulation error."""
+        active_error = sys.exception()
+        try:
+            if self.is_running:
+                self.is_running = False
                 self.traci.close()
-            except Exception:
-                pass
-        self.is_running = False
-        self.has_run = True
+        except Exception as error:
+            if active_error is None:
+                raise
+            active_error.add_note(f"SUMO close also failed: {error}")
+        finally:
+            self.has_run = True
+            if clean_temp:
+                for path in (self.tripinfo_path, self.sumo_log_path):
+                    if path:
+                        try:
+                            Path(path).unlink(missing_ok=True)
+                        except OSError as error:
+                            warnings.warn(f"Could not remove temporary output {path}: {error}")
 
     def __enter__(self):
         self.start()

@@ -295,3 +295,78 @@ class TestQLearningController:
             assert s in new_ctrl.q_table
             assert pytest.approx(new_ctrl.q_table[s][0], 1e-6) == 1.23
             assert pytest.approx(new_ctrl.q_table[s][1], 1e-6) == 4.56
+
+    def test_from_checkpoint(self):
+        ctrl = QLearningController(num_actions=3, min_green=7.0, eval_mode=False)
+        s = (1, 0, 2, 1)
+        ctrl.q_table[s] = np.array([0.5, 1.5, 2.5], dtype=np.float64)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_file = os.path.join(tmpdir, "model.json")
+            ctrl.save(model_file)
+
+            loaded = QLearningController.from_checkpoint(model_file, eval_mode=True)
+            assert loaded.num_actions == 3
+            assert loaded.min_green == 7.0
+            assert loaded.eval_mode is True
+            assert loaded.epsilon == 0.0
+            assert s in loaded.q_table
+            assert pytest.approx(loaded.q_table[s][2], 1e-6) == 2.5
+
+
+class TestMakeController:
+    """Test suite for make_controller factory function."""
+
+    def test_make_controller_fixed_time(self):
+        from src.controllers import make_controller, FixedTimeController
+        ctrl, mode = make_controller("fixed-time", "cologne1", default_green_time=25.0)
+        assert isinstance(ctrl, FixedTimeController)
+        assert ctrl.default_green_time == 25.0
+        assert mode == "agent"
+
+    def test_make_controller_max_pressure(self):
+        from src.controllers import make_controller, MaxPressureController
+        ctrl, mode = make_controller("max-pressure", "cologne1", min_green=8.0)
+        assert isinstance(ctrl, MaxPressureController)
+        assert ctrl.min_green == 8.0
+        assert mode == "agent"
+
+    def test_make_controller_none(self):
+        from src.controllers import make_controller
+        ctrl, mode = make_controller("none", "cologne1")
+        assert ctrl is None
+        assert mode == "original"
+
+    def test_make_controller_invalid_raises_error(self):
+        from src.controllers import make_controller
+        with pytest.raises(ValueError, match="Unsupported algorithm"):
+            make_controller("invalid-algo", "cologne1")
+
+    def test_make_controller_q_learning_explicit_num_actions_precedence(self):
+        from unittest.mock import MagicMock
+        from src.controllers import make_controller, QLearningController
+
+        mock_info = MagicMock()
+        mock_info.tls_ids = ["tls_main", "tls_side"]
+        mock_info.phases_per_tls = {"tls_main": [1, 2, 3, 4], "tls_side": [1, 2]}
+
+        # Explicit num_actions=6 should NOT be overwritten by scenario_info count (4)
+        ctrl, mode = make_controller(
+            "q-learning",
+            "cologne1",
+            scenario_info=mock_info,
+            num_actions=6,
+        )
+        assert isinstance(ctrl, QLearningController)
+        assert ctrl.num_actions == 6
+        assert mode == "agent"
+
+        # When num_actions is omitted, scenario_info with target_tls_id should pick tls_side (2)
+        ctrl2, _ = make_controller(
+            "q-learning",
+            "cologne1",
+            scenario_info=mock_info,
+            target_tls_id="tls_side",
+        )
+        assert ctrl2.num_actions == 2
+

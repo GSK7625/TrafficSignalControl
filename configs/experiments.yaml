@@ -8,6 +8,8 @@ algorithms:
   - Max-Pressure
   - Q-Learning
 
+seeds: [42, 101, 2024]
+
 simulation:
   steps: 3600
   step_length: 1.0

@@ -117,4 +117,10 @@ class TestSimulationRunnerSetup:
         runner = SimulationRunner(cfg)
         assert runner.config.save_run_details is False
 
-
+    def test_runner_finalize_method(self):
+        cfg = SimulationConfig(dataset_name="cologne1")
+        runner = SimulationRunner(cfg)
+        summary = runner.finalize()
+        assert isinstance(summary, dict)
+        assert "total_steps" in summary
+        assert "scenario_name" in summary

@@ -1,6 +1,7 @@
 """Training pipeline for Tabular Q-Learning on SUMO traffic networks."""
 
 import argparse
+import math
 import json
 import os
 import time
@@ -9,30 +10,30 @@ import numpy as np
 
 from src.config import DEFAULT_SAFETY_CONFIG, load_yaml_config
 from src.controllers.q_learning import QLearningController
+from src.metrics import BENCHMARK_COMPLETION_THRESHOLD, completion_statistics
+from src.evaluation.evaluate_rl import run_greedy_eval_loop
 from src.rl.discretization import StateDiscretizer
 from src.rl.environment import TrafficSignalRLEnv
 from src.rl.rewards import BaseRewardFunction, NegativePressureReward
 
 
-def is_validation_viable(result: dict, min_completion: float = 0.95) -> tuple[bool, list[str]]:
+def is_validation_viable(result: dict, min_completion: float = BENCHMARK_COMPLETION_THRESHOLD) -> tuple[bool, list[str]]:
     """Simple viability check: no collisions/teleports and sufficient vehicle completion rate."""
-    s = result.get("summary", result)
+    s = {**result, **result.get("summary", {})}
     reasons = []
     if s.get("collision_count", 0) > 0:
         reasons.append("has_collisions")
     if s.get("teleport_count", 0) > 0:
         reasons.append("has_teleports")
 
-    audit = result.get("eval_audit")
-    if audit is not None and not audit.get("invariance_pass", True):
-        reasons.append("EVALUATION_MUTATED_AGENT")
-
-    demand = s.get("scheduled_demand_in_window") or s.get("total_scenario_demand") or result.get("total_demand")
-    completed = s.get("total_completed_vehicles", result.get("completed_vehicles", 0))
-    if demand and demand > 0:
-        comp_rate = completed / demand
-    else:
-        comp_rate = result.get("completion_rate", 1.0)
+    _, demand, comp_rate = completion_statistics(s, result.get("total_demand"))
+    if demand == 0:
+        reasons.append("NO_DEMAND")
+    elif demand is None:
+        comp_rate = result.get("completion_rate")
+    if comp_rate is None or not math.isfinite(comp_rate):
+        reasons.append("missing_completion")
+        return False, reasons
 
     if comp_rate < min_completion:
         reasons.append(f"low_completion: {comp_rate:.2%}")
@@ -48,24 +49,29 @@ def validation_data_errors(result: dict) -> list[str]:
         errors.append("data_invalid")
     if s.get("measurement_errors", 0) > 0:
         errors.append("measurement_errors")
-    audit = result.get("eval_audit")
-    if audit is not None and not audit.get("invariance_pass", True):
-        errors.append("EVALUATION_MUTATED_AGENT")
     return errors
 
 
 class ValidationCheckpointSelector:
     """Selects best checkpoint based on validation reward and completion."""
 
-    def __init__(self, min_completion: float = 0.95):
+    def __init__(self, min_completion: float = BENCHMARK_COMPLETION_THRESHOLD):
         self.min_completion = min_completion
         self.best_reward = -float("inf")
         self.episode = None
 
+    def is_viable(self, results: list) -> bool:
+        return bool(results) and all(
+            r.get("reward") is not None and math.isfinite(r["reward"])
+            and r.get("summary", r).get("is_valid") is True
+            and is_validation_viable(r, self.min_completion)[0] and not validation_data_errors(r)
+            for r in results
+        )
+
     def consider(self, episode: int, results: list) -> bool:
-        if not results or not all(is_validation_viable(r, self.min_completion)[0] for r in results):
+        if not self.is_viable(results):
             return False
-        avg_rew = float(np.mean([r.get("reward", 0.0) for r in results]))
+        avg_rew = float(np.mean([r["reward"] for r in results]))
         if avg_rew > self.best_reward:
             self.best_reward = avg_rew
             self.episode = episode
@@ -89,9 +95,6 @@ def evaluate_greedy_q_learning(
     save_run_details: bool = False,
 ) -> Dict[str, Any]:
     """Evaluates the Q-Learning agent deterministically (epsilon=0, eval_mode=True)."""
-    prev_mode, prev_eps = agent.eval_mode, agent.epsilon
-    agent.eval_mode, agent.epsilon = True, 0.0
-
     val_env = TrafficSignalRLEnv(
         scenario_name=scenario_name,
         decision_interval=decision_interval,
@@ -107,36 +110,11 @@ def evaluate_greedy_q_learning(
         output_dir=output_dir,
         save_run_details=save_run_details,
     )
-    total_reward = 0.0
     try:
-        _, info = val_env.reset(seed=seed)
-        discrete_state = info["discrete_state"]
-        valid_actions = info["valid_actions"]
-        while True:
-            action = agent.select_action_for_state(
-                discrete_state, valid_actions=valid_actions, current_phase=discrete_state[0]
-            )
-            _, reward, terminated, truncated, next_info = val_env.step(action)
-            total_reward += reward
-            discrete_state = next_info["discrete_state"]
-            valid_actions = next_info["valid_actions"]
-            if terminated or truncated:
-                break
+        total_reward, summary = run_greedy_eval_loop(agent, val_env, seed=seed)
     finally:
         val_env.close()
-        agent.eval_mode, agent.epsilon = prev_mode, prev_eps
-
-    summary = val_env.get_summary() or {}
-    completed = summary.get("total_completed_vehicles", summary.get("tripinfo_completed_vehicles", 0))
-    total_demand = summary.get("scheduled_demand_in_window") or summary.get("total_scenario_demand")
-    if total_demand is None:
-        run_end = summary.get("running_vehicles_at_end", 0) or 0
-        pend_end = summary.get("pending_insertion_vehicles", 0) or 0
-        calc_demand = completed + run_end + pend_end
-        if calc_demand > 0:
-            total_demand = calc_demand
-
-    completion_rate = (completed / total_demand) if total_demand and total_demand > 0 else 0.0
+    completed, total_demand, completion_rate = completion_statistics(summary)
     collisions = summary.get("collision_count", summary.get("collision_incidents", 0))
     teleports = summary.get("teleport_count", 0)
     mean_wait = summary.get("mean_waiting_time", 0.0)
@@ -176,7 +154,7 @@ def train_q_learning(
     max_steps_per_episode: Optional[int] = None,
     val_interval: Optional[int] = None,
     val_seeds: Optional[List[int]] = None,
-    min_val_completion: float = 0.95,
+    min_val_completion: float = BENCHMARK_COMPLETION_THRESHOLD,
     config_path: Optional[str] = None,
     model_dir: str = "models/q_learning",
     log_dir: str = "results/training",
@@ -287,6 +265,7 @@ def train_q_learning(
 
     agent = QLearningController(
         num_actions=env.num_actions,
+        target_tls_id=env.tls_id,
         learning_rate=cfg_data["learning_rate"],
         gamma=cfg_data["gamma"],
         epsilon=cfg_data["epsilon_start"],
@@ -302,9 +281,9 @@ def train_q_learning(
         eval_mode=False,
     )
 
+    agent.reward_config = reward_fn.get_config()
     history: List[Dict[str, Any]] = []
-    best_reward = -float("inf")
-    best_is_viable = False
+    selector = ValidationCheckpointSelector(min_completion=min_val_completion)
     best_path: Optional[str] = None
     start_time = time.time()
 
@@ -380,7 +359,6 @@ def train_q_learning(
             val_int = cfg_data["val_interval"]
             if val_int > 0 and (ep % val_int == 0 or ep == cfg_data["num_episodes"]):
                 v_seeds = cfg_data["val_seeds"] or [cfg_data["seed"] + 9999, cfg_data["seed"] + 10000]
-                val_output_dir = os.path.join(log_dir, "validation", f"ep{ep}_seed{vs}") if save_run_details else None
                 val_results = [
                     evaluate_greedy_q_learning(
                         agent=agent,
@@ -394,7 +372,7 @@ def train_q_learning(
                         state_discretizer=state_discretizer,
                         max_steps=cfg_data["max_steps"],
                         seed=vs,
-                        output_dir=val_output_dir,
+                        output_dir=os.path.join(log_dir, "validation", f"ep{ep}_seed{vs}") if save_run_details else None,
                         save_run_details=save_run_details,
                     )
                     for vs in v_seeds
@@ -402,13 +380,11 @@ def train_q_learning(
 
                 avg_val_rew = float(np.mean([r["reward"] for r in val_results]))
                 avg_val_comp = float(np.mean([r["completion_rate"] for r in val_results]))
-                is_viable = all(r.get("validation_viable", True) for r in val_results)
+                is_viable = selector.is_viable(val_results)
 
                 print(f"    --> [Eval] Ep {ep} | Rew: {avg_val_rew:.1f} | Comp: {avg_val_comp:.1%} | Viable: {is_viable}")
 
-                if is_viable and (not best_is_viable or avg_val_rew > best_reward):
-                    best_reward = avg_val_rew
-                    best_is_viable = True
+                if selector.consider(ep, val_results):
                     best_path = os.path.join(model_dir, f"q_learning_{scenario_name}_best.json")
                     agent.save(best_path)
                     print(f"    --> [BEST] Saved to {best_path}")
@@ -439,8 +415,8 @@ def train_q_learning(
         "total_wall_clock_seconds": round(total_wall_time, 2),
         "history": history,
         "final_q_table_size": len(agent.q_table),
-        "best_reward": round(best_reward, 2) if best_is_viable else None,
-        "best_is_viable": best_is_viable,
+        "best_reward": round(selector.best_reward, 2) if selector.episode is not None else None,
+        "best_is_viable": selector.episode is not None,
         "best_checkpoint_path": best_path,
         "final_checkpoint_path": final_model_path,
     }
@@ -464,7 +440,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--max-green", type=float, default=None, help="Maximum consecutive green duration")
-    parser.add_argument("--min-completion", type=float, default=0.95, help="Minimum validation completion rate for best checkpoint")
+    parser.add_argument("--min-completion", type=float, default=BENCHMARK_COMPLETION_THRESHOLD, help="Minimum validation completion rate for best checkpoint")
     parser.add_argument("--config", type=str, default=None, help="Path to YAML configuration file")
     parser.add_argument("--val-interval", type=int, default=None, help="Interval of episodes for greedy evaluation")
     parser.add_argument("--val-seeds", type=int, nargs="+", default=None, help="List of validation seeds")

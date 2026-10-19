@@ -1,8 +1,11 @@
 """Aggregates and formats comparison benchmarks across all three traffic signal control algorithms."""
 
+import math
 import json
 import os
 from typing import Any, Dict
+
+from src.metrics import REPORT_COMPLETION_THRESHOLD, service_status
 
 
 def load_json(filepath: str) -> Dict[str, Any]:
@@ -10,6 +13,14 @@ def load_json(filepath: str) -> Dict[str, Any]:
         with open(filepath, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
+
+
+def _stat(metrics, key, statistic="mean", default=None):
+    entry = metrics.get(key, {})
+    if entry.get("available") is False:
+        return default
+    value = entry.get(statistic, default)
+    return value if isinstance(value, (int, float)) and math.isfinite(value) else default
 
 
 def generate_comparison_report(
@@ -46,22 +57,22 @@ def generate_comparison_report(
                     }
                     continue
 
-                col_sum = int(metrics.get("collision_count", {}).get("sum", metrics.get("collision_count", {}).get("max", 0)))
-                col_max = int(metrics.get("collision_count", {}).get("max", col_sum))
-                tel_sum = int(metrics.get("teleport_count", {}).get("sum", metrics.get("teleport_count", {}).get("max", 0)))
-                tel_max = int(metrics.get("teleport_count", {}).get("max", tel_sum))
-                cr = metrics.get("completion_rate_pct", {}).get("mean", 0.0)
-                safety_stat = "INCIDENTS_DETECTED" if col_sum > 0 else metrics.get("safety_status", "SAFE")
-                service_stat = "LOW_COMPLETION" if cr < 98.0 else metrics.get("service_status", "COMPLETED")
+                col_sum = _stat(metrics, "collision_count", "sum", _stat(metrics, "collision_count", "max"))
+                col_max = _stat(metrics, "collision_count", "max", col_sum)
+                tel_sum = _stat(metrics, "teleport_count", "sum", _stat(metrics, "teleport_count", "max"))
+                tel_max = _stat(metrics, "teleport_count", "max", tel_sum)
+                cr = _stat(metrics, "completion_rate_pct")
+                safety_stat = metrics.get("safety_status", "UNKNOWN")
+                service_stat = "NO_DEMAND" if metrics.get("service_status") == "NO_DEMAND" else service_status(cr / 100.0 if cr is not None else None, REPORT_COMPLETION_THRESHOLD)
 
                 flat_entry: Dict[str, Any] = {
-                    "mean_waiting_time": metrics.get("tripinfo_mean_waiting_time", {}).get("mean", metrics.get("mean_waiting_time", {}).get("mean", 0.0)),
+                    "mean_waiting_time": _stat(metrics, "tripinfo_mean_waiting_time", default=_stat(metrics, "mean_waiting_time")),
                     "waiting_time_std": metrics.get("tripinfo_mean_waiting_time", {}).get("std", 0.0),
                     "system_mean_delay": metrics.get("system_mean_delay", {}).get("mean", 0.0),
                     "system_delay_std": metrics.get("system_mean_delay", {}).get("std", 0.0),
                     "mean_queue_length": metrics.get("mean_queue_length", {}).get("mean", 0.0),
                     "queue_length_std": metrics.get("mean_queue_length", {}).get("std", 0.0),
-                    "total_completed_vehicles": int(metrics.get("total_completed_vehicles", {}).get("mean", 0)),
+                    "total_completed_vehicles": _stat(metrics, "total_completed_vehicles"),
                     "completion_rate_pct": cr,
                     "mean_travel_time": metrics.get("tripinfo_mean_travel_time", {}).get("mean", 0.0),
                     "total_time_loss": metrics.get("tripinfo_total_time_loss", {}).get("mean", 0.0),
@@ -71,27 +82,13 @@ def generate_comparison_report(
                     "teleport_max": tel_max,
                     "safety_status": safety_stat,
                     "service_status": service_stat,
-                    "status": "SUCCESS",
+                    "status": metrics.get("status", "SUCCESS"),
+                    "effective_config": metrics.get("effective_config"),
+                    "failed_count": metrics.get("failed_count", 0),
                     "episode_reward": metrics.get("episode_reward", {}).get("mean", "-"),
                     "improvement_waiting_pct": metrics.get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0),
                 }
                 combined_results[scen][algo] = flat_entry
-    else:
-        # Fallback to Phase 4 / Phase 5 separate files
-        baseline_data = load_json(experiments_summary)
-        scenarios = ["cologne1", "ingolstadt1"]
-
-        for scen in scenarios:
-            combined_results[scen] = {}
-            scen_baselines = baseline_data.get(scen, {})
-            for b_name in ["Fixed-Time", "Max-Pressure"]:
-                if b_name in scen_baselines:
-                    combined_results[scen][b_name] = scen_baselines[b_name]
-
-            ql_file = os.path.join(eval_dir, f"{scen}_q_learning_eval.json")
-            ql_data = load_json(ql_file)
-            if ql_data:
-                combined_results[scen]["Q-Learning"] = ql_data
 
     # Generate Markdown Report
     lines = [
@@ -99,7 +96,7 @@ def generate_comparison_report(
         "",
         "**Dự án:** TrafficSignalControl — SUMO Reinforcement Learning & Baseline Benchmark  ",
         "**Mục tiêu:** Đánh giá và đối chuẩn hiệu năng các thuật toán điều khiển đèn giao thông.  ",
-        "**Điều kiện mô phỏng & an toàn chuẩn:** Chu kỳ 3600s, vàng chuyển tiếp = 3.0s, đỏ toàn bộ = 1.0s, xanh tối thiểu = 5.0s, xanh tối đa = 60.0s, dữ liệu hành trình TripInfo chuẩn.",
+        "**Điều kiện mô phỏng:** Xem cấu hình hiệu lực của từng thuật toán bên dưới; dữ liệu cũ không có metadata được ghi N/A.",
         "",
         "---",
         "",
@@ -148,13 +145,13 @@ def generate_comparison_report(
 
             tp = r.get("total_completed_vehicles", 0)
             cr = r.get("completion_rate_pct", 0.0)
-            cr_str = f"{cr:.1f}%" if cr > 0 else "-"
+            cr_str = f"{cr:.1f}%" if cr is not None else "N/A"
             col_sum = r.get("collision_sum", 0)
             col_max = r.get("collision_max", 0)
             tel_sum = r.get("teleport_sum", 0)
             tel_max = r.get("teleport_max", 0)
 
-            if col_sum > 0 or tel_sum > 0:
+            if (col_sum or 0) > 0 or (tel_sum or 0) > 0:
                 col_str = f"⚠️ {col_sum} / {tel_sum} (max {col_max})"
                 status_badge = "🚨 INCIDENTS"
                 scenario_warnings.append(
@@ -162,8 +159,12 @@ def generate_comparison_report(
                     f"(lớn nhất {col_max} va chạm/lượt). Cần kiểm tra dọn nút giao và xung đột luồng."
                 )
             else:
-                col_str = "0 / 0"
-                if cr < 98.0 and cr > 0:
+                col_str = "0 / 0" if col_sum is not None and tel_sum is not None else "N/A"
+                if r.get("service_status") == "NO_DEMAND":
+                    status_badge = "NO_DEMAND"
+                elif cr is None:
+                    status_badge = "NO_DATA"
+                elif cr < REPORT_COMPLETION_THRESHOLD * 100.0:
                     status_badge = "⚠️ LOW_COMPLETION"
                     sys_d_display = f"{sys_d:.2f}s" if sys_d is not None else "N/A"
                     scenario_warnings.append(
@@ -171,8 +172,13 @@ def generate_comparison_report(
                         f"Có hiện tượng nghẽn mạng ngoài cổng (System Delay {sys_d_display})."
                     )
                 else:
-                    status_badge = "✅ SAFE"
+                    status_badge = "✅ SAFE" if col_sum is not None and tel_sum is not None else "UNKNOWN"
 
+            if r.get("failed_count"):
+                scenario_warnings.append(f"- **{algo}**: PARTIAL, {r['failed_count']} seed thất bại; thống kê chỉ dùng lượt hợp lệ.")
+            config = r.get("effective_config")
+            if config:
+                scenario_warnings.append(f"- **{algo}** — cấu hình hiệu lực: " + ", ".join(f"{key}={value}" for key, value in config.items()))
             lines.append(
                 f"| **{algo}** | {wt_str} | {sys_d_str} | {ql_str} | {tp} | {cr_str} | {col_str} | {status_badge} |"
             )

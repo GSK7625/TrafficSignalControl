@@ -103,3 +103,17 @@ def test_generate_comparison_report_handles_failed_and_total_collisions(tmp_path
     # Must display total 5 collisions with max 4
     assert "5 / 5 (max 4)" in md_text
     assert "tổng cộng 5 va chạm" in md_text
+
+
+def test_draw_metric_bar_helper():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from src.evaluation.plot_comparison import _draw_metric_bar
+
+    fig, ax = plt.subplots()
+    bars = _draw_metric_bar(ax, ["A", "B"], [10.0, 20.0], [1.0, 2.0], ylabel="Wait Time", title="Comparison", fmt="%.1fs")
+    assert ax.get_ylabel() == "Wait Time"
+    assert ax.get_title() == "Comparison"
+    assert len(bars) == 2
+    plt.close(fig)

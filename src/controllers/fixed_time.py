@@ -68,7 +68,7 @@ class FixedTimeController(BaseTrafficController):
             errors.append(f"default_green_time ({self.default_green_time}s) exceeds max_green ({max_green}s)")
         if num_phases_per_tls:
             for tls_id, seq in self.phase_sequences.items():
-                if any(p >= num_phases_per_tls.get(tls_id, 0) for p in seq):
+                if any(not 0 <= p < num_phases_per_tls.get(tls_id, 0) for p in seq):
                     errors.append(f"TLS '{tls_id}' phase sequence contains invalid phase index")
         return errors
 
