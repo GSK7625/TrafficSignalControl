@@ -420,6 +420,9 @@ def run_full_benchmark_matrix(
     output_dir: str = "results/evaluation",
     resume: bool = True,
     save_run_details: bool = False,
+    generate_report: bool = True,
+    generate_plots: bool = False,
+    figures_dir: str = "results/figures",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Runs full evaluation benchmark across all scenarios, algorithms, and seeds."""
     yaml_cfg = load_experiments_yaml(config_file)
@@ -486,6 +489,19 @@ def run_full_benchmark_matrix(
     csv_file = os.path.join(output_dir, "benchmark_runs.csv")
     pd.DataFrame(selected).to_csv(csv_file, index=False)
 
+    if generate_report:
+        from src.evaluation.compare_algorithms import generate_comparison_report
+        report_md = os.path.join(output_dir, "benchmark_comparison.md")
+        generate_comparison_report(
+            eval_dir=output_dir,
+            phase6_summary=summary_file,
+            output_report=report_md,
+        )
+
+    if generate_plots:
+        from src.evaluation.plot_comparison import generate_all_phase6_charts
+        generate_all_phase6_charts(output_dir=figures_dir)
+
     print(f"\n================================================================================")
     print(f"BENCHMARK COMPLETED: Results saved in '{output_dir}'")
     print(f"================================================================================")
@@ -511,6 +527,8 @@ if __name__ == "__main__":
     parser.add_argument("--run-all", action="store_true")
     parser.add_argument("--fresh", action="store_true")
     parser.add_argument("--save-details", action="store_true", help="Save detailed per-run simulation files (XML/CSV) in runs/")
+    parser.add_argument("--report", action=argparse.BooleanOptionalAction, default=True, help="Auto-generate Markdown comparison report")
+    parser.add_argument("--plots", action="store_true", default=False, help="Auto-generate publication-quality charts")
     args = parser.parse_args()
 
     is_multi = args.run_all or (args.scenarios is not None) or (args.algorithms is not None) or (args.seeds is not None)
@@ -538,6 +556,8 @@ if __name__ == "__main__":
             config_file=args.config,
             resume=not args.fresh,
             save_run_details=args.save_details,
+            generate_report=args.report,
+            generate_plots=args.plots,
         )
     else:
         norm_algo = normalize_algo_name(args.algorithm)

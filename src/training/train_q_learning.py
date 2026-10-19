@@ -5,7 +5,8 @@ import math
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from src.config import DEFAULT_SAFETY_CONFIG, load_yaml_config
@@ -137,6 +138,63 @@ def evaluate_greedy_q_learning(
     }
 
 
+@dataclass
+class TrainingConfig:
+    """Configuration settings for Tabular Q-Learning training."""
+    scenario_name: str = "ingolstadt1"
+    num_episodes: int = 15
+    seed: int = 42
+    learning_rate: float = 0.1
+    gamma: float = 0.95
+    epsilon_start: float = 1.0
+    epsilon_min: float = 0.05
+    epsilon_decay: float = 0.85
+    decision_interval: float = 5.0
+    min_green: float = DEFAULT_SAFETY_CONFIG["min_green"]
+    max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"]
+    yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"]
+    all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"]
+    max_steps: Optional[int] = 3600
+    val_interval: int = 5
+    val_seeds: Optional[List[int]] = None
+    min_val_completion: float = BENCHMARK_COMPLETION_THRESHOLD
+    reward_scale: float = 1.0
+    pending_weight: float = 0.0
+    max_effective_green: float = 25.0
+    serving_thresholds: Tuple[float, ...] = (1.0, 5.0)
+    waiting_thresholds: Tuple[float, ...] = (1.0, 6.0, 15.0)
+    model_dir: str = "models/q_learning"
+    log_dir: str = "results/training"
+    save_run_details: bool = False
+
+    @classmethod
+    def from_yaml(cls, config_path: str, **overrides: Any) -> "TrainingConfig":
+        yaml_cfg = load_yaml_config(config_path)
+        params: Dict[str, Any] = {}
+        hp = yaml_cfg.get("hyperparameters", {})
+        for k in ["learning_rate", "gamma", "epsilon_start", "epsilon_min", "epsilon_decay", "num_episodes", "seed", "max_green", "val_seeds"]:
+            if k in hp:
+                params[k] = hp[k]
+        for k in ["decision_interval", "min_green", "max_green", "yellow_duration", "all_red_duration", "max_steps", "val_interval", "val_seeds"]:
+            if k in yaml_cfg:
+                params[k] = yaml_cfg[k]
+        rc = yaml_cfg.get("reward", {})
+        if "scale" in rc or "reward_scale" in yaml_cfg:
+            params["reward_scale"] = float(rc.get("scale", yaml_cfg.get("reward_scale", 1.0)))
+        if "pending_weight" in rc:
+            params["pending_weight"] = float(rc["pending_weight"])
+        dc = yaml_cfg.get("discretization", {})
+        if "max_effective_green" in dc:
+            params["max_effective_green"] = float(dc["max_effective_green"])
+        if "serving_queue_thresholds" in dc:
+            params["serving_thresholds"] = tuple(float(x) for x in dc["serving_queue_thresholds"])
+        if "waiting_queue_thresholds" in dc:
+            params["waiting_thresholds"] = tuple(float(x) for x in dc["waiting_queue_thresholds"])
+
+        params.update({k: v for k, v in overrides.items() if v is not None})
+        return cls(**params)
+
+
 def train_q_learning(
     scenario_name: str = "ingolstadt1",
     num_episodes: Optional[int] = None,
@@ -159,137 +217,127 @@ def train_q_learning(
     model_dir: str = "models/q_learning",
     log_dir: str = "results/training",
     save_run_details: bool = False,
+    config: Optional[TrainingConfig] = None,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Trains a Tabular Q-Learning agent on a specified SUMO scenario."""
-    # 1. Base defaults
-    cfg_data = {
-        "num_episodes": 15,
-        "seed": 42,
-        "learning_rate": 0.1,
-        "gamma": 0.95,
-        "epsilon_start": 1.0,
-        "epsilon_min": 0.05,
-        "epsilon_decay": 0.85,
-        "decision_interval": 5.0,
-        "min_green": DEFAULT_SAFETY_CONFIG["min_green"],
-        "max_green": DEFAULT_SAFETY_CONFIG["max_green"],
-        "yellow_duration": DEFAULT_SAFETY_CONFIG["yellow_duration"],
-        "all_red_duration": DEFAULT_SAFETY_CONFIG["all_red_duration"],
-        "max_steps": 3600,
-        "val_interval": 5,
-        "val_seeds": None,
-        "reward_scale": 1.0,
-        "pending_weight": 0.0,
-        "max_effective_green": 25.0,
-        "serving_thresholds": (1.0, 5.0),
-        "waiting_thresholds": (1.0, 6.0, 15.0),
-    }
+    if config is not None:
+        cfg = config
+    elif config_path is not None:
+        overrides = {
+            "scenario_name": scenario_name,
+            "num_episodes": num_episodes,
+            "seed": seed,
+            "learning_rate": learning_rate,
+            "gamma": gamma,
+            "epsilon_start": epsilon_start,
+            "epsilon_min": epsilon_min,
+            "epsilon_decay": epsilon_decay,
+            "decision_interval": decision_interval,
+            "min_green": min_green,
+            "max_green": max_green,
+            "yellow_duration": yellow_duration,
+            "all_red_duration": all_red_duration,
+            "max_steps": max_steps_per_episode,
+            "val_interval": val_interval,
+            "val_seeds": val_seeds,
+            "min_val_completion": min_val_completion,
+            "model_dir": model_dir,
+            "log_dir": log_dir,
+            "save_run_details": save_run_details,
+            **kwargs,
+        }
+        cfg = TrainingConfig.from_yaml(config_path, **{k: v for k, v in overrides.items() if v is not None})
+    else:
+        init_kwargs = {
+            "scenario_name": scenario_name,
+            "model_dir": model_dir,
+            "log_dir": log_dir,
+            "save_run_details": save_run_details,
+            "min_val_completion": min_val_completion,
+            **kwargs,
+        }
+        for k, v in [
+            ("num_episodes", num_episodes),
+            ("seed", seed),
+            ("learning_rate", learning_rate),
+            ("gamma", gamma),
+            ("epsilon_start", epsilon_start),
+            ("epsilon_min", epsilon_min),
+            ("epsilon_decay", epsilon_decay),
+            ("decision_interval", decision_interval),
+            ("min_green", min_green),
+            ("max_green", max_green),
+            ("yellow_duration", yellow_duration),
+            ("all_red_duration", all_red_duration),
+            ("max_steps", max_steps_per_episode),
+            ("val_interval", val_interval),
+            ("val_seeds", val_seeds),
+        ]:
+            if v is not None:
+                init_kwargs[k] = v
+        cfg = TrainingConfig(**init_kwargs)
 
-    # 2. YAML overrides
-    if config_path:
-        yaml_cfg = load_yaml_config(config_path)
-        hp = yaml_cfg.get("hyperparameters", {})
-        for k in ["learning_rate", "gamma", "epsilon_start", "epsilon_min", "epsilon_decay", "num_episodes", "seed", "max_green", "val_seeds"]:
-            if k in hp:
-                cfg_data[k] = hp[k]
-        for k in ["decision_interval", "min_green", "max_green", "yellow_duration", "all_red_duration", "max_steps", "val_interval", "val_seeds"]:
-            if k in yaml_cfg:
-                cfg_data[k] = yaml_cfg[k]
-        rc = yaml_cfg.get("reward", {})
-        if "scale" in rc or "reward_scale" in yaml_cfg:
-            cfg_data["reward_scale"] = float(rc.get("scale", yaml_cfg.get("reward_scale", cfg_data["reward_scale"])))
-        if "pending_weight" in rc:
-            cfg_data["pending_weight"] = float(rc["pending_weight"])
-        dc = yaml_cfg.get("discretization", {})
-        if "max_effective_green" in dc:
-            cfg_data["max_effective_green"] = float(dc["max_effective_green"])
-        if "serving_queue_thresholds" in dc:
-            cfg_data["serving_thresholds"] = tuple(float(x) for x in dc["serving_queue_thresholds"])
-        if "waiting_queue_thresholds" in dc:
-            cfg_data["waiting_thresholds"] = tuple(float(x) for x in dc["waiting_queue_thresholds"])
+    os.makedirs(cfg.model_dir, exist_ok=True)
+    os.makedirs(cfg.log_dir, exist_ok=True)
 
-    # 3. Explicit arguments override
-    overrides = {
-        "num_episodes": num_episodes,
-        "seed": seed,
-        "learning_rate": learning_rate,
-        "gamma": gamma,
-        "epsilon_start": epsilon_start,
-        "epsilon_min": epsilon_min,
-        "epsilon_decay": epsilon_decay,
-        "decision_interval": decision_interval,
-        "min_green": min_green,
-        "max_green": max_green,
-        "yellow_duration": yellow_duration,
-        "all_red_duration": all_red_duration,
-        "max_steps": max_steps_per_episode,
-        "val_interval": val_interval,
-        "val_seeds": val_seeds,
-    }
-    for k, v in overrides.items():
-        if v is not None:
-            cfg_data[k] = v
-
-    os.makedirs(model_dir, exist_ok=True)
-    os.makedirs(log_dir, exist_ok=True)
-
-    reward_fn = NegativePressureReward(scale=cfg_data["reward_scale"], pending_weight=cfg_data["pending_weight"])
+    reward_fn = NegativePressureReward(scale=cfg.reward_scale, pending_weight=cfg.pending_weight)
     state_discretizer = StateDiscretizer(
-        min_green=cfg_data["min_green"],
-        max_effective_green=cfg_data["max_effective_green"],
-        serving_queue_thresholds=cfg_data["serving_thresholds"],
-        waiting_queue_thresholds=cfg_data["waiting_thresholds"],
+        min_green=cfg.min_green,
+        max_effective_green=cfg.max_effective_green,
+        serving_queue_thresholds=cfg.serving_thresholds,
+        waiting_queue_thresholds=cfg.waiting_thresholds,
     )
 
     print(f"\n{'='*56}")
-    print(f"Starting Q-Learning Training on [{scenario_name.upper()}]")
-    print(f"Episodes: {cfg_data['num_episodes']} | LR: {cfg_data['learning_rate']} | Gamma: {cfg_data['gamma']} | Decay: {cfg_data['epsilon_decay']}")
+    print(f"Starting Q-Learning Training on [{cfg.scenario_name.upper()}]")
+    print(f"Episodes: {cfg.num_episodes} | LR: {cfg.learning_rate} | Gamma: {cfg.gamma} | Decay: {cfg.epsilon_decay}")
     print(f"{'='*56}")
 
-    env_output_dir = os.path.join(log_dir, f"env_{scenario_name}") if save_run_details else None
+    env_output_dir = os.path.join(cfg.log_dir, f"env_{cfg.scenario_name}") if cfg.save_run_details else None
     env = TrafficSignalRLEnv(
-        scenario_name=scenario_name,
-        decision_interval=cfg_data["decision_interval"],
-        min_green=cfg_data["min_green"],
-        max_green=cfg_data["max_green"],
-        yellow_duration=cfg_data["yellow_duration"],
-        all_red_duration=cfg_data["all_red_duration"],
+        scenario_name=cfg.scenario_name,
+        decision_interval=cfg.decision_interval,
+        min_green=cfg.min_green,
+        max_green=cfg.max_green,
+        yellow_duration=cfg.yellow_duration,
+        all_red_duration=cfg.all_red_duration,
         reward_fn=reward_fn,
         state_discretizer=state_discretizer,
-        max_steps=cfg_data["max_steps"],
-        seed=cfg_data["seed"],
+        max_steps=cfg.max_steps,
+        seed=cfg.seed,
         output_dir=env_output_dir,
-        save_run_details=save_run_details,
+        save_run_details=cfg.save_run_details,
         use_tripinfo=True,
     )
 
     agent = QLearningController(
         num_actions=env.num_actions,
         target_tls_id=env.tls_id,
-        learning_rate=cfg_data["learning_rate"],
-        gamma=cfg_data["gamma"],
-        epsilon=cfg_data["epsilon_start"],
-        epsilon_min=cfg_data["epsilon_min"],
-        epsilon_decay=cfg_data["epsilon_decay"],
+        learning_rate=cfg.learning_rate,
+        gamma=cfg.gamma,
+        epsilon=cfg.epsilon_start,
+        epsilon_min=cfg.epsilon_min,
+        epsilon_decay=cfg.epsilon_decay,
         discretizer=state_discretizer,
-        decision_interval=cfg_data["decision_interval"],
-        min_green=cfg_data["min_green"],
-        max_green=cfg_data["max_green"],
-        yellow_duration=cfg_data["yellow_duration"],
-        all_red_duration=cfg_data["all_red_duration"],
-        seed=cfg_data["seed"],
+        decision_interval=cfg.decision_interval,
+        min_green=cfg.min_green,
+        max_green=cfg.max_green,
+        yellow_duration=cfg.yellow_duration,
+        all_red_duration=cfg.all_red_duration,
+        seed=cfg.seed,
         eval_mode=False,
     )
 
     agent.reward_config = reward_fn.get_config()
     history: List[Dict[str, Any]] = []
-    selector = ValidationCheckpointSelector(min_completion=min_val_completion)
+    selector = ValidationCheckpointSelector(min_completion=cfg.min_val_completion)
     best_path: Optional[str] = None
     start_time = time.time()
 
     try:
-        for ep in range(1, cfg_data["num_episodes"] + 1):
-            ep_seed = cfg_data["seed"] + ep
+        for ep in range(1, cfg.num_episodes + 1):
+            ep_seed = cfg.seed + ep
             ep_start = time.time()
 
             _, info = env.reset(seed=ep_seed)
@@ -349,31 +397,31 @@ def train_q_learning(
 
             wait_str = f"{mean_wait:5.2f}s" if mean_wait is not None else "  N/A "
             print(
-                f"Ep {ep:2d}/{cfg_data['num_episodes']} | Rew: {ep_reward:8.1f} | Eps: {curr_eps:.3f} | "
+                f"Ep {ep:2d}/{cfg.num_episodes} | Rew: {ep_reward:8.1f} | Eps: {curr_eps:.3f} | "
                 f"Q-States: {len(agent.q_table):3d} | Wait: {wait_str} | "
                 f"Queue: {mean_queue:4.2f} | Completed: {completed_vehs:4d} | "
                 f"Time: {ep_duration:4.1f}s"
             )
 
             # Validation checkpointing
-            val_int = cfg_data["val_interval"]
-            if val_int > 0 and (ep % val_int == 0 or ep == cfg_data["num_episodes"]):
-                v_seeds = cfg_data["val_seeds"] or [cfg_data["seed"] + 9999, cfg_data["seed"] + 10000]
+            val_int = cfg.val_interval
+            if val_int > 0 and (ep % val_int == 0 or ep == cfg.num_episodes):
+                v_seeds = cfg.val_seeds or [cfg.seed + 9999, cfg.seed + 10000]
                 val_results = [
                     evaluate_greedy_q_learning(
                         agent=agent,
-                        scenario_name=scenario_name,
-                        decision_interval=cfg_data["decision_interval"],
-                        min_green=cfg_data["min_green"],
-                        max_green=cfg_data["max_green"],
-                        yellow_duration=cfg_data["yellow_duration"],
-                        all_red_duration=cfg_data["all_red_duration"],
-                        reward_fn=NegativePressureReward(scale=cfg_data["reward_scale"], pending_weight=cfg_data["pending_weight"]),
+                        scenario_name=cfg.scenario_name,
+                        decision_interval=cfg.decision_interval,
+                        min_green=cfg.min_green,
+                        max_green=cfg.max_green,
+                        yellow_duration=cfg.yellow_duration,
+                        all_red_duration=cfg.all_red_duration,
+                        reward_fn=NegativePressureReward(scale=cfg.reward_scale, pending_weight=cfg.pending_weight),
                         state_discretizer=state_discretizer,
-                        max_steps=cfg_data["max_steps"],
+                        max_steps=cfg.max_steps,
                         seed=vs,
-                        output_dir=os.path.join(log_dir, "validation", f"ep{ep}_seed{vs}") if save_run_details else None,
-                        save_run_details=save_run_details,
+                        output_dir=os.path.join(cfg.log_dir, "validation", f"ep{ep}_seed{vs}") if cfg.save_run_details else None,
+                        save_run_details=cfg.save_run_details,
                     )
                     for vs in v_seeds
                 ]
@@ -385,28 +433,28 @@ def train_q_learning(
                 print(f"    --> [Eval] Ep {ep} | Rew: {avg_val_rew:.1f} | Comp: {avg_val_comp:.1%} | Viable: {is_viable}")
 
                 if selector.consider(ep, val_results):
-                    best_path = os.path.join(model_dir, f"q_learning_{scenario_name}_best.json")
+                    best_path = os.path.join(cfg.model_dir, f"q_learning_{cfg.scenario_name}_best.json")
                     agent.save(best_path)
                     print(f"    --> [BEST] Saved to {best_path}")
 
-            if save_run_details and (ep % 5 == 0 or ep == cfg_data["num_episodes"]):
-                agent.save(os.path.join(model_dir, f"q_learning_{scenario_name}_ep{ep}.json"))
+            if cfg.save_run_details and (ep % 5 == 0 or ep == cfg.num_episodes):
+                agent.save(os.path.join(cfg.model_dir, f"q_learning_{cfg.scenario_name}_ep{ep}.json"))
 
     finally:
         env.close()
 
     total_wall_time = time.time() - start_time
-    final_model_path = os.path.join(model_dir, f"q_learning_{scenario_name}_final.json")
+    final_model_path = os.path.join(cfg.model_dir, f"q_learning_{cfg.scenario_name}_final.json")
     agent.save(final_model_path)
 
-    log_file = os.path.join(log_dir, f"q_learning_{scenario_name}_log.json")
+    log_file = os.path.join(cfg.log_dir, f"q_learning_{cfg.scenario_name}_log.json")
     training_data = {
-        "scenario_name": scenario_name,
+        "scenario_name": cfg.scenario_name,
         "algorithm": "Q-Learning",
-        "num_episodes": cfg_data["num_episodes"],
-        "seed": cfg_data["seed"],
+        "num_episodes": cfg.num_episodes,
+        "seed": cfg.seed,
         "hyperparameters": {
-            k: cfg_data[k]
+            k: getattr(cfg, k)
             for k in [
                 "learning_rate", "gamma", "epsilon_start", "epsilon_min",
                 "epsilon_decay", "decision_interval", "min_green", "max_green",

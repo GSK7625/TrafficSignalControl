@@ -234,15 +234,13 @@ class TestSafePhaseManager:
         assert manager.actual_yellow_time == 1.0
         assert manager.total_transition_time == 1.0
 
-    def test_apply_to_traci(self, manager):
-        mock_traci = MagicMock()
+    def test_apply_to_traci(self, manager, mock_traci):
         manager.apply_to_traci(mock_traci)
         mock_traci.trafficlight.setRedYellowGreenState.assert_called_once_with(
             "tls_1", "GGGrrrGGGrrr"
         )
 
-    def test_apply_to_traci_raises_runtime_error_on_failure(self, manager):
-        mock_traci = MagicMock()
+    def test_apply_to_traci_raises_runtime_error_on_failure(self, manager, mock_traci):
         mock_traci.trafficlight.setRedYellowGreenState.side_effect = Exception("Connection closed")
         with pytest.raises(RuntimeError, match="Failed to set state for TLS 'tls_1'"):
             manager.apply_to_traci(mock_traci)
@@ -264,4 +262,14 @@ class TestSafePhaseManager:
         assert mgr.request_phase(0) is False
         # Requesting to switch to phase 1 must be accepted
         assert mgr.request_phase(1) is True
+
+    def test_phase_manager_provides_valid_actions_at_boundaries(self):
+        manager = SafePhaseManager("tls", ["Grr", "rGr", "rrG"], min_green=5.0, max_green=60.0)
+        assert manager.valid_actions() == [0]
+        manager.update(5.0)
+        assert manager.valid_actions() == [0, 1, 2]
+        manager.update(55.0)
+        assert manager.valid_actions() == [1, 2]
+        manager.request_phase(2)
+        assert manager.valid_actions() == [2]
 

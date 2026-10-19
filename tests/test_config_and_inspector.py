@@ -1,7 +1,6 @@
 """Unit tests for SimulationConfig, YAML loader, and dataset inspection."""
 
 import os
-import tempfile
 import pytest
 
 from src.config import SimulationConfig, load_yaml_config
@@ -20,21 +19,27 @@ class TestSimulationConfig:
         assert cfg.all_red_duration == 1.0
         assert os.path.isfile(cfg.sumocfg_path)
 
-    def test_invalid_step_length(self):
-        with pytest.raises(ValueError, match="step_length must be positive"):
-            SimulationConfig(dataset_name="cologne1", step_length=0.0)
-
-    def test_invalid_decision_interval(self):
-        with pytest.raises(ValueError, match="decision_interval must be positive"):
-            SimulationConfig(dataset_name="cologne1", decision_interval=-1.0)
-
-    def test_invalid_yellow_duration(self):
-        with pytest.raises(ValueError, match="yellow_duration must be positive"):
-            SimulationConfig(dataset_name="cologne1", yellow_duration=-1.0)
+    @pytest.mark.parametrize("invalid_kwargs,error_match", [
+        ({"step_length": 0.0}, "step_length must be positive"),
+        ({"step_length": -1.0}, "step_length must be positive"),
+        ({"decision_interval": -1.0}, "decision_interval must be positive"),
+        ({"yellow_duration": -1.0}, "yellow_duration must be positive"),
+        ({"yellow_duration": 0.0}, "yellow_duration must be positive"),
+    ])
+    def test_invalid_numerical_parameters(self, invalid_kwargs, error_match):
+        with pytest.raises(ValueError, match=error_match):
+            SimulationConfig(dataset_name="cologne1", **invalid_kwargs)
 
     def test_missing_dataset_raises_error(self):
         with pytest.raises(ValueError, match="Dataset 'non_existent_dataset' not found"):
             SimulationConfig(dataset_name="non_existent_dataset")
+
+    @pytest.mark.parametrize("options", [
+        {"step_length": 0}, {"step_length": -1}, {"decision_interval": -1}, {"yellow_duration": 0},
+    ])
+    def test_config_rejects_invalid_inputs_once(self, options):
+        with pytest.raises(ValueError):
+            SimulationConfig("cologne1", **options)
 
 
 class TestYamlConfigLoader:
@@ -44,17 +49,11 @@ class TestYamlConfigLoader:
         with pytest.raises(FileNotFoundError, match="Configuration file not found"):
             load_yaml_config("non_existent.yaml")
 
-    def test_invalid_yaml_format(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
-            f.write("- item1\n- item2\n")
-            tmp_path = f.name
-
-        try:
-            with pytest.raises(ValueError, match="expected dictionary"):
-                load_yaml_config(tmp_path)
-        finally:
-            if os.path.isfile(tmp_path):
-                os.remove(tmp_path)
+    def test_invalid_yaml_format(self, tmp_path):
+        bad_yaml = tmp_path / "bad.yaml"
+        bad_yaml.write_text("- item1\n- item2\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="expected dictionary"):
+            load_yaml_config(str(bad_yaml))
 
     def test_load_existing_project_configs(self):
         exp_cfg = load_yaml_config("configs/experiments.yaml")

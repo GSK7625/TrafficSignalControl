@@ -32,18 +32,24 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 
-# Temporary simulation results (keep consolidated benchmark experiments and figures)
+# Models and Simulation Results
+models/*
+!models/.gitkeep
+!models/q_learning/
+!models/q_learning/.gitkeep
+!models/q_learning/*.json
+
 results/*
+!results/.gitkeep
+!results/**/.gitkeep
 !results/experiments/
 !results/experiments/**
 !results/figures/
 !results/figures/**
-!results/figures_3algos/
-!results/figures_3algos/**
-!results/figures_4algos/
-!results/figures_4algos/**
 !results/training/
 !results/training/**
 !results/evaluation/
+!results/evaluation/**
 results/evaluation/runs/
 results/training/env_*/
+

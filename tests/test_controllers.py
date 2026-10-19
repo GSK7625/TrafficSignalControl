@@ -1,14 +1,15 @@
 """Unit tests for FixedTime, MaxPressure, and QLearning controllers."""
 
+import json
 import os
-import tempfile
-import pytest
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 import numpy as np
+import pytest
 
+from src.controllers import make_controller, FixedTimeController, MaxPressureController, QLearningController
 from src.controllers.base import ControlledLink, IntersectionObservation
-from src.controllers.fixed_time import FixedTimeController
-from src.controllers.max_pressure import MaxPressureController, compute_phase_pressure
-from src.controllers.q_learning import QLearningController
+from src.controllers.max_pressure import compute_phase_pressure
 
 
 def create_dummy_observation(
@@ -22,6 +23,7 @@ def create_dummy_observation(
     out_lane_queues: dict = None,
     sim_time: float = 100.0,
     step: int = 100,
+    valid_actions: list = None,
 ) -> IntersectionObservation:
     """Helper to create a standard IntersectionObservation for testing."""
     if green_phases is None:
@@ -53,6 +55,7 @@ def create_dummy_observation(
         out_lane_vehicles={k: v for k, v in out_lane_queues.items()},
         sim_time=sim_time,
         step=step,
+        valid_actions=valid_actions,
     )
 
 
@@ -86,52 +89,41 @@ class TestFixedTimeController:
             default_green_time=20.0,
             phase_sequences={"tls_1": [1, 0]},
         )
-        # Sequence starts at phase 1
         obs = create_dummy_observation(current_phase=1, time_in_phase=0.0)
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 1
 
-        # Effective duration is 20s
         obs.time_in_phase = 15.0
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 1
 
-        # At 20s: cycles to phase 0
         obs.time_in_phase = 20.0
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 0
 
     def test_schedule_resynchronization_on_forced_phase_switch(self):
         controller = FixedTimeController(default_green_time=90.0)
-        # Normal initial step: Phase 0 active
         obs0 = create_dummy_observation(current_phase=0, time_in_phase=59.0)
         actions0 = controller.select_action({"tls_1": obs0})
         assert actions0["tls_1"] == 0
 
-        # Forced switch to Phase 1 occurs (e.g. runner forced by max_green=60)
-        # When Phase 1 becomes active green, controller must sync to Phase 1
-        # and NOT revert immediately to Phase 0
         obs1 = create_dummy_observation(current_phase=1, time_in_phase=0.0, is_in_transition=False)
         actions1 = controller.select_action({"tls_1": obs1})
-        assert actions1["tls_1"] == 1, "Controller should hold forced Phase 1, not revert to Phase 0"
+        assert actions1["tls_1"] == 1
 
-        # At time_in_phase=5.0 (min_green reached), controller should STILL hold Phase 1
         obs1_5 = create_dummy_observation(current_phase=1, time_in_phase=5.0, is_in_transition=False)
         actions1_5 = controller.select_action({"tls_1": obs1_5})
-        assert actions1_5["tls_1"] == 1, "Controller should continue holding Phase 1, avoiding the 5s desync glitch"
+        assert actions1_5["tls_1"] == 1
 
     def test_compatibility_validation_with_max_and_min_green(self):
         controller = FixedTimeController(default_green_time=90.0)
-        # With max_green=60, 90s is incompatible
         errors = controller.validate_compatibility(min_green=5.0, max_green=60.0)
         assert len(errors) > 0
         assert any("exceeds max_green" in e for e in errors)
 
-        # Invalid phase sequence index
         controller_seq = FixedTimeController(phase_sequences={"tls_1": [0, 3]})
         errors_seq = controller_seq.validate_compatibility(num_phases_per_tls={"tls_1": 2})
         assert any("out of bounds" in e or "invalid" in e for e in errors_seq)
-
 
 
 class TestMaxPressureController:
@@ -149,21 +141,14 @@ class TestMaxPressureController:
         in_q = {"in_A": 10.0, "in_C": 4.0}
         out_q = {"out_A": 2.0, "out_B": 0.0, "out_C": 1.0}
 
-        # Phase 0: 'GGr' -> Serves in_A to out_A and out_B (both links green)
-        # in_A has 2 total out links, 2 served -> ratio = 1.0 -> inflow = 10.0
-        # out lanes served: out_A (q=2) and out_B (q=0) -> backpressure = 2.0
-        # Expected pressure = 10.0 - 2.0 = 8.0
         p0 = compute_phase_pressure("GGr", links, in_q, out_q)
         assert pytest.approx(p0, 1e-6) == 8.0
 
-        # Phase 1: 'rrG' -> Serves in_C to out_C
-        # inflow = 4.0, outflow = 1.0 -> Expected pressure = 3.0
         p1 = compute_phase_pressure("rrG", links, in_q, out_q)
         assert pytest.approx(p1, 1e-6) == 3.0
 
     def test_min_green_constraint_held(self):
         controller = MaxPressureController(min_green=5.0)
-        # Even if Phase 1 has huge queue, min_green must hold current phase 0
         in_q = {"in_0": 0.0, "in_1": 0.0, "in_2": 20.0, "in_3": 20.0}
         obs = create_dummy_observation(
             current_phase=0, time_in_phase=3.0, in_lane_queues=in_q
@@ -173,8 +158,6 @@ class TestMaxPressureController:
 
     def test_switches_to_max_pressure_phase(self):
         controller = MaxPressureController(min_green=5.0)
-        # Phase 0: 'GGGrrr' (in_0, in_1) queue = 2
-        # Phase 1: 'rrrGGG' (in_2, in_3) queue = 15
         in_q = {"in_0": 1.0, "in_1": 1.0, "in_2": 8.0, "in_3": 7.0}
         obs = create_dummy_observation(
             current_phase=0, time_in_phase=6.0, in_lane_queues=in_q
@@ -184,8 +167,6 @@ class TestMaxPressureController:
 
     def test_tie_breaking_keeps_current_phase(self):
         controller = MaxPressureController(min_green=5.0)
-        # All queues 0 -> pressures are tied at 0.0
-        # Should retain current_phase=0 to prevent signal chatter
         obs = create_dummy_observation(current_phase=0, time_in_phase=6.0)
         actions = controller.select_action({"tls_1": obs})
         assert actions["tls_1"] == 0
@@ -198,7 +179,6 @@ class TestMaxPressureController:
         in_q = {"in_A": 6.0, "in_B": 8.0}
         out_q = {"out_A": 1.0, "out_B": 2.0}
 
-        # Signal 's' (permissive right-turn / stop-and-proceed) should be treated as active green flow
         p_s = compute_phase_pressure("sr", links, in_q, out_q)
         assert pytest.approx(p_s, 1e-6) == 5.0
 
@@ -222,27 +202,21 @@ class TestQLearningController:
     def test_action_selection_epsilon_greedy(self):
         ctrl = QLearningController(num_actions=3, epsilon=0.0, eval_mode=True, tie_break_strategy="first")
         state = (0, 1, 2, 1)
-        # Populate Q-table
         ctrl.q_table[state] = np.array([0.5, 2.5, 1.0], dtype=np.float64)
 
-        # Greedy choice: action 1 has highest Q (2.5)
         action = ctrl.select_action_for_state(state)
         assert action == 1
 
-        # Valid action masking: only actions [0, 2] valid
         action_masked = ctrl.select_action_for_state(state, valid_actions=[0, 2])
-        assert action_masked == 2  # Among 0 (0.5) and 2 (1.0), 2 is higher
+        assert action_masked == 2
 
     def test_tie_breaking_prefers_current_phase(self):
         ctrl = QLearningController(num_actions=3, epsilon=0.0, eval_mode=True)
         state = (1, 0, 0, 1)
         ctrl.q_table[state] = np.array([0.0, 0.0, 0.0], dtype=np.float64)
 
-        # Anti-chatter inertia keeps active phase when tied
         assert ctrl.select_action_for_state(state, current_phase=1) == 1
         assert ctrl.select_action_for_state(state, current_phase=2) == 2
-
-        # In eval_mode with no current phase, deterministic min index is picked
         assert ctrl.select_action_for_state(state, current_phase=None) == 0
 
     def test_bellman_update(self):
@@ -253,16 +227,11 @@ class TestQLearningController:
         ctrl.q_table[s0] = np.array([0.0, 0.0], dtype=np.float64)
         ctrl.q_table[s1] = np.array([10.0, 5.0], dtype=np.float64)
 
-        # Action 0 taken in s0, reward = 2.0, next_state = s1
-        # target = 2.0 + 0.9 * max(10.0, 5.0) = 2.0 + 9.0 = 11.0
-        # Q(s0, 0) <- 0.0 + 0.5 * (11.0 - 0.0) = 5.5
         td_error = ctrl.update(state=s0, action=0, reward=2.0, next_state=s1, done=False)
         assert pytest.approx(ctrl.q_table[s0][0], 1e-6) == 5.5
         assert pytest.approx(td_error, 1e-6) == 11.0
 
-        # Terminal state update (done=True): no bootstrapping
         td_term = ctrl.update(state=s0, action=1, reward=4.0, next_state=s1, done=True)
-        # target = 4.0 -> Q(s0, 1) <- 0.0 + 0.5 * (4.0 - 0.0) = 2.0
         assert pytest.approx(ctrl.q_table[s0][1], 1e-6) == 2.0
         assert pytest.approx(td_term, 1e-6) == 4.0
 
@@ -271,86 +240,136 @@ class TestQLearningController:
         assert ctrl.decay_epsilon() == 0.5
         assert ctrl.decay_epsilon() == 0.25
         assert ctrl.decay_epsilon() == 0.125
-        # Floor reached
         assert ctrl.decay_epsilon() == 0.1
 
-    def test_save_and_load(self):
+    def test_save_and_load(self, tmp_path):
         ctrl = QLearningController(num_actions=2, learning_rate=0.2, gamma=0.95)
         s = (0, 1, 1, 1)
         ctrl.q_table[s] = np.array([1.23, 4.56], dtype=np.float64)
         ctrl.total_updates = 42
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            model_file = os.path.join(tmpdir, "model.json")
-            ctrl.save(model_file)
-            assert os.path.isfile(model_file)
+        model_file = str(tmp_path / "model.json")
+        ctrl.save(model_file)
+        assert os.path.isfile(model_file)
 
-            new_ctrl = QLearningController(num_actions=2)
-            new_ctrl.load(model_file)
+        new_ctrl = QLearningController(num_actions=2)
+        new_ctrl.load(model_file)
 
-            assert new_ctrl.num_actions == 2
-            assert new_ctrl.learning_rate == 0.2
-            assert new_ctrl.gamma == 0.95
-            assert new_ctrl.total_updates == 42
-            assert s in new_ctrl.q_table
-            assert pytest.approx(new_ctrl.q_table[s][0], 1e-6) == 1.23
-            assert pytest.approx(new_ctrl.q_table[s][1], 1e-6) == 4.56
+        assert new_ctrl.num_actions == 2
+        assert new_ctrl.learning_rate == 0.2
+        assert new_ctrl.gamma == 0.95
+        assert new_ctrl.total_updates == 42
+        assert s in new_ctrl.q_table
+        assert pytest.approx(new_ctrl.q_table[s][0], 1e-6) == 1.23
+        assert pytest.approx(new_ctrl.q_table[s][1], 1e-6) == 4.56
 
-    def test_from_checkpoint(self):
+    def test_from_checkpoint(self, tmp_path):
         ctrl = QLearningController(num_actions=3, min_green=7.0, eval_mode=False)
         s = (1, 0, 2, 1)
         ctrl.q_table[s] = np.array([0.5, 1.5, 2.5], dtype=np.float64)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            model_file = os.path.join(tmpdir, "model.json")
-            ctrl.save(model_file)
+        model_file = str(tmp_path / "model.json")
+        ctrl.save(model_file)
 
-            loaded = QLearningController.from_checkpoint(model_file, eval_mode=True)
-            assert loaded.num_actions == 3
-            assert loaded.min_green == 7.0
-            assert loaded.eval_mode is True
-            assert loaded.epsilon == 0.0
-            assert s in loaded.q_table
-            assert pytest.approx(loaded.q_table[s][2], 1e-6) == 2.5
+        loaded = QLearningController.from_checkpoint(model_file, eval_mode=True)
+        assert loaded.num_actions == 3
+        assert loaded.min_green == 7.0
+        assert loaded.eval_mode is True
+        assert loaded.epsilon == 0.0
+        assert s in loaded.q_table
+        assert pytest.approx(loaded.q_table[s][2], 1e-6) == 2.5
+
+    def test_checkpoint_shape_is_checked_at_load(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps({"config": {"num_actions": 3}, "q_table": {"(0, 0, 0, 1)": [10]}}))
+        with pytest.raises(ValueError, match="shape"):
+            QLearningController.from_checkpoint(str(path))
+
+    def test_checkpoint_rejects_unknown_override_and_changed_state_encoding(self, tmp_path):
+        path = str(tmp_path / "agent.json")
+        QLearningController(2).save(path)
+        with pytest.raises(TypeError):
+            QLearningController.from_checkpoint(path, min_grean=9)
+        with pytest.raises(ValueError, match="discretizer"):
+            QLearningController.from_checkpoint(path, min_green=9)
+
+    def test_q_cli_respects_the_environment_action_mask(self):
+        agent = QLearningController(3, eval_mode=True)
+        agent.q_table[(0, 0, 0, 2)] = np.array([100.0, 1.0, 50.0])
+        obs = SimpleNamespace(
+            current_phase=0,
+            time_in_phase=60.0,
+            is_in_transition=False,
+            green_phases=["Grr", "rGr", "rrG"],
+            controlled_links=[],
+            in_lane_queues={},
+            valid_actions=[1, 2],
+        )
+        assert agent.select_action({"tls": obs}) == {"tls": 2}
+
+    @pytest.mark.parametrize("actions", [[], [999]])
+    def test_empty_or_invalid_action_mask_is_not_expanded(self, actions):
+        with pytest.raises(ValueError):
+            QLearningController(2, eval_mode=True).select_action_for_state((0, 0, 0, 0), actions)
+
+    def test_load_checkpoint_restores_optional_target(self, tmp_path):
+        path = str(tmp_path / "agent.json")
+        original = QLearningController(num_actions=3, target_tls_id="junction-2")
+        original.save(path)
+        loaded = QLearningController(num_actions=2)
+        loaded.load(path)
+        assert loaded.target_tls_id == "junction-2"
+        assert loaded.num_actions == 3
+        assert loaded.action_counts.shape == (3,)
+
+    def test_checkpoint_override_can_disable_max_green(self, tmp_path):
+        path = str(tmp_path / "agent.json")
+        QLearningController(num_actions=2).save(path)
+        assert QLearningController.from_checkpoint(path, max_green=None).max_green is None
+
+    def test_legacy_checkpoint_uses_safety_and_discretizer_defaults(self, tmp_path):
+        path = tmp_path / "legacy.json"
+        path.write_text(json.dumps({"config": {"num_actions": 2, "min_green": 7}, "q_table": {}}))
+        agent = QLearningController.from_checkpoint(str(path))
+        assert agent.max_green == 60.0
+        assert agent.discretizer.min_green == 7.0
+
+    def test_checkpoint_metadata_keeps_explicit_disabled_max_green(self, tmp_path):
+        from src.evaluation.evaluate_rl import load_checkpoint_env_params
+        path = str(tmp_path / "agent.json")
+        QLearningController(num_actions=2, max_green=None).save(path)
+        assert load_checkpoint_env_params(path)["max_green"] is None
 
 
 class TestMakeController:
     """Test suite for make_controller factory function."""
 
     def test_make_controller_fixed_time(self):
-        from src.controllers import make_controller, FixedTimeController
         ctrl, mode = make_controller("fixed-time", "cologne1", default_green_time=25.0)
         assert isinstance(ctrl, FixedTimeController)
         assert ctrl.default_green_time == 25.0
         assert mode == "agent"
 
     def test_make_controller_max_pressure(self):
-        from src.controllers import make_controller, MaxPressureController
         ctrl, mode = make_controller("max-pressure", "cologne1", min_green=8.0)
         assert isinstance(ctrl, MaxPressureController)
         assert ctrl.min_green == 8.0
         assert mode == "agent"
 
     def test_make_controller_none(self):
-        from src.controllers import make_controller
         ctrl, mode = make_controller("none", "cologne1")
         assert ctrl is None
         assert mode == "original"
 
     def test_make_controller_invalid_raises_error(self):
-        from src.controllers import make_controller
         with pytest.raises(ValueError, match="Unsupported algorithm"):
             make_controller("invalid-algo", "cologne1")
 
     def test_make_controller_q_learning_explicit_num_actions_precedence(self):
-        from unittest.mock import MagicMock
-        from src.controllers import make_controller, QLearningController
-
         mock_info = MagicMock()
         mock_info.tls_ids = ["tls_main", "tls_side"]
         mock_info.phases_per_tls = {"tls_main": [1, 2, 3, 4], "tls_side": [1, 2]}
 
-        # Explicit num_actions=6 should NOT be overwritten by scenario_info count (4)
         ctrl, mode = make_controller(
             "q-learning",
             "cologne1",
@@ -361,7 +380,6 @@ class TestMakeController:
         assert ctrl.num_actions == 6
         assert mode == "agent"
 
-        # When num_actions is omitted, scenario_info with target_tls_id should pick tls_side (2)
         ctrl2, _ = make_controller(
             "q-learning",
             "cologne1",
@@ -370,3 +388,20 @@ class TestMakeController:
         )
         assert ctrl2.num_actions == 2
 
+    @pytest.mark.parametrize("algorithm", ["max-pressure", "q-learning"])
+    def test_factory_distinguishes_default_and_disabled_max_green(self, algorithm, tmp_path):
+        path = str(tmp_path / "agent.json")
+        QLearningController(2).save(path)
+        default, _ = make_controller(algorithm, model_path=path)
+        disabled, _ = make_controller(algorithm, model_path=path, max_green=None)
+        assert default.max_green == 60.0
+        assert disabled.max_green is None
+
+    @pytest.mark.parametrize("name", ["ql", "Q Learning", "q_learning", "QLearning"])
+    def test_algorithm_aliases_use_same_factory_and_benchmark_path(self, name):
+        from src.evaluation.experiment_runner import ExperimentConfig, resolve_effective_decision_interval, resolve_model_path
+        agent, _ = make_controller(name)
+        assert isinstance(agent, QLearningController)
+        cfg = ExperimentConfig(scenario_name="cologne1", algorithm=name)
+        assert resolve_effective_decision_interval(cfg) == 5.0
+        assert resolve_model_path(cfg) == "models/q_learning/q_learning_cologne1_best.json"
