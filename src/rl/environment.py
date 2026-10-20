@@ -5,7 +5,7 @@ import numpy as np
 
 from src.config import DEFAULT_SAFETY_CONFIG, SimulationConfig, get_scenario_config
 from src.rl.discretization import StateDiscretizer
-from src.rl.rewards import NegativePressureReward
+from src.rl.rewards import MetricsAlignedReward, NegativePressureReward
 from src.runner import SimulationRunner
 
 
@@ -16,7 +16,7 @@ class TrafficSignalRLEnv:
         self,
         config_or_scenario: Optional[Union[SimulationConfig, str]] = None,
         state_discretizer: Optional[StateDiscretizer] = None,
-        reward_fn: Optional[NegativePressureReward] = None,
+        reward_fn: Optional[Union[NegativePressureReward, MetricsAlignedReward, Any]] = None,
         target_tls_id: Optional[str] = None,
         # Common scenario configuration parameters for backward compatibility
         scenario_name: Optional[str] = None,
@@ -166,6 +166,8 @@ class TrafficSignalRLEnv:
                 break
 
             act_dict = {self.tls_id: action} if step_idx == 0 else {}
+            manager = self.runner.tls_managers[self.tls_id]
+            switches_before = manager.phase_switch_count
             step_metrics = self.runner.step(actions=act_dict)
 
             tls_obs = self.runner.get_observation()[self.tls_id]
@@ -173,6 +175,9 @@ class TrafficSignalRLEnv:
                 in_lane_queues=tls_obs.in_lane_queues,
                 out_lane_queues=tls_obs.out_lane_queues,
                 pending_vehicles=step_metrics.pending_vehicles,
+                waiting_time=step_metrics.waiting_time,
+                completed_vehicles=step_metrics.step_completed_vehicles,
+                is_switch=(manager.phase_switch_count > switches_before),
             )
 
         terminated, truncated = self._is_terminated, self._is_truncated

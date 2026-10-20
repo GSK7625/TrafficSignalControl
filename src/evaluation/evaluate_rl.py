@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 from src.config import DEFAULT_SAFETY_CONFIG
 from src.controllers.q_learning import QLearningController
 from src.rl.environment import TrafficSignalRLEnv
-from src.rl.rewards import NegativePressureReward
+from src.rl.rewards import MetricsAlignedReward, NegativePressureReward
 
 
 def create_evaluation_session(
@@ -28,10 +28,16 @@ def create_evaluation_session(
     params = {key: config[key] for key in (*DEFAULT_SAFETY_CONFIG, "max_red", "decision_interval", "target_tls_id")}
     params["state_discretizer"] = agent.discretizer
     reward = dict(agent.reward_config or {})
-    if reward.pop("name", "NegativePressureReward") != "NegativePressureReward":
-        raise ValueError("Unsupported checkpoint reward function")
-    reward_kwargs = {k: v for k, v in reward.items() if k in ("scale", "pending_weight")}
-    env_options.setdefault("reward_fn", NegativePressureReward(**reward_kwargs))
+    reward_name = reward.pop("name", "NegativePressureReward")
+    if reward_name == "NegativePressureReward":
+        reward_kwargs = {k: v for k, v in reward.items() if k in ("scale", "pending_weight")}
+        env_options.setdefault("reward_fn", NegativePressureReward(**reward_kwargs))
+    elif reward_name == "MetricsAlignedReward":
+        valid_keys = ("scale", "w_completed", "w_queue", "w_waiting", "w_switch", "w_pending")
+        reward_kwargs = {k: v for k, v in reward.items() if k in valid_keys}
+        env_options.setdefault("reward_fn", MetricsAlignedReward(**reward_kwargs))
+    else:
+        raise ValueError(f"Unsupported checkpoint reward function: {reward_name}")
     env = TrafficSignalRLEnv(
         scenario_name=scenario_name, seed=seed, **{**params, **env_options},
     )

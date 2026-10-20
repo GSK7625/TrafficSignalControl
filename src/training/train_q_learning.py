@@ -6,7 +6,7 @@ import os
 import time
 from dataclasses import asdict, dataclass, fields
 from statistics import fmean
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.config import DEFAULT_SAFETY_CONFIG, load_yaml_config, resolve_config_path
 from src.controllers.q_learning import QLearningController
@@ -15,7 +15,7 @@ from src.io_utils import write_json_atomic
 from src.metrics import BENCHMARK_COMPLETION_THRESHOLD, completion_statistics
 from src.rl.discretization import StateDiscretizer
 from src.rl.environment import TrafficSignalRLEnv
-from src.rl.rewards import NegativePressureReward
+from src.rl.rewards import MetricsAlignedReward, NegativePressureReward
 
 
 def validate_completion_threshold(value: float) -> None:
@@ -97,7 +97,7 @@ def evaluate_greedy_q_learning(
     yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"],
     all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"],
     max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"],
-    reward_fn: Optional[NegativePressureReward] = None,
+    reward_fn: Optional[Any] = None,
     state_discretizer: Optional[StateDiscretizer] = None,
     max_steps: Optional[int] = 3600,
     seed: int = 42,
@@ -176,10 +176,16 @@ class TrainingConfig:
     val_interval: int = 5
     val_seeds: Optional[List[int]] = None
     min_val_completion: float = BENCHMARK_COMPLETION_THRESHOLD
+    reward_name: str = "NegativePressureReward"
     reward_scale: float = 1.0
     pending_weight: float = 0.5
     switch_penalty: float = 0.0
     consecutive_switch_penalty: float = 0.0
+    w_completed: float = 1.5
+    w_queue: float = 0.05
+    w_waiting: float = 0.01
+    w_switch: float = 0.5
+    w_pending: float = 0.02
     max_effective_green: float = 25.0
     serving_thresholds: Tuple[float, ...] = (2.0, 8.0)
     waiting_thresholds: Tuple[float, ...] = (4.0, 15.0, 35.0)
@@ -215,16 +221,32 @@ class TrainingConfig:
                 for k, v in master["safety"].items():
                     yaml_cfg.setdefault(k, v)
 
+        scenario_name = overrides.get("scenario_name", yaml_cfg.get("scenario_name", cls.scenario_name))
+        scenario_options = yaml_cfg.get("scenarios", {}).get(scenario_name, {})
+        if not isinstance(scenario_options, dict):
+            raise ValueError("Scenario training options must be a mapping")
+        for key, value in scenario_options.items():
+            if key in ("hyperparameters", "discretization", "reward"):
+                yaml_cfg[key] = {**yaml_cfg.get(key, {}), **value}
+            else:
+                yaml_cfg[key] = value
+
         names = {item.name for item in fields(cls)}
         params = {k: v for g in (yaml_cfg.get("hyperparameters", {}), yaml_cfg) for k, v in g.items() if k in names}
         rc = yaml_cfg.get("reward", {})
         dc = yaml_cfg.get("discretization", {})
 
         mapping = [
+            (rc.get("name") if "name" in rc else yaml_cfg.get("reward_name"), "reward_name", str),
             (rc.get("scale") if "scale" in rc else yaml_cfg.get("reward_scale"), "reward_scale", float),
             (rc.get("pending_weight"), "pending_weight", float),
             (rc.get("switch_penalty"), "switch_penalty", float),
             (rc.get("consecutive_switch_penalty"), "consecutive_switch_penalty", float),
+            (rc.get("w_completed"), "w_completed", float),
+            (rc.get("w_queue"), "w_queue", float),
+            (rc.get("w_waiting"), "w_waiting", float),
+            (rc.get("w_switch"), "w_switch", float),
+            (rc.get("w_pending"), "w_pending", float),
             (dc.get("max_effective_green"), "max_effective_green", float),
             (dc.get("serving_queue_thresholds"), "serving_thresholds", lambda v: tuple(float(x) for x in v)),
             (dc.get("waiting_queue_thresholds"), "waiting_thresholds", lambda v: tuple(float(x) for x in v)),
@@ -238,7 +260,16 @@ class TrainingConfig:
         return cls(**params)
 
 
-def _create_reward_fn(cfg: TrainingConfig) -> NegativePressureReward:
+def _create_reward_fn(cfg: TrainingConfig) -> Union[NegativePressureReward, MetricsAlignedReward]:
+    if cfg.reward_name == "MetricsAlignedReward":
+        return MetricsAlignedReward(
+            scale=cfg.reward_scale,
+            w_completed=cfg.w_completed,
+            w_queue=cfg.w_queue,
+            w_waiting=cfg.w_waiting,
+            w_switch=cfg.w_switch,
+            w_pending=cfg.w_pending,
+        )
     return NegativePressureReward(
         scale=cfg.reward_scale,
         pending_weight=cfg.pending_weight,
@@ -310,7 +341,8 @@ def _evaluate_checkpoint(
     avg_comp = float(fmean(r["completion_rate"] for r in val_results))
     is_viable = selector.is_viable(val_results)
     val_records = [
-        {k: r.get(k) for k in ("seed", "reward", "completion_rate", "validation_viable", "validation_rejection_reasons")}
+        {k: r.get(k) for k in ("seed", "reward", "completion_rate", "mean_waiting_time",
+                              "system_mean_delay", "validation_viable", "validation_rejection_reasons")}
         for r in val_results
     ]
     print(f"    --> [Eval] Ep {ep} | Rew: {avg_rew:.1f} | Comp: {avg_comp:.1%} | Viable: {is_viable}")

@@ -9,6 +9,17 @@ import src.training.train_q_learning as training
 from src.training.train_q_learning import ValidationCheckpointSelector, is_validation_viable
 
 
+def test_project_benchmark_seeds_are_separate_from_training_and_validation():
+    from src.config import load_yaml_config
+    config = load_yaml_config("configs/config.yaml")
+    benchmark_seeds = set(config["benchmark"]["seeds"])
+    for scenario in config["benchmark"]["scenarios"]:
+        cfg = training.TrainingConfig.from_yaml("configs/config.yaml", scenario_name=scenario)
+        training_seeds = set(range(cfg.seed + 1, cfg.seed + cfg.num_episodes + 1))
+        validation_seeds = set(cfg.val_seeds or [cfg.seed + 9999, cfg.seed + 10000])
+        assert benchmark_seeds.isdisjoint(training_seeds | validation_seeds)
+
+
 @pytest.mark.parametrize("threshold", [float("nan"), float("inf"), -float("inf"), -0.1, 1.1])
 @pytest.mark.parametrize("entry", ["config", "selector", "viability"])
 def test_completion_threshold_must_be_finite_fraction(threshold, entry):
@@ -43,6 +54,32 @@ def training_env(monkeypatch):
 
 class TestQLearningTraining:
     """Test suite for Q-Learning training orchestrator."""
+
+    def test_dataset_options_keep_shared_values_and_cli_precedence(self, tmp_path):
+        path = tmp_path / "scenarios.yaml"
+        path.write_text("""
+q_learning:
+  hyperparameters:
+    gamma: 0.95
+    learning_rate: 0.1
+  discretization:
+    group_by: phase
+    serving_queue_thresholds: [0.5, 3]
+  scenarios:
+    cologne1:
+      hyperparameters:
+        learning_rate: 0.05
+      discretization:
+        group_by: aggregate
+        serving_queue_thresholds: [2, 8]
+""", encoding="utf-8")
+        cologne = training.TrainingConfig.from_yaml(str(path), scenario_name="cologne1")
+        ingolstadt = training.TrainingConfig.from_yaml(str(path), scenario_name="ingolstadt1")
+        assert cologne.group_by == "aggregate" and cologne.serving_thresholds == (2, 8)
+        assert cologne.learning_rate == 0.05 and cologne.gamma == 0.95
+        assert ingolstadt.group_by == "phase" and ingolstadt.learning_rate == 0.1
+        explicit = training.TrainingConfig.from_yaml(str(path), scenario_name="cologne1", group_by="phase")
+        assert explicit.group_by == "phase"
 
     @pytest.mark.parametrize("threshold, accepted", [(0.99, False), (0.90, True)])
     def test_training_honors_completion_threshold(self, tmp_path, monkeypatch, training_env, threshold, accepted):
@@ -115,6 +152,39 @@ discretization:
 
         with pytest.raises(ValueError, match="group_by must be one of"):
             TrainingConfig(group_by="unknown_mode")
+
+    def test_training_config_metrics_aligned_reward(self, tmp_path, monkeypatch, training_env):
+        from src.training.train_q_learning import TrainingConfig, _create_reward_fn
+        from src.rl.rewards import MetricsAlignedReward
+
+        yaml_file = tmp_path / "config_reward.yaml"
+        yaml_file.write_text("""
+q_learning:
+  reward:
+    name: MetricsAlignedReward
+    scale: 2.0
+    w_completed: 3.0
+    w_queue: 0.1
+    w_waiting: 0.02
+    w_switch: 1.0
+    w_pending: 0.05
+""", encoding="utf-8")
+
+        cfg = TrainingConfig.from_yaml(str(yaml_file), scenario_name="ingolstadt1", num_episodes=1, val_interval=1, model_dir=str(tmp_path / "models"), log_dir=str(tmp_path / "logs"))
+        assert cfg.reward_name == "MetricsAlignedReward"
+        assert cfg.reward_scale == 2.0
+        assert cfg.w_completed == 3.0
+        assert cfg.w_queue == 0.1
+
+        reward_fn = _create_reward_fn(cfg)
+        assert isinstance(reward_fn, MetricsAlignedReward)
+        assert reward_fn.scale == 2.0
+        assert reward_fn.w_completed == 3.0
+
+        monkeypatch.setattr(training, "evaluate_greedy_q_learning", lambda **kw: {"reward": 5.0, "completion_rate": 1.0, "validation_viable": True, "is_valid": True})
+        result = training.train_q_learning(config=cfg)
+        saved = json.loads(Path(result["final_checkpoint_path"]).read_text(encoding="utf-8"))
+        assert saved["reward_config"]["name"] == "MetricsAlignedReward"
 
     def test_training_checkpoint_preserves_group_by(self, tmp_path, monkeypatch, training_env):
         from src.training.train_q_learning import TrainingConfig

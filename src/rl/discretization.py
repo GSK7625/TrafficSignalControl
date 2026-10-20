@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 class StateDiscretizer:
     """Discretizes continuous intersection observations into discrete state tuples.
 
-    Uses aggregate waiting queue representation: (current_phase, serving_bin, waiting_bin, time_bin).
+    Aggregate mode retains the legacy queue encoding. Phase mode records the
+    pressure of the current phase and the strongest competing phase, including
+    its identity, without an exponential vector of bins for every movement.
     """
 
     def __init__(
@@ -37,8 +39,8 @@ class StateDiscretizer:
         for thresholds in (self.serving_thresholds, self.waiting_thresholds):
             if any(not math.isfinite(x) or x < 0 for x in thresholds) or any(a >= b for a, b in zip(thresholds, thresholds[1:])):
                 raise ValueError("Queue thresholds must be finite, non-negative and strictly increasing")
-        if self.group_by not in ("aggregate", "branch"):
-            raise ValueError(f"group_by only supports 'aggregate', got {group_by}")
+        if self.group_by not in ("aggregate", "branch", "phase"):
+            raise ValueError(f"group_by only supports 'aggregate', 'branch', or 'phase', got {group_by}")
 
     def _bin_value(self, val: float, thresholds: Tuple[float, ...]) -> int:
         return bisect.bisect_right(thresholds, val)
@@ -54,7 +56,29 @@ class StateDiscretizer:
             if link.from_lane and 0 <= link.signal_index < len(phase_str) and phase_str[link.signal_index] in "Ggs"
         }
 
-    def discretize(self, obs: IntersectionObservation) -> Tuple[int, int, int, int]:
+    def discretize(self, obs: IntersectionObservation) -> Tuple[int, ...]:
+        time_bin = 0 if obs.is_in_transition else self._bin_value(obs.time_in_phase, (self.min_green, self.max_effective_green))
+        if self.group_by == "phase":
+            # Local import avoids coupling the legacy state encoder to controllers.
+            from src.controllers.max_pressure import compute_phase_pressure
+
+            topology = obs.topology.outs_per_in if obs.topology is not None else None
+            pressures = [
+                compute_phase_pressure(p, obs.controlled_links, obs.in_lane_queues,
+                                       obs.out_lane_queues, topology)
+                for p in obs.green_phases
+            ]
+            current = obs.current_phase
+            alternatives = [i for i in range(len(pressures)) if i != current]
+            strongest = max(alternatives, key=lambda i: pressures[i]) if alternatives else current
+            return (
+                current,
+                self._bin_value(pressures[current], self.serving_thresholds),
+                strongest,
+                time_bin,
+                self._bin_value(pressures[strongest], self.waiting_thresholds),
+            )
+
         green_lanes = self._get_green_lanes(obs)
         serving_q = sum(q for lane, q in obs.in_lane_queues.items() if lane in green_lanes)
         serving_bin = self._bin_value(serving_q, self.serving_thresholds)
@@ -62,7 +86,6 @@ class StateDiscretizer:
         waiting_q = sum(q for lane, q in obs.in_lane_queues.items() if lane not in green_lanes)
         waiting_bin = self._bin_value(waiting_q, self.waiting_thresholds)
 
-        time_bin = 0 if obs.is_in_transition else self._bin_value(obs.time_in_phase, (self.min_green, self.max_effective_green))
         return (obs.current_phase, serving_bin, waiting_bin, time_bin)
 
     def get_config(self) -> Dict[str, Any]:

@@ -29,23 +29,37 @@ q_learning:
     epsilon_start: 1.0
     epsilon_min: 0.05
     epsilon_decay: 0.94
-    num_episodes: 60
+    num_episodes: 100
     seed: 42
   discretization:
-    group_by: aggregate
+    # Compact state: current pressure, strongest competing phase and its pressure.
+    group_by: phase
     max_effective_green: 25.0
-    serving_queue_thresholds: [2.0, 8.0]
-    waiting_queue_thresholds: [4.0, 15.0, 35.0]
+    serving_queue_thresholds: [0.5, 3.0]
+    waiting_queue_thresholds: [0.5, 3.0, 8.0]
   reward:
-    name: NegativePressureReward
+    name: MetricsAlignedReward
     scale: 1.0
-    pending_weight: 0.5
+    w_completed: 1.5
+    w_queue: 0.05
+    w_waiting: 0.01
+    w_switch: 0.5
+    w_pending: 0.02
+  # Keep the established representation on Cologne unless validation improves.
+  scenarios:
+    cologne1:
+      discretization:
+        group_by: aggregate
+        serving_queue_thresholds: [2.0, 8.0]
+        waiting_queue_thresholds: [4.0, 15.0, 35.0]
 
 # python -m src.evaluation.experiment_runner --run-all
 # Add Q-Learning explicitly after training a checkpoint for each scenario.
 benchmark:
   scenarios: [cologne1, ingolstadt1]
   algorithms: [Fixed-Time, Max-Pressure]
-  seeds: [45, 999, 200]
+  # Training uses seed + episode (43..142); validation uses 10041, 10042.
+  # The selected Cologne refinement uses training seeds 1501..1510.
+  seeds: [200, 999, 2026]
   simulation:
     steps: 3600

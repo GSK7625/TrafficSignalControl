@@ -1,0 +1,846 @@
+{
+  "cologne1": {
+    "Fixed-Time": {
+      "effective_config": {
+        "steps": 3600,
+        "yellow_duration": 3.0,
+        "all_red_duration": 1.0,
+        "min_green": 5.0,
+        "max_green": 60.0,
+        "decision_interval": 1.0,
+        "max_red": 90.0,
+        "step_length": 1.0
+      },
+      "reward_config": null,
+      "controlled_tls_ids": [
+        "cluster_357187_359543"
+      ],
+      "run_count": 3,
+      "successful_count": 3,
+      "failed_count": 0,
+      "seeds": [
+        200,
+        999,
+        2026
+      ],
+      "status": "SUCCESS",
+      "is_valid": true,
+      "tripinfo_mean_waiting_time": {
+        "mean": 41.78,
+        "std": 0.94,
+        "min": 41.16,
+        "max": 42.86,
+        "available": true
+      },
+      "mean_waiting_time": {
+        "mean": 41.78,
+        "std": 0.94,
+        "min": 41.16,
+        "max": 42.86,
+        "available": true
+      },
+      "mean_queue_length": {
+        "mean": 21.65,
+        "std": 0.42,
+        "min": 21.3,
+        "max": 22.11,
+        "available": true
+      },
+      "total_completed_vehicles": {
+        "mean": 1982.67,
+        "std": 0.58,
+        "min": 1982.0,
+        "max": 1983.0,
+        "available": true
+      },
+      "completion_rate_pct": {
+        "mean": 98.39,
+        "std": 0.03,
+        "min": 98.36,
+        "max": 98.41,
+        "available": true
+      },
+      "throughput_vph": {
+        "mean": 1982.67,
+        "std": 0.58,
+        "min": 1982.0,
+        "max": 1983.0,
+        "available": true
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 78.15,
+        "std": 1.35,
+        "min": 77.28,
+        "max": 79.71,
+        "available": true
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 109687.78,
+        "std": 2523.05,
+        "min": 108060.9,
+        "max": 112594.24,
+        "available": true
+      },
+      "system_mean_delay": {
+        "mean": 48.47,
+        "std": 1.5,
+        "min": 47.46,
+        "max": 50.19,
+        "available": true
+      },
+      "system_total_delay": {
+        "mean": 97661.33,
+        "std": 3023.09,
+        "min": 95634.0,
+        "max": 101136.0,
+        "available": true
+      },
+      "collision_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "phase_change_count": {
+        "mean": 119.0,
+        "std": 0.0,
+        "min": 119.0,
+        "max": 119.0,
+        "available": true
+      },
+      "episode_reward": {
+        "mean": null,
+        "std": null,
+        "min": null,
+        "max": null,
+        "available": false
+      },
+      "safety_status": "SAFE",
+      "service_status": "COMPLETED"
+    },
+    "Max-Pressure": {
+      "effective_config": {
+        "steps": 3600,
+        "yellow_duration": 3.0,
+        "all_red_duration": 1.0,
+        "min_green": 5.0,
+        "max_green": 60.0,
+        "decision_interval": 1.0,
+        "max_red": 90.0,
+        "step_length": 1.0
+      },
+      "reward_config": null,
+      "controlled_tls_ids": [
+        "cluster_357187_359543"
+      ],
+      "run_count": 3,
+      "successful_count": 3,
+      "failed_count": 0,
+      "seeds": [
+        200,
+        999,
+        2026
+      ],
+      "status": "SUCCESS",
+      "is_valid": true,
+      "tripinfo_mean_waiting_time": {
+        "mean": 21.61,
+        "std": 0.46,
+        "min": 21.21,
+        "max": 22.12,
+        "available": true
+      },
+      "mean_waiting_time": {
+        "mean": 21.61,
+        "std": 0.46,
+        "min": 21.21,
+        "max": 22.12,
+        "available": true
+      },
+      "mean_queue_length": {
+        "mean": 10.77,
+        "std": 0.3,
+        "min": 10.56,
+        "max": 11.11,
+        "available": true
+      },
+      "total_completed_vehicles": {
+        "mean": 1994.0,
+        "std": 1.73,
+        "min": 1993.0,
+        "max": 1996.0,
+        "available": true
+      },
+      "completion_rate_pct": {
+        "mean": 98.96,
+        "std": 0.09,
+        "min": 98.91,
+        "max": 99.06,
+        "available": true
+      },
+      "throughput_vph": {
+        "mean": 1994.0,
+        "std": 1.73,
+        "min": 1993.0,
+        "max": 1996.0,
+        "available": true
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 72.19,
+        "std": 1.53,
+        "min": 71.29,
+        "max": 73.96,
+        "available": true
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 98417.54,
+        "std": 3291.9,
+        "min": 96432.04,
+        "max": 102217.42,
+        "available": true
+      },
+      "system_mean_delay": {
+        "mean": 29.53,
+        "std": 0.89,
+        "min": 29.01,
+        "max": 30.56,
+        "available": true
+      },
+      "system_total_delay": {
+        "mean": 59504.33,
+        "std": 1802.78,
+        "min": 58459.0,
+        "max": 61586.0,
+        "available": true
+      },
+      "collision_count": {
+        "mean": 0.33,
+        "std": 0.58,
+        "min": 0.0,
+        "max": 1.0,
+        "available": true,
+        "sum": 1
+      },
+      "teleport_count": {
+        "mean": 0.33,
+        "std": 0.58,
+        "min": 0.0,
+        "max": 1.0,
+        "available": true,
+        "sum": 1
+      },
+      "phase_change_count": {
+        "mean": 364.33,
+        "std": 2.52,
+        "min": 362.0,
+        "max": 367.0,
+        "available": true
+      },
+      "episode_reward": {
+        "mean": null,
+        "std": null,
+        "min": null,
+        "max": null,
+        "available": false
+      },
+      "safety_status": "INCIDENTS_DETECTED",
+      "service_status": "COMPLETED",
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 48.28,
+        "mean_waiting_time_improvement_pct": 48.28,
+        "mean_queue_length_improvement_pct": 50.25,
+        "total_completed_vehicles_improvement_pct": 0.57,
+        "completion_rate_pct_improvement_pct": 0.58,
+        "throughput_vph_improvement_pct": 0.57,
+        "tripinfo_mean_travel_time_improvement_pct": 7.63,
+        "tripinfo_total_time_loss_improvement_pct": 10.27,
+        "system_mean_delay_improvement_pct": 39.08,
+        "system_total_delay_improvement_pct": 39.07,
+        "phase_change_count_improvement_pct": -206.16
+      }
+    },
+    "Q-Learning": {
+      "effective_config": {
+        "steps": 3600,
+        "yellow_duration": 3.0,
+        "all_red_duration": 1.0,
+        "min_green": 5.0,
+        "max_green": 60.0,
+        "decision_interval": 5.0,
+        "max_red": 90.0,
+        "step_length": 1.0
+      },
+      "reward_config": {
+        "name": "MetricsAlignedReward",
+        "scale": 1.0,
+        "w_completed": 1.5,
+        "w_queue": 0.05,
+        "w_waiting": 0.01,
+        "w_switch": 0.5,
+        "w_pending": 0.02
+      },
+      "controlled_tls_ids": [
+        "cluster_357187_359543"
+      ],
+      "run_count": 3,
+      "successful_count": 3,
+      "failed_count": 0,
+      "seeds": [
+        200,
+        999,
+        2026
+      ],
+      "status": "SUCCESS",
+      "is_valid": true,
+      "tripinfo_mean_waiting_time": {
+        "mean": 12.1,
+        "std": 0.38,
+        "min": 11.8,
+        "max": 12.53,
+        "available": true
+      },
+      "mean_waiting_time": {
+        "mean": 12.1,
+        "std": 0.38,
+        "min": 11.8,
+        "max": 12.53,
+        "available": true
+      },
+      "mean_queue_length": {
+        "mean": 6.09,
+        "std": 0.13,
+        "min": 5.98,
+        "max": 6.23,
+        "available": true
+      },
+      "total_completed_vehicles": {
+        "mean": 1999.0,
+        "std": 1.0,
+        "min": 1998.0,
+        "max": 2000.0,
+        "available": true
+      },
+      "completion_rate_pct": {
+        "mean": 99.21,
+        "std": 0.05,
+        "min": 99.16,
+        "max": 99.26,
+        "available": true
+      },
+      "throughput_vph": {
+        "mean": 1999.0,
+        "std": 1.0,
+        "min": 1998.0,
+        "max": 2000.0,
+        "available": true
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 47.41,
+        "std": 0.58,
+        "min": 46.96,
+        "max": 48.06,
+        "available": true
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 49181.89,
+        "std": 1335.09,
+        "min": 48024.15,
+        "max": 50642.35,
+        "available": true
+      },
+      "system_mean_delay": {
+        "mean": 14.29,
+        "std": 0.51,
+        "min": 13.71,
+        "max": 14.68,
+        "available": true
+      },
+      "system_total_delay": {
+        "mean": 28785.67,
+        "std": 1030.02,
+        "min": 27623.0,
+        "max": 29584.0,
+        "available": true
+      },
+      "collision_count": {
+        "mean": 0.33,
+        "std": 0.58,
+        "min": 0.0,
+        "max": 1.0,
+        "available": true,
+        "sum": 1
+      },
+      "teleport_count": {
+        "mean": 0.33,
+        "std": 0.58,
+        "min": 0.0,
+        "max": 1.0,
+        "available": true,
+        "sum": 1
+      },
+      "phase_change_count": {
+        "mean": 189.33,
+        "std": 4.04,
+        "min": 185.0,
+        "max": 193.0,
+        "available": true
+      },
+      "episode_reward": {
+        "mean": -37.71,
+        "std": 158.1,
+        "min": -195.42,
+        "max": 120.77,
+        "available": true
+      },
+      "safety_status": "INCIDENTS_DETECTED",
+      "service_status": "COMPLETED",
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 71.04,
+        "mean_waiting_time_improvement_pct": 71.04,
+        "mean_queue_length_improvement_pct": 71.87,
+        "total_completed_vehicles_improvement_pct": 0.82,
+        "completion_rate_pct_improvement_pct": 0.83,
+        "throughput_vph_improvement_pct": 0.82,
+        "tripinfo_mean_travel_time_improvement_pct": 39.33,
+        "tripinfo_total_time_loss_improvement_pct": 55.16,
+        "system_mean_delay_improvement_pct": 70.52,
+        "system_total_delay_improvement_pct": 70.53,
+        "phase_change_count_improvement_pct": -59.1
+      }
+    }
+  },
+  "ingolstadt1": {
+    "Fixed-Time": {
+      "effective_config": {
+        "steps": 3600,
+        "yellow_duration": 3.0,
+        "all_red_duration": 1.0,
+        "min_green": 5.0,
+        "max_green": 60.0,
+        "decision_interval": 1.0,
+        "max_red": 90.0,
+        "step_length": 1.0
+      },
+      "reward_config": null,
+      "controlled_tls_ids": [
+        "cluster_274083968_cluster_1200364014_1200364088"
+      ],
+      "run_count": 3,
+      "successful_count": 3,
+      "failed_count": 0,
+      "seeds": [
+        200,
+        999,
+        2026
+      ],
+      "status": "SUCCESS",
+      "is_valid": true,
+      "tripinfo_mean_waiting_time": {
+        "mean": 18.82,
+        "std": 1.15,
+        "min": 17.97,
+        "max": 20.12,
+        "available": true
+      },
+      "mean_waiting_time": {
+        "mean": 18.82,
+        "std": 1.15,
+        "min": 17.97,
+        "max": 20.12,
+        "available": true
+      },
+      "mean_queue_length": {
+        "mean": 4.92,
+        "std": 0.04,
+        "min": 4.87,
+        "max": 4.95,
+        "available": true
+      },
+      "total_completed_vehicles": {
+        "mean": 1698.0,
+        "std": 1.73,
+        "min": 1697.0,
+        "max": 1700.0,
+        "available": true
+      },
+      "completion_rate_pct": {
+        "mean": 98.95,
+        "std": 0.1,
+        "min": 98.89,
+        "max": 99.07,
+        "available": true
+      },
+      "throughput_vph": {
+        "mean": 1698.0,
+        "std": 1.73,
+        "min": 1697.0,
+        "max": 1700.0,
+        "available": true
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 49.7,
+        "std": 1.33,
+        "min": 48.91,
+        "max": 51.23,
+        "available": true
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 49043.67,
+        "std": 2111.85,
+        "min": 47750.03,
+        "max": 51480.68,
+        "available": true
+      },
+      "system_mean_delay": {
+        "mean": 20.27,
+        "std": 1.22,
+        "min": 19.3,
+        "max": 21.64,
+        "available": true
+      },
+      "system_total_delay": {
+        "mean": 34783.33,
+        "std": 2095.13,
+        "min": 33122.0,
+        "max": 37137.0,
+        "available": true
+      },
+      "collision_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "phase_change_count": {
+        "mean": 105.0,
+        "std": 0.0,
+        "min": 105.0,
+        "max": 105.0,
+        "available": true
+      },
+      "episode_reward": {
+        "mean": null,
+        "std": null,
+        "min": null,
+        "max": null,
+        "available": false
+      },
+      "safety_status": "SAFE",
+      "service_status": "COMPLETED"
+    },
+    "Max-Pressure": {
+      "effective_config": {
+        "steps": 3600,
+        "yellow_duration": 3.0,
+        "all_red_duration": 1.0,
+        "min_green": 5.0,
+        "max_green": 60.0,
+        "decision_interval": 1.0,
+        "max_red": 90.0,
+        "step_length": 1.0
+      },
+      "reward_config": null,
+      "controlled_tls_ids": [
+        "cluster_274083968_cluster_1200364014_1200364088"
+      ],
+      "run_count": 3,
+      "successful_count": 3,
+      "failed_count": 0,
+      "seeds": [
+        200,
+        999,
+        2026
+      ],
+      "status": "SUCCESS",
+      "is_valid": true,
+      "tripinfo_mean_waiting_time": {
+        "mean": 5.25,
+        "std": 0.18,
+        "min": 5.05,
+        "max": 5.39,
+        "available": true
+      },
+      "mean_waiting_time": {
+        "mean": 5.25,
+        "std": 0.18,
+        "min": 5.05,
+        "max": 5.39,
+        "available": true
+      },
+      "mean_queue_length": {
+        "mean": 1.17,
+        "std": 0.15,
+        "min": 1.05,
+        "max": 1.33,
+        "available": true
+      },
+      "total_completed_vehicles": {
+        "mean": 1701.33,
+        "std": 2.31,
+        "min": 1700.0,
+        "max": 1704.0,
+        "available": true
+      },
+      "completion_rate_pct": {
+        "mean": 99.15,
+        "std": 0.13,
+        "min": 99.07,
+        "max": 99.3,
+        "available": true
+      },
+      "throughput_vph": {
+        "mean": 1701.33,
+        "std": 2.31,
+        "min": 1700.0,
+        "max": 1704.0,
+        "available": true
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 36.27,
+        "std": 0.46,
+        "min": 35.82,
+        "max": 36.74,
+        "available": true
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 26262.69,
+        "std": 859.0,
+        "min": 25504.44,
+        "max": 27195.6,
+        "available": true
+      },
+      "system_mean_delay": {
+        "mean": 6.66,
+        "std": 0.32,
+        "min": 6.29,
+        "max": 6.87,
+        "available": true
+      },
+      "system_total_delay": {
+        "mean": 11432.0,
+        "std": 554.94,
+        "min": 10793.0,
+        "max": 11793.0,
+        "available": true
+      },
+      "collision_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "phase_change_count": {
+        "mean": 200.33,
+        "std": 4.04,
+        "min": 196.0,
+        "max": 204.0,
+        "available": true
+      },
+      "episode_reward": {
+        "mean": null,
+        "std": null,
+        "min": null,
+        "max": null,
+        "available": false
+      },
+      "safety_status": "SAFE",
+      "service_status": "COMPLETED",
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 72.1,
+        "mean_waiting_time_improvement_pct": 72.1,
+        "mean_queue_length_improvement_pct": 76.22,
+        "total_completed_vehicles_improvement_pct": 0.2,
+        "completion_rate_pct_improvement_pct": 0.2,
+        "throughput_vph_improvement_pct": 0.2,
+        "tripinfo_mean_travel_time_improvement_pct": 27.02,
+        "tripinfo_total_time_loss_improvement_pct": 46.45,
+        "system_mean_delay_improvement_pct": 67.14,
+        "system_total_delay_improvement_pct": 67.13,
+        "collision_count_improvement_pct": 0.0,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": -90.79
+      }
+    },
+    "Q-Learning": {
+      "effective_config": {
+        "steps": 3600,
+        "yellow_duration": 3.0,
+        "all_red_duration": 1.0,
+        "min_green": 5.0,
+        "max_green": 60.0,
+        "decision_interval": 5.0,
+        "max_red": 90.0,
+        "step_length": 1.0
+      },
+      "reward_config": {
+        "name": "MetricsAlignedReward",
+        "scale": 1.0,
+        "w_completed": 1.5,
+        "w_queue": 0.05,
+        "w_waiting": 0.01,
+        "w_switch": 0.5,
+        "w_pending": 0.02
+      },
+      "controlled_tls_ids": [
+        "cluster_274083968_cluster_1200364014_1200364088"
+      ],
+      "run_count": 3,
+      "successful_count": 3,
+      "failed_count": 0,
+      "seeds": [
+        200,
+        999,
+        2026
+      ],
+      "status": "SUCCESS",
+      "is_valid": true,
+      "tripinfo_mean_waiting_time": {
+        "mean": 5.72,
+        "std": 0.81,
+        "min": 5.24,
+        "max": 6.65,
+        "available": true
+      },
+      "mean_waiting_time": {
+        "mean": 5.72,
+        "std": 0.81,
+        "min": 5.24,
+        "max": 6.65,
+        "available": true
+      },
+      "mean_queue_length": {
+        "mean": 1.25,
+        "std": 0.15,
+        "min": 1.12,
+        "max": 1.42,
+        "available": true
+      },
+      "total_completed_vehicles": {
+        "mean": 1700.67,
+        "std": 0.58,
+        "min": 1700.0,
+        "max": 1701.0,
+        "available": true
+      },
+      "completion_rate_pct": {
+        "mean": 99.11,
+        "std": 0.03,
+        "min": 99.07,
+        "max": 99.13,
+        "available": true
+      },
+      "throughput_vph": {
+        "mean": 1700.67,
+        "std": 0.58,
+        "min": 1700.0,
+        "max": 1701.0,
+        "available": true
+      },
+      "tripinfo_mean_travel_time": {
+        "mean": 36.51,
+        "std": 1.1,
+        "min": 35.61,
+        "max": 37.73,
+        "available": true
+      },
+      "tripinfo_total_time_loss": {
+        "mean": 26670.25,
+        "std": 1997.63,
+        "min": 25006.17,
+        "max": 28885.64,
+        "available": true
+      },
+      "system_mean_delay": {
+        "mean": 7.17,
+        "std": 0.9,
+        "min": 6.63,
+        "max": 8.21,
+        "available": true
+      },
+      "system_total_delay": {
+        "mean": 12304.67,
+        "std": 1541.42,
+        "min": 11377.0,
+        "max": 14084.0,
+        "available": true
+      },
+      "collision_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "teleport_count": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "available": true,
+        "sum": 0
+      },
+      "phase_change_count": {
+        "mean": 186.33,
+        "std": 1.53,
+        "min": 185.0,
+        "max": 188.0,
+        "available": true
+      },
+      "episode_reward": {
+        "mean": 1453.69,
+        "std": 315.24,
+        "min": 1092.38,
+        "max": 1672.66,
+        "available": true
+      },
+      "safety_status": "SAFE",
+      "service_status": "COMPLETED",
+      "improvements_vs_baseline": {
+        "tripinfo_mean_waiting_time_improvement_pct": 69.61,
+        "mean_waiting_time_improvement_pct": 69.61,
+        "mean_queue_length_improvement_pct": 74.59,
+        "total_completed_vehicles_improvement_pct": 0.16,
+        "completion_rate_pct_improvement_pct": 0.16,
+        "throughput_vph_improvement_pct": 0.16,
+        "tripinfo_mean_travel_time_improvement_pct": 26.54,
+        "tripinfo_total_time_loss_improvement_pct": 45.62,
+        "system_mean_delay_improvement_pct": 64.63,
+        "system_total_delay_improvement_pct": 64.62,
+        "collision_count_improvement_pct": 0.0,
+        "teleport_count_improvement_pct": 0.0,
+        "phase_change_count_improvement_pct": -77.46
+      }
+    }
+  }
+}

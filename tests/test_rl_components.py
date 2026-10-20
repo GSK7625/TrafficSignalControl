@@ -14,7 +14,7 @@ from src.evaluation.evaluate_rl import create_evaluation_session, run_greedy_eva
 from src.phase_manager import SafePhaseManager
 from src.rl.discretization import StateDiscretizer
 from src.rl.environment import TrafficSignalRLEnv
-from src.rl.rewards import NegativePressureReward
+from src.rl.rewards import MetricsAlignedReward, NegativePressureReward
 import src.training.train_q_learning as tql
 
 
@@ -113,6 +113,40 @@ class TestStateDiscretizer:
         with pytest.raises(ValueError, match="group_by only supports 'aggregate'"):
             StateDiscretizer(group_by="invalid_mode")
 
+    def test_phase_state_distinguishes_competing_directions(self, make_observation):
+        links = [ControlledLink(i, f"in_{i}", f"out_{i}") for i in range(3)]
+        obs = make_observation(green_phases=["Grr", "rGr", "rrG"], controlled_links=links,
+                               in_lane_queues={"in_0": 2, "in_1": 8, "in_2": 0})
+        disc = StateDiscretizer(group_by="phase")
+        first = disc.discretize(obs)
+        aggregate = StateDiscretizer().discretize(obs)
+        obs.in_lane_queues = {"in_0": 2, "in_1": 0, "in_2": 8}
+        second = disc.discretize(obs)
+        assert StateDiscretizer().discretize(obs) == aggregate
+        assert first != second
+        assert first[2] == 1 and second[2] == 2
+
+    def test_phase_state_accounts_for_downstream_blockage(self, make_observation):
+        links = [ControlledLink(i, f"in_{i}", f"out_{i}") for i in range(3)]
+        obs = make_observation(green_phases=["Grr", "rGr", "rrG"], controlled_links=links,
+                               in_lane_queues={"in_0": 0, "in_1": 8, "in_2": 4},
+                               out_lane_queues={"out_1": 10})
+        disc = StateDiscretizer(group_by="phase")
+        assert disc.discretize(obs)[2] == 2
+        restored = StateDiscretizer.from_config(disc.get_config())
+        assert restored.discretize(obs) == disc.discretize(obs)
+
+    def test_phase_state_checkpoint_roundtrip(self, sample_observation, tmp_path):
+        disc = StateDiscretizer(group_by="phase")
+        agent = QLearningController(2, discretizer=disc)
+        state = disc.discretize(sample_observation)
+        agent.update(state, 1, 3, state, done=True)
+        path = str(tmp_path / "phase.json")
+        agent.save(path)
+        restored = QLearningController.from_checkpoint(path)
+        assert restored.discretizer.discretize(sample_observation) == state
+        assert restored.select_action_for_state(state) == 1
+
 
 class TestRewards:
     """Test suite for RL Reward functions."""
@@ -182,9 +216,114 @@ class TestRewards:
         with pytest.raises(ValueError, match="pending_weight must be non-negative"):
             NegativePressureReward(pending_weight=-0.5)
 
+    def test_negative_pressure_reward_accepts_extra_kwargs(self):
+        reward_fn = NegativePressureReward(scale=1.0)
+        # Should not raise TypeError when passed extra metrics
+        reward_fn.record_step(
+            in_lane_queues={"lane_0": 2.0},
+            out_lane_queues={},
+            pending_vehicles=1,
+            waiting_time=10.0,
+            completed_vehicles=2,
+            is_switch=True,
+        )
+        assert reward_fn.calculate_reward() == -2.0
+
+
+class TestMetricsAlignedReward:
+    """Test suite for MetricsAlignedReward."""
+
+    def test_initialization_defaults_and_get_config(self):
+        reward_fn = MetricsAlignedReward()
+        cfg = reward_fn.get_config()
+        assert cfg["name"] == "MetricsAlignedReward"
+        assert cfg["scale"] == 1.0
+        assert cfg["w_completed"] == 1.5
+        assert cfg["w_queue"] == 0.05
+        assert cfg["w_waiting"] == 0.01
+        assert cfg["w_switch"] == 0.5
+        assert cfg["w_pending"] == 0.02
+
+    @pytest.mark.parametrize("param,invalid_val", [
+        ("scale", -1.0),
+        ("scale", float("nan")),
+        ("w_completed", -0.1),
+        ("w_queue", float("inf")),
+        ("w_waiting", -1.0),
+        ("w_switch", -0.5),
+        ("w_pending", -2.0),
+    ])
+    def test_parameter_validation(self, param, invalid_val):
+        with pytest.raises(ValueError, match=f"{param} must be non-negative and finite"):
+            MetricsAlignedReward(**{param: invalid_val})
+
+    def test_throughput_bonus(self):
+        reward_fn = MetricsAlignedReward(
+            scale=1.0, w_completed=2.0, w_queue=0.0, w_waiting=0.0, w_switch=0.0, w_pending=0.0
+        )
+        # 3 vehicles completed across 2 simulation steps
+        reward_fn.record_step(completed_vehicles=1)
+        reward_fn.record_step(completed_vehicles=2)
+        assert reward_fn.calculate_reward() == 6.0  # 3 * 2.0
+
+    def test_quadratic_queue_penalty_penalizes_concentrated_queues(self):
+        # Balanced: 4 lanes with 2 veh each -> sum(q^2) = 4 * 4 = 16
+        reward_balanced = MetricsAlignedReward(w_completed=0.0, w_queue=1.0, w_waiting=0.0, w_switch=0.0, w_pending=0.0)
+        reward_balanced.record_step(in_lane_queues={"l1": 2.0, "l2": 2.0, "l3": 2.0, "l4": 2.0})
+
+        # Concentrated: 1 lane with 8 veh, 3 empty -> sum(q^2) = 64
+        reward_concentrated = MetricsAlignedReward(w_completed=0.0, w_queue=1.0, w_waiting=0.0, w_switch=0.0, w_pending=0.0)
+        reward_concentrated.record_step(in_lane_queues={"l1": 8.0, "l2": 0.0, "l3": 0.0, "l4": 0.0})
+
+        # Concentrated queue must receive 4x heavier penalty
+        assert reward_balanced.calculate_reward() == -16.0
+        assert reward_concentrated.calculate_reward() == -64.0
+
+    def test_waiting_time_and_pending_penalties(self):
+        reward_fn = MetricsAlignedReward(
+            w_completed=0.0, w_queue=0.0, w_waiting=0.1, w_switch=0.0, w_pending=0.5
+        )
+        reward_fn.record_step(waiting_time=50.0, pending_vehicles=4)
+        reward_fn.record_step(waiting_time=30.0, pending_vehicles=2)
+        # avg waiting = 40.0 -> penalty 4.0; avg pending = 3.0 -> penalty 1.5
+        assert pytest.approx(reward_fn.calculate_reward(), 1e-6) == -5.5
+
+    def test_switch_penalty_applied_once_per_interval(self):
+        reward_fn = MetricsAlignedReward(
+            w_completed=0.0, w_queue=0.0, w_waiting=0.0, w_switch=3.0, w_pending=0.0
+        )
+        # First step triggers a phase switch
+        reward_fn.record_step(is_switch=True)
+        # Subsequent steps in same interval do not switch
+        reward_fn.record_step(is_switch=False)
+        reward_fn.record_step(is_switch=False)
+        assert reward_fn.calculate_reward() == -3.0
+
+    def test_reset_interval_clears_metrics(self):
+        reward_fn = MetricsAlignedReward()
+        reward_fn.record_step(completed_vehicles=5, is_switch=True)
+        assert reward_fn.calculate_reward() != 0.0
+        reward_fn.reset_interval()
+        assert reward_fn.calculate_reward() == 0.0
+
 
 class TestTrafficSignalRLEnv:
     """Test suite for TrafficSignalRLEnv lifecycle and configuration."""
+
+    def test_switch_penalty_counts_actual_switch_once_during_clearance(self):
+        env = TrafficSignalRLEnv("ingolstadt1", decision_interval=1, max_steps=15)
+        try:
+            env.reset()
+            record = MagicMock(wraps=env.reward_fn.record_step)
+            env.reward_fn.record_step = record
+            for _ in range(5):
+                env.step(0)
+            # Request the same target throughout yellow and all-red.
+            for _ in range(4):
+                env.step(2)
+            assert sum(call.kwargs["is_switch"] for call in record.call_args_list) == 1
+        finally:
+            env.close()
 
     def test_env_save_run_details_default(self):
         env = TrafficSignalRLEnv(scenario_name="cologne1")
@@ -227,6 +366,35 @@ class TestTrafficSignalRLEnv:
         assert env.reward_fn.get_config() == {"name": "NegativePressureReward", "scale": 2.0, "pending_weight": 0.5}
         env.reward_fn.record_step({"in": 3}, pending_vehicles=4)
         assert env.reward_fn.calculate_reward() == -10.0
+
+    def test_checkpoint_restores_metrics_aligned_reward(self, tmp_path):
+        probe = TrafficSignalRLEnv("cologne1")
+        agent = QLearningController(probe.num_actions)
+        agent.reward_config = {
+            "name": "MetricsAlignedReward",
+            "scale": 1.0,
+            "w_completed": 2.0,
+            "w_queue": 0.1,
+            "w_waiting": 0.05,
+            "w_switch": 1.0,
+            "w_pending": 0.03,
+        }
+        path = str(tmp_path / "agent_metrics.json")
+        agent.save(path)
+        _, env = create_evaluation_session("cologne1", path)
+        assert env.reward_fn.get_config()["name"] == "MetricsAlignedReward"
+        assert env.reward_fn.w_completed == 2.0
+        env.reward_fn.record_step(completed_vehicles=3)
+        assert env.reward_fn.calculate_reward() == 6.0
+
+    def test_checkpoint_rejects_unknown_reward_name(self, tmp_path):
+        probe = TrafficSignalRLEnv("cologne1")
+        agent = QLearningController(probe.num_actions)
+        agent.reward_config = {"name": "AlienReward"}
+        path = str(tmp_path / "agent_alien.json")
+        agent.save(path)
+        with pytest.raises(ValueError, match="Unsupported checkpoint reward function: AlienReward"):
+            create_evaluation_session("cologne1", path)
 
     def test_rl_environment_uses_shared_all_red_default(self):
         assert (

@@ -56,6 +56,7 @@ class NegativePressureReward:
         out_lane_queues: Optional[Dict[str, float]] = None,
         pending_vehicles: int = 0,
         controlled_links: Optional[List[Any]] = None,
+        **kwargs: Any,
     ) -> None:
         """Records queues for one simulation step and computes PressLight pressure."""
         if controlled_links and not self.topology:
@@ -82,4 +83,115 @@ class NegativePressureReward:
             "name": "NegativePressureReward",
             "scale": self.scale,
             "pending_weight": self.pending_weight,
+        }
+
+
+class MetricsAlignedReward:
+    """Multi-objective reward function aligned directly with 3 core traffic metrics:
+    - Metric 1: Waiting Time (delay penalty)
+    - Metric 2: Queue Length (quadratic queue penalty to penalize long bottlenecks)
+    - Metric 3: Throughput (positive reward for completed vehicles)
+    Plus lost-time switch penalty to discourage erratic phase chattering.
+    """
+
+    def __init__(
+        self,
+        scale: float = 1.0,
+        w_completed: float = 1.5,
+        w_queue: float = 0.05,
+        w_waiting: float = 0.01,
+        w_switch: float = 0.5,
+        w_pending: float = 0.02,
+    ):
+        for name, val in (
+            ("scale", scale),
+            ("w_completed", w_completed),
+            ("w_queue", w_queue),
+            ("w_waiting", w_waiting),
+            ("w_switch", w_switch),
+            ("w_pending", w_pending),
+        ):
+            if not math.isfinite(val) or val < 0:
+                raise ValueError(f"{name} must be non-negative and finite, got {val}")
+
+        self.scale = float(scale)
+        self.w_completed = float(w_completed)
+        self.w_queue = float(w_queue)
+        self.w_waiting = float(w_waiting)
+        self.w_switch = float(w_switch)
+        self.w_pending = float(w_pending)
+
+        self._completed_sum = 0.0
+        self._queue_sq_sum = 0.0
+        self._waiting_sum = 0.0
+        self._pending_sum = 0.0
+        self._has_switch = False
+        self._step_count = 0
+
+    def set_topology_from_links(self, controlled_links: List[Any]) -> None:
+        """No-op for compatibility with topology injection."""
+        pass
+
+    def reset_interval(self) -> None:
+        """Resets transient metrics for a decision interval."""
+        self._completed_sum = 0.0
+        self._queue_sq_sum = 0.0
+        self._waiting_sum = 0.0
+        self._pending_sum = 0.0
+        self._has_switch = False
+        self._step_count = 0
+
+    def reset(self) -> None:
+        """Resets the reward function state for a new episode."""
+        self.reset_interval()
+
+    def record_step(
+        self,
+        in_lane_queues: Optional[Dict[str, float]] = None,
+        out_lane_queues: Optional[Dict[str, float]] = None,
+        pending_vehicles: int = 0,
+        waiting_time: float = 0.0,
+        completed_vehicles: int = 0,
+        is_switch: bool = False,
+        controlled_links: Optional[List[Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Records metrics for one simulation step."""
+        if in_lane_queues:
+            self._queue_sq_sum += sum(float(q) ** 2 for q in in_lane_queues.values())
+        self._waiting_sum += float(waiting_time or 0.0)
+        self._completed_sum += float(completed_vehicles or 0)
+        self._pending_sum += float(pending_vehicles or 0)
+        if is_switch:
+            self._has_switch = True
+        self._step_count += 1
+
+    def calculate_reward(self) -> float:
+        """Calculates normalized reward for the decision interval."""
+        if self._step_count == 0:
+            return 0.0
+
+        avg_queue_sq = self._queue_sq_sum / self._step_count
+        avg_waiting = self._waiting_sum / self._step_count
+        avg_pending = self._pending_sum / self._step_count
+
+        reward = (
+            self.w_completed * self._completed_sum
+            - self.w_queue * avg_queue_sq
+            - self.w_waiting * avg_waiting
+            - self.w_pending * avg_pending
+            - (self.w_switch if self._has_switch else 0.0)
+        )
+        return float(reward * self.scale)
+
+    def get_config(self) -> Dict[str, Any]:
+        """Returns reward function configuration."""
+        return {
+            "name": "MetricsAlignedReward",
+            "scale": self.scale,
+            "w_completed": self.w_completed,
+            "w_queue": self.w_queue,
+            "w_waiting": self.w_waiting,
+            "w_switch": self.w_switch,
+            "w_pending": self.w_pending,
         }
