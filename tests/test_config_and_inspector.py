@@ -1,10 +1,14 @@
 """Unit tests for SimulationConfig, YAML loader, and dataset inspection."""
 
 import os
+from dataclasses import replace
+from pathlib import Path
+import subprocess
+import sys
 import pytest
 
 from src.config import SimulationConfig, load_yaml_config
-from src.data_inspector import inspect_all_scenarios, inspect_scenario
+from src.data_inspector import get_window_demand, inspect_all_scenarios, inspect_scenario
 
 
 class TestSimulationConfig:
@@ -89,14 +93,9 @@ class TestYamlConfigLoader:
             load_yaml_config(str(bad_yaml))
 
     def test_load_existing_project_configs(self):
-        exp_cfg = load_yaml_config("configs/experiments.yaml")
-        assert isinstance(exp_cfg, dict)
-        assert "scenarios" in exp_cfg
-        assert "algorithms" in exp_cfg
-
-        ql_cfg = load_yaml_config("configs/q_learning.yaml")
-        assert isinstance(ql_cfg, dict)
-        assert ql_cfg.get("algorithm") == "QLearning"
+        config = load_yaml_config("configs/config.yaml")
+        assert set(config) == {"safety", "simulation", "q_learning", "benchmark"}
+        assert config["benchmark"]["algorithms"] == ["Fixed-Time", "Max-Pressure"]
 
 
 class TestDataInspector:
@@ -156,3 +155,44 @@ class TestDataInspector:
         cfg.write_text("<configuration><input></input></configuration>", encoding="utf-8")
         with pytest.raises(ValueError, match="net-file"):
             inspect_scenario("test", cfg_path=str(cfg))
+
+    def test_resolve_config_path_default_and_custom(self, tmp_path):
+        from src.config import resolve_config_path
+        # 1. Custom file exists
+        custom = tmp_path / "custom.yaml"
+        custom.write_text("simulation: {}", encoding="utf-8")
+        assert resolve_config_path(str(custom)) == os.path.abspath(str(custom))
+
+        # 2. Custom file does not exist -> raises FileNotFoundError
+        with pytest.raises(FileNotFoundError, match="Bắt buộc phải có file cấu hình YAML"):
+            resolve_config_path("non_existent_config.yaml")
+
+        # 3. Default path resolves to master config when present
+        resolved = resolve_config_path("configs/config.yaml")
+        assert os.path.isfile(resolved)
+
+    @pytest.mark.parametrize("options", [
+        {"begin_time": float("nan")}, {"end_time": float("inf")},
+        {"begin_time": 10, "end_time": 5}, {"max_steps": 2.5},
+    ])
+    def test_simulation_rejects_invalid_window_and_step_limits(self, options):
+        with pytest.raises(ValueError):
+            SimulationConfig("cologne1", **options)
+
+    def test_window_demand_excludes_departures_at_end(self):
+        info = replace(inspect_scenario("cologne1"), departure_times=[0, 9, 10, 19, 20])
+        assert get_window_demand(info, 10, 20)["scheduled_demand_in_window"] == 2
+        assert get_window_demand(info, 10, 10)["scheduled_demand_in_window"] == 0
+
+    def test_import_does_not_load_local_yaml_or_change_api_defaults(self, tmp_path):
+        (tmp_path / "configs").mkdir()
+        (tmp_path / "configs" / "config.yaml").write_text("safety: [broken", encoding="utf-8")
+        code = (
+            f"import sys; sys.path.insert(0, {str(Path.cwd())!r}); "
+            "from src.config import SimulationConfig; "
+            "assert SimulationConfig.__dataclass_fields__['min_green'].default == 5.0"
+        )
+        result = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+
+

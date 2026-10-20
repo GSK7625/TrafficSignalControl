@@ -10,7 +10,8 @@ from src.controllers.base import ControlledLink
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
 from src.controllers.q_learning import QLearningController
-from src.data_inspector import PhaseInfo
+from src.data_inspector import PhaseInfo, get_window_demand
+from src.phase_manager import SafePhaseManager
 from src.runner import SimulationRunner, extract_green_phases
 
 
@@ -151,6 +152,11 @@ class TestSimulationRunnerSetup:
         runner.step({})
         assert runner.total_collision_vehicle_involvements == 2
         assert runner.unique_colliding_vehicles == {"a", "b"}
+        events = runner.safety_metadata()["safety_events"]
+        assert len(events) == 1
+        assert events[0]["type"] == "collision"
+        assert events[0]["sim_time"] == 1.0
+        assert events[0]["collider"] == "a"
 
     def test_finalize_is_idempotent_and_closes_on_accounting_error(self, monkeypatch, mock_traci):
         runner = SimulationRunner(get_scenario_config("cologne1"))
@@ -195,3 +201,33 @@ class TestSimulationRunnerSetup:
                 runner.step({other: 0})
         finally:
             runner.close()
+
+    @pytest.mark.parametrize("max_green", [None, 60])
+    def test_runner_cannot_bypass_starvation_by_requesting_another_phase(self, mock_traci, max_green):
+        runner = SimulationRunner(SimulationConfig("cologne1", control_mode="agent"))
+        tls_id = next(iter(runner.tls_managers))
+        mgr = SafePhaseManager(tls_id, ["Grr", "rGr", "rrG"], max_red=30, max_green=max_green)
+        mgr.configure_links([ControlledLink(i, f"edge{i}_0", f"out{i}_0") for i in range(3)])
+        mgr.update_queues({"edge2_0": 3})
+        mgr.update(60)
+        runner.tls_managers = {tls_id: mgr}
+        runner._controlled_tls_ids = {tls_id}
+        runner.traci, runner.is_running = mock_traci, True
+        try:
+            runner.step({tls_id: 1})
+            assert mgr.get_target_phase() == 2
+        finally:
+            runner.close()
+
+    def test_runner_accounts_only_demand_in_short_window(self):
+        runner = SimulationRunner(get_scenario_config("cologne1", max_steps=10, use_tripinfo=True))
+        summary = runner.run()
+        expected = get_window_demand(runner.scenario_info, runner.config.begin_time, runner.sim_time)["scheduled_demand_in_window"]
+        assert summary["scheduled_demand_in_window"] == expected
+        assert summary["demand_denominator"] == expected
+        assert summary["tripinfo_reconciliation_status"] == "MATCH"
+
+    def test_retired_cyclic_mode_is_rejected_in_runner_override(self):
+        with pytest.raises(ValueError, match="control_mode"):
+            SimulationRunner(get_scenario_config("cologne1"), control_mode="cyclic")
+

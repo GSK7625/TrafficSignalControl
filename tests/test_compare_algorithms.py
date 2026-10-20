@@ -5,6 +5,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import pytest
 
 from src.evaluation.compare_algorithms import generate_comparison_report
 from src.evaluation.experiment_runner import aggregate_benchmark_statistics
@@ -104,7 +105,8 @@ class TestGenerateComparisonReport:
         assert "FAILED" in md_text
         assert "Safety constraint mismatch" in md_text
         assert "5 / 5 (max 4)" in md_text
-        assert "tổng cộng 5 va chạm" in md_text
+        assert "Trạng thái" not in md_text
+        assert "Lưu ý về Survivorship Bias" not in md_text
 
     def test_generate_comparison_report_with_algo_aliases(self, tmp_path):
         mock_summary = {
@@ -143,11 +145,39 @@ class TestGenerateComparisonReport:
         path = tmp_path / "summary.json"
         path.write_text(json.dumps(aggregate_benchmark_statistics(records)), encoding="utf-8")
         report = tmp_path / "report.md"
-        generate_comparison_report(eval_dir=str(tmp_path), phase6_summary=str(path), output_report=str(report))
+        res = generate_comparison_report(eval_dir=str(tmp_path), phase6_summary=str(path), output_report=str(report))
         text = report.read_text(encoding="utf-8")
         assert "N/A" in text
-        assert "LOW_COMPLETION" in text
+        assert "0.0%" in text
+        assert "Trạng thái" not in text
+        assert "LOW_COMPLETION" not in text
         assert "None" not in text
+        assert res["cologne1"]["Fixed-Time"]["service_status"] == "LOW_COMPLETION"
+
+    def test_comparisons_reject_different_watchdog_limits(self):
+        shared = {
+            "scenario_name": "cologne1", "seed": 42, "is_valid": True, "status": "SUCCESS",
+            "total_steps": 10, "observation_window_begin": 0, "observation_window_end": 10,
+            "observation_window_duration": 10,
+        }
+        records = [dict(shared, algorithm=algo, effective_config={"steps": 10, "step_length": 1, "max_red": red})
+                   for algo, red in (("Fixed-Time", None), ("Max-Pressure", 90))]
+        with pytest.raises(ValueError, match="conditions differ"):
+            aggregate_benchmark_statistics(records)
+
+    def test_chart_generation_reads_custom_summary(self, tmp_path):
+        import matplotlib
+        matplotlib.use("Agg")
+        from src.evaluation.plot_comparison import generate_all_benchmark_charts
+        path = tmp_path / "summary.json"
+        path.write_text(json.dumps({"custom": {"Fixed-Time": {
+            "mean_queue_length": {"mean": 2, "std": 0},
+            "total_completed_vehicles": {"mean": 5, "std": 0},
+        }}}), encoding="utf-8")
+        files = generate_all_benchmark_charts(summary_file=str(path), output_dir=str(tmp_path / "figures"), dashboard_only=True)
+        assert len(files) == 1
+        assert files[0].endswith("custom_benchmark_dashboard.png")
+
 
 
 class TestPlottingAndVisualizations:
@@ -233,6 +263,35 @@ class TestPlottingAndVisualizations:
         files = plot_group_b_dynamics(output_dir=str(tmp_path), selected_records=selected)
         assert len(files) == 1
         assert heights == [[20.0, 80.0]]
+
+    def test_group_b_dynamics_csv_without_pandas(self, tmp_path):
+        csv_file = tmp_path / "step_metrics.csv"
+        csv_file.write_text(
+            "step,sim_time,queue_length,running_vehicles,cumulative_completed_vehicles,pending_vehicles\n"
+            "0,0.0,1.0,2.0,0.0,0.0\n"
+            "1,1.0,2.0,3.0,1.0,0.0\n"
+            "2,2.0,1.5,2.5,2.0,1.0\n",
+            encoding="utf-8",
+        )
+        selected = [
+            {
+                "scenario_name": "cologne1",
+                "algorithm": "Fixed-Time",
+                "seed": 42,
+                "is_valid": True,
+                "output_csv": str(csv_file),
+                "phase_durations_per_tls": {"tls": {"0": 30.0}},
+            }
+        ]
+        files = plot_group_b_dynamics(output_dir=str(tmp_path / "figures"), selected_records=selected)
+        # Should generate 4 trajectory charts + 1 phase allocation chart = 5
+        assert len(files) == 5
+        filenames = {Path(f).name for f in files}
+        assert "cologne1_queue_length_over_time.png" in filenames
+        assert "cologne1_running_vehicles_over_time.png" in filenames
+        assert "cologne1_cumulative_completed_over_time.png" in filenames
+        assert "cologne1_pending_vehicles_over_time.png" in filenames
+        assert "cologne1_fixed_time_phase_allocation.png" in filenames
 
     def test_comparison_plots_skip_failed_algorithms(self, tmp_path):
         metrics = {

@@ -3,7 +3,7 @@
 import math
 import json
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from src.evaluation.experiment_runner import normalize_algo_name
 from src.metrics import REPORT_COMPLETION_THRESHOLD, service_status
@@ -31,20 +31,22 @@ def _format_mean_std(result, mean_key, std_key):
 
 def generate_comparison_report(
     eval_dir: str = "results/evaluation",
-    phase6_summary: str = "results/evaluation/benchmark_summary.json",
+    summary_file: Optional[str] = None,
     output_report: str = "results/evaluation/benchmark_comparison.md",
+    *,
+    phase6_summary: Optional[str] = None,
 ) -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Combines benchmark metrics into a unified comparison report."""
     os.makedirs(eval_dir, exist_ok=True)
 
     combined_results: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
-    # Prefer Phase 6 comprehensive benchmark_summary.json if available
-    p6_data = load_json(phase6_summary)
+    summary_path = summary_file or phase6_summary or "results/evaluation/benchmark_summary.json"
+    benchmark_data = load_json(summary_path)
     algos_display = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
 
-    if p6_data:
-        for scen, raw_algos in p6_data.items():
+    if benchmark_data:
+        for scen, raw_algos in benchmark_data.items():
             combined_results[scen] = {}
             algos = {normalize_algo_name(k): v for k, v in raw_algos.items()}
             for algo in algos_display:
@@ -92,7 +94,8 @@ def generate_comparison_report(
                     "effective_config": metrics.get("effective_config"),
                     "failed_count": metrics.get("failed_count", 0),
                     "episode_reward": metrics.get("episode_reward", {}).get("mean", "-"),
-                    "improvement_waiting_pct": metrics.get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0),
+                    "improvement_waiting_pct": metrics.get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct"),
+                    "comparison_unavailable_reason": metrics.get("comparison_unavailable_reason"),
                 }
                 combined_results[scen][algo] = flat_entry
 
@@ -102,7 +105,6 @@ def generate_comparison_report(
         "",
         "**Dự án:** TrafficSignalControl — SUMO Reinforcement Learning & Baseline Benchmark  ",
         "**Mục tiêu:** Đánh giá và đối chuẩn hiệu năng các thuật toán điều khiển đèn giao thông.  ",
-        "**Điều kiện mô phỏng:** Xem cấu hình hiệu lực của từng thuật toán bên dưới; dữ liệu cũ không có metadata được ghi N/A.",
         "",
         "---",
         "",
@@ -113,28 +115,30 @@ def generate_comparison_report(
             continue
         lines.append(f"## Kịch bản mạng lưới: `{scen.upper()}`")
         lines.append("")
-        lines.append("| Thuật toán | Completed Wait Time (s)* | System Delay (s) | Queue (xe) | Throughput (xe) | Completion (%) | Va chạm / Teleport | Trạng thái |")
-        lines.append("|---|---|---|---|---|---|---|---|")
 
-        scenario_warnings = []
+        for algo, result in scen_res.items():
+            if result.get("status") == "PARTIAL":
+                lines.append(f"- {algo}: PARTIAL; {result.get('failed_count', 0)} failed run(s). Statistics use successful runs only.")
+            if result.get("comparison_unavailable_reason"):
+                lines.append(f"- {algo}: {result['comparison_unavailable_reason']}")
+        lines.append("")
+        lines.append("| Thuật toán | Completed Wait Time (s) | System Delay (s) | Queue (xe) | Throughput (xe) | Completion (%) | Va chạm / Teleport |")
+        lines.append("|---|---|---|---|---|---|---|")
+
         for algo in algos_display:
             r = scen_res.get(algo, {})
             algo_status = r.get("status", "NOT_RUN")
             if algo_status == "FAILED":
                 errs = r.get("error_messages", ["Lỗi không xác định"])
                 err_text = "; ".join(errs)
-                status_badge = "💥 FAILED"
                 lines.append(
-                    f"| **{algo}** | - | - | - | - | - | - | {status_badge} |"
+                    f"| **{algo}** | FAILED: {err_text} | - | - | - | - | - |"
                 )
-                scenario_warnings.append(f"- **{algo}**: Đánh giá thất bại: {err_text}")
                 continue
             elif algo_status == "NOT_RUN":
-                status_badge = "❓ CHƯA CHẠY"
                 lines.append(
-                    f"| **{algo}** | - | - | - | - | - | - | {status_badge} |"
+                    f"| **{algo}** | - | - | - | - | - | - |"
                 )
-                scenario_warnings.append(f"- **{algo}**: Không có dữ liệu thực nghiệm (chưa hoàn thành hoặc bị lỗi).")
                 continue
 
             wt_str = _format_mean_std(r, "mean_waiting_time", "waiting_time_std")
@@ -152,48 +156,16 @@ def generate_comparison_report(
 
             if (col_sum or 0) > 0 or (tel_sum or 0) > 0:
                 col_str = f"⚠️ {col_sum} / {tel_sum} (max {col_max})"
-                status_badge = "🚨 INCIDENTS"
-                scenario_warnings.append(
-                    f"- **{algo}**: Ghi nhận tổng cộng {col_sum} va chạm và {tel_sum} teleport qua các seed "
-                    f"(lớn nhất {col_max} va chạm/lượt). Cần kiểm tra dọn nút giao và xung đột luồng."
-                )
             else:
                 col_str = "0 / 0" if col_sum is not None and tel_sum is not None else "N/A"
-                if r.get("service_status") == "NO_DEMAND":
-                    status_badge = "NO_DEMAND"
-                elif cr is None:
-                    status_badge = "NO_DATA"
-                elif cr < REPORT_COMPLETION_THRESHOLD * 100.0:
-                    status_badge = "⚠️ LOW_COMPLETION"
-                    sys_d_display = f"{sys_d:.2f}s" if sys_d is not None else "N/A"
-                    scenario_warnings.append(
-                        f"- **{algo}**: Tỷ lệ hoàn thành thấp ({cr:.1f}%). "
-                        f"Có hiện tượng nghẽn mạng ngoài cổng (System Delay {sys_d_display})."
-                    )
-                else:
-                    status_badge = "✅ SAFE" if col_sum is not None and tel_sum is not None else "UNKNOWN"
 
-            if r.get("failed_count"):
-                scenario_warnings.append(f"- **{algo}**: PARTIAL, {r['failed_count']} seed thất bại; thống kê chỉ dùng lượt hợp lệ.")
-            config = r.get("effective_config")
-            if config:
-                scenario_warnings.append(f"- **{algo}** — cấu hình hiệu lực: " + ", ".join(f"{key}={value}" for key, value in config.items()))
             lines.append(
-                f"| **{algo}** | {wt_str} | {sys_d_str} | {ql_str} | {tp_str} | {cr_str} | {col_str} | {status_badge} |"
+                f"| **{algo}** | {wt_str} | {sys_d_str} | {ql_str} | {tp_str} | {cr_str} | {col_str} |"
             )
 
         lines.append("")
-        lines.append("> [!NOTE]")
-        lines.append("> [*] **Lưu ý về Survivorship Bias:** Completed Wait Time chỉ tính trên các xe đã về đích. Khi Completion (%) < 98%, chỉ số này có thể thấp phiến diện do bỏ qua các xe đang kẹt trong mạng; System Delay và Throughput phản ánh khách quan toàn bộ nhu cầu giao thông.")
 
-        if scenario_warnings:
-            lines.append("")
-            lines.append("> [!WARNING]")
-            lines.append("> **Cảnh báo quan sát:**")
-            for w in scenario_warnings:
-                lines.append(f"> {w}")
-        lines.append("")
-
+    os.makedirs(os.path.dirname(os.path.abspath(output_report)), exist_ok=True)
     with open(output_report, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 

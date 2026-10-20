@@ -11,51 +11,19 @@ import numpy as np
 from src.config import DEFAULT_SAFETY_CONFIG
 from src.controllers.base import BaseTrafficController, IntersectionObservation
 from src.rl.discretization import StateDiscretizer
-
-
-def validate_q_learning_hyperparameters(
-    num_actions: int,
-    learning_rate: float,
-    gamma: float,
-    epsilon: float = 1.0,
-    epsilon_min: float = 0.01,
-    epsilon_decay: float = 0.98,
-    decision_interval: float = 5.0,
-    min_green: float = 5.0,
-    max_green: Optional[float] = None,
-    yellow_duration: float = 3.0,
-    all_red_duration: float = 1.0,
-) -> None:
-    """Validates domain constraints for Q-Learning hyperparameters."""
-    if num_actions <= 0:
-        raise ValueError(f"num_actions must be positive, got {num_actions}")
-    if not (math.isfinite(learning_rate) and 0.0 < learning_rate <= 1.0):
-        raise ValueError(f"learning_rate must be in (0, 1] and finite, got {learning_rate}")
-    if not (math.isfinite(gamma) and 0.0 <= gamma <= 1.0):
-        raise ValueError(f"gamma must be in [0, 1] and finite, got {gamma}")
-    if not (math.isfinite(epsilon) and 0.0 <= epsilon <= 1.0):
-        raise ValueError(f"epsilon must be in [0, 1] and finite, got {epsilon}")
-    if not (math.isfinite(epsilon_min) and 0.0 <= epsilon_min <= 1.0):
-        raise ValueError(f"epsilon_min must be in [0, 1] and finite, got {epsilon_min}")
-    if not (math.isfinite(epsilon_decay) and 0.0 <= epsilon_decay <= 1.0):
-        raise ValueError(f"epsilon_decay must be in [0, 1] and finite, got {epsilon_decay}")
-    if not (math.isfinite(decision_interval) and decision_interval > 0):
-        raise ValueError(f"decision_interval must be positive and finite, got {decision_interval}")
-    if not (math.isfinite(min_green) and min_green >= 0):
-        raise ValueError(f"min_green must be non-negative and finite, got {min_green}")
-    if max_green is not None:
-        if not (math.isfinite(max_green) and max_green > 0):
-            raise ValueError(f"max_green must be positive and finite, got {max_green}")
-        if max_green < min_green:
-            raise ValueError(f"max_green must be >= min_green ({max_green} < {min_green})")
-    if not (math.isfinite(yellow_duration) and yellow_duration > 0):
-        raise ValueError(f"yellow_duration must be positive and finite, got {yellow_duration}")
-    if not (math.isfinite(all_red_duration) and all_red_duration >= 0):
-        raise ValueError(f"all_red_duration must be non-negative and finite, got {all_red_duration}")
+from src.io_utils import write_json_atomic
 
 
 class QLearningController(BaseTrafficController):
     """Tabular Q-Learning agent for traffic signal control."""
+
+    PARAM_TYPES = {
+        "num_actions": int, "learning_rate": float, "gamma": float,
+        "epsilon": float, "epsilon_min": float, "epsilon_decay": float,
+        "decision_interval": float, "min_green": float, "max_green": float,
+        "max_red": float, "yellow_duration": float,
+        "all_red_duration": float, "tie_break_strategy": str,
+    }
 
     def __init__(
         self,
@@ -70,6 +38,7 @@ class QLearningController(BaseTrafficController):
         decision_interval: float = 5.0,
         min_green: float = DEFAULT_SAFETY_CONFIG["min_green"],
         max_green: Optional[float] = DEFAULT_SAFETY_CONFIG["max_green"],
+        max_red: Optional[float] = None,
         yellow_duration: float = DEFAULT_SAFETY_CONFIG["yellow_duration"],
         all_red_duration: float = DEFAULT_SAFETY_CONFIG["all_red_duration"],
         seed: Optional[int] = None,
@@ -77,19 +46,8 @@ class QLearningController(BaseTrafficController):
         tie_break_strategy: str = "first",
     ):
         super().__init__(name="QLearning")
-        validate_q_learning_hyperparameters(
-            num_actions=num_actions,
-            learning_rate=learning_rate,
-            gamma=gamma,
-            epsilon=epsilon,
-            epsilon_min=epsilon_min,
-            epsilon_decay=epsilon_decay,
-            decision_interval=decision_interval,
-            min_green=min_green,
-            max_green=max_green,
-            yellow_duration=yellow_duration,
-            all_red_duration=all_red_duration,
-        )
+        if isinstance(num_actions, bool) or not isinstance(num_actions, (int, np.integer)) or num_actions <= 0:
+            raise ValueError(f"num_actions must be positive and an integer, got {num_actions}")
 
         self.num_actions = int(num_actions)
         self.learning_rate = float(learning_rate)
@@ -102,23 +60,41 @@ class QLearningController(BaseTrafficController):
         self.decision_interval = float(decision_interval)
         self.min_green = float(min_green)
         self.max_green = float(max_green) if max_green is not None else None
+        self.max_red = float(max_red) if max_red is not None else None
         self.yellow_duration = float(yellow_duration)
         self.all_red_duration = float(all_red_duration)
         self.eval_mode = bool(eval_mode)
         self.tie_break_strategy = str(tie_break_strategy).lower()
+        self._validate_parameters()
 
-        if seed is not None:
-            self.set_seed(seed)
+        self._rng = random.Random(seed)
 
         self.q_table: Dict[Tuple[int, ...], np.ndarray] = {}
         self.action_counts: np.ndarray = np.zeros(self.num_actions, dtype=int)
         self.total_updates: int = 0
         self.reward_config = None
 
-    def set_seed(self, seed: int) -> None:
-        """Sets random seed for reproducible exploration."""
-        random.seed(seed)
-        np.random.seed(seed)
+    def _validate_parameters(self) -> None:
+        for key in ("learning_rate", "gamma", "epsilon", "epsilon_min", "epsilon_decay"):
+            value = getattr(self, key)
+            if not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(f"{key} must be finite and within [0, 1]")
+        for key in ("decision_interval", "yellow_duration"):
+            value = getattr(self, key)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{key} must be positive and finite")
+        for key in ("min_green", "all_red_duration"):
+            value = getattr(self, key)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{key} must be non-negative and finite")
+        for key in ("max_green", "max_red"):
+            value = getattr(self, key)
+            if value is not None and (not math.isfinite(value) or value <= 0):
+                raise ValueError(f"{key} must be positive and finite or None")
+        if self.max_green is not None and self.max_green < self.min_green:
+            raise ValueError("max_green must be >= min_green")
+        if self.tie_break_strategy not in ("first", "random"):
+            raise ValueError("tie_break_strategy must be first or random")
 
     def reset(self) -> None:
         """Resets transient execution state."""
@@ -138,13 +114,12 @@ class QLearningController(BaseTrafficController):
     ) -> int:
         """Selects action via epsilon-greedy strategy with anti-chatter tie breaking."""
         candidates = list(range(self.num_actions)) if valid_actions is None else list(valid_actions)
-        if not candidates or any(not 0 <= action < self.num_actions for action in candidates):
+        if not candidates or any(not isinstance(action, (int, np.integer)) or not 0 <= action < self.num_actions for action in candidates):
             raise ValueError("Action mask must contain valid action indices")
 
-        if not self.eval_mode and random.random() < self.epsilon:
-            chosen = random.choice(candidates)
+        if not self.eval_mode and self._rng.random() < self.epsilon:
+            chosen = self._rng.choice(candidates)
         else:
-            # Evaluation must not insert unseen states into the learned Q-table.
             q_vals = (self.q_table.get(state, np.zeros(self.num_actions))
                       if self.eval_mode else self.get_q_values(state))
             cand_q = [q_vals[a] for a in candidates]
@@ -153,7 +128,7 @@ class QLearningController(BaseTrafficController):
             if current_phase is not None and current_phase in best:
                 chosen = current_phase
             elif self.tie_break_strategy == "random" and not self.eval_mode:
-                chosen = random.choice(best)
+                chosen = self._rng.choice(best)
             else:
                 chosen = best[0]
 
@@ -175,6 +150,10 @@ class QLearningController(BaseTrafficController):
         """Applies Bellman Q-learning update."""
         if self.eval_mode:
             return 0.0
+        if not isinstance(action, (int, np.integer)) or not 0 <= action < self.num_actions:
+            raise ValueError("Action index is out of range")
+        if not math.isfinite(reward):
+            raise ValueError("reward must be finite")
 
         is_term = terminated if terminated is not None else done
         q_curr = self.get_q_values(state)
@@ -221,16 +200,16 @@ class QLearningController(BaseTrafficController):
 
     def get_config(self) -> Dict[str, Any]:
         """Returns controller configuration dictionary."""
-        return {
-            **{key: getattr(self, key) for key in (
-                "name", "num_actions", "learning_rate", "gamma", "epsilon",
-                "epsilon_min", "epsilon_decay", "eval_mode", "target_tls_id",
-                "decision_interval", "min_green", "max_green", "yellow_duration",
-                "all_red_duration", "tie_break_strategy",
-            )},
-            "num_states_in_table": len(self.q_table),
-            "discretizer_config": self.discretizer.get_config(),
-        }
+        config_keys = (
+            "name", "num_actions", "learning_rate", "gamma", "epsilon",
+            "epsilon_min", "epsilon_decay", "eval_mode", "target_tls_id",
+            "decision_interval", "min_green", "max_green", "max_red", "yellow_duration",
+            "all_red_duration", "tie_break_strategy",
+        )
+        cfg = {k: getattr(self, k) for k in config_keys}
+        cfg["num_states_in_table"] = len(self.q_table)
+        cfg["discretizer_config"] = self.discretizer.get_config()
+        return cfg
 
     def save(self, filepath: str) -> None:
         """Saves Q-table and metadata to disk."""
@@ -242,8 +221,7 @@ class QLearningController(BaseTrafficController):
             "reward_config": self.reward_config,
             "total_updates": self.total_updates,
         }
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        write_json_atomic(filepath, data)
 
     def load(self, filepath: str) -> None:
         """Loads Q-table and configuration from disk."""
@@ -257,53 +235,26 @@ class QLearningController(BaseTrafficController):
 
     def _load_checkpoint_data(self, data: Dict[str, Any]) -> None:
         """Restores an already decoded checkpoint without reopening the file."""
+        if not isinstance(data, dict) or not isinstance(data.get("config", {}), dict) or not isinstance(data.get("q_table", {}), dict):
+            raise ValueError("Checkpoint config and q_table must be dictionaries")
         cfg = data.get("config", {})
-        converters = {
-            "num_actions": int, "learning_rate": float, "gamma": float,
-            "epsilon": float, "epsilon_min": float, "epsilon_decay": float,
-            "decision_interval": float, "min_green": float, "yellow_duration": float,
-            "all_red_duration": float, "tie_break_strategy": str,
-        }
-        parsed: Dict[str, Any] = {}
-        for attr, convert in converters.items():
+        if "num_actions" in cfg and (type(cfg["num_actions"]) is not int or cfg["num_actions"] <= 0):
+            raise ValueError("Checkpoint num_actions must be a positive integer")
+        for attr, convert in self.PARAM_TYPES.items():
             if attr in cfg and cfg[attr] is not None:
                 try:
-                    parsed[attr] = convert(cfg[attr])
+                    setattr(self, attr, convert(cfg[attr]))
                 except (ValueError, TypeError, OverflowError):
                     raise ValueError(f"Invalid value for '{attr}' in checkpoint: {cfg[attr]}")
+
         if "target_tls_id" in cfg:
-            target_tls_id = str(cfg["target_tls_id"]) if cfg["target_tls_id"] is not None else None
-        else:
-            target_tls_id = getattr(self, "target_tls_id", None)
-
-        if "max_green" in cfg:
-            max_green = float(cfg["max_green"]) if cfg["max_green"] is not None else None
-        else:
-            max_green = getattr(self, "max_green", None)
-
-        merged = {
-            "num_actions": parsed.get("num_actions", getattr(self, "num_actions", 2)),
-            "learning_rate": parsed.get("learning_rate", getattr(self, "learning_rate", 0.1)),
-            "gamma": parsed.get("gamma", getattr(self, "gamma", 0.95)),
-            "epsilon": parsed.get("epsilon", getattr(self, "epsilon", 1.0)),
-            "epsilon_min": parsed.get("epsilon_min", getattr(self, "epsilon_min", 0.01)),
-            "epsilon_decay": parsed.get("epsilon_decay", getattr(self, "epsilon_decay", 0.98)),
-            "decision_interval": parsed.get("decision_interval", getattr(self, "decision_interval", 5.0)),
-            "min_green": parsed.get("min_green", getattr(self, "min_green", 5.0)),
-            "max_green": max_green,
-            "yellow_duration": parsed.get("yellow_duration", getattr(self, "yellow_duration", 3.0)),
-            "all_red_duration": parsed.get("all_red_duration", getattr(self, "all_red_duration", 1.0)),
-        }
-        validate_q_learning_hyperparameters(**merged)
+            self.target_tls_id = str(cfg["target_tls_id"]) if cfg["target_tls_id"] is not None else None
+        for attr in ("max_green", "max_red"):
+            if attr in cfg:
+                setattr(self, attr, float(cfg[attr]) if cfg[attr] is not None else None)
+        self._validate_parameters()
 
         self.reward_config = data.get("reward_config")
-        for attr, val in parsed.items():
-            setattr(self, attr, val)
-        if "target_tls_id" in cfg:
-            self.target_tls_id = target_tls_id
-        if "max_green" in cfg:
-            self.max_green = max_green
-
         self.discretizer = StateDiscretizer.from_config(
             cfg.get("discretizer_config") or {}, min_green=self.min_green,
         )
@@ -312,8 +263,8 @@ class QLearningController(BaseTrafficController):
         for k_str, v_list in data.get("q_table", {}).items():
             k_tuple = ast.literal_eval(k_str)
             values = np.asarray(v_list, dtype=np.float64)
-            if not isinstance(k_tuple, tuple) or len(k_tuple) != 4 or any(type(x) is not int or x < 0 for x in k_tuple):
-                raise ValueError("Checkpoint state must contain four non-negative integers")
+            if not isinstance(k_tuple, tuple) or len(k_tuple) < 4 or any(type(x) is not int or x < 0 for x in k_tuple):
+                raise ValueError("Checkpoint state must contain non-negative integers")
             if values.shape != (self.num_actions,) or not np.isfinite(values).all():
                 raise ValueError("Checkpoint Q-vector shape or values are invalid")
             self.q_table[k_tuple] = values
@@ -339,6 +290,8 @@ class QLearningController(BaseTrafficController):
             data = json.load(f)
 
         cfg = data.get("config", {})
+        if not isinstance(cfg, dict):
+            raise ValueError("Checkpoint config must be a dictionary")
         raw_actions = cfg.get("num_actions", 2)
         try:
             num_actions = int(raw_actions)
@@ -351,25 +304,13 @@ class QLearningController(BaseTrafficController):
             inst.eval_mode = True
             inst.epsilon = 0.0
 
-        allowed = {*DEFAULT_SAFETY_CONFIG, "decision_interval", "target_tls_id"}
+        allowed = {*DEFAULT_SAFETY_CONFIG, "decision_interval", "target_tls_id", "max_red"}
         if override_kwargs.keys() - allowed:
             raise TypeError(f"Unknown checkpoint overrides: {override_kwargs.keys() - allowed}")
         if override_kwargs.get("min_green", inst.min_green) != inst.discretizer.min_green:
             raise ValueError("min_green override changes the learned discretizer state encoding")
         for key, value in override_kwargs.items():
             setattr(inst, key, value)
-        validate_q_learning_hyperparameters(
-            num_actions=inst.num_actions,
-            learning_rate=inst.learning_rate,
-            gamma=inst.gamma,
-            epsilon=inst.epsilon,
-            epsilon_min=inst.epsilon_min,
-            epsilon_decay=inst.epsilon_decay,
-            decision_interval=inst.decision_interval,
-            min_green=inst.min_green,
-            max_green=inst.max_green,
-            yellow_duration=inst.yellow_duration,
-            all_red_duration=inst.all_red_duration,
-        )
+        inst._validate_parameters()
 
         return inst

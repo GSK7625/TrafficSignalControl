@@ -8,7 +8,7 @@ import copy
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Union
 import uuid
 
 try:
@@ -22,10 +22,34 @@ except ImportError:
     libsumo = None
 
 from src.config import SimulationConfig
-from src.controllers.base import ControlledLink, IntersectionObservation
+from src.controllers.base import (
+    ControlledLink,
+    IntersectionObservation,
+    IntersectionTopology,
+    build_intersection_topology,
+)
 from src.data_inspector import PhaseInfo, ScenarioInfo
 from src.metrics import MetricsCollector, StepMetrics, build_vehicle_accounting
 from src.phase_manager import SafePhaseManager
+
+
+def resolve_controlled_tls_ids(
+    control_mode: str,
+    available_tls: Iterable[str],
+    config_controlled_ids: Optional[Sequence[str]] = None,
+    config_target_id: Optional[str] = None,
+    controller_target_id: Optional[str] = None,
+) -> Set[str]:
+    """Resolves the canonical set of controlled TLS IDs for a simulation run."""
+    if control_mode == "original":
+        return set()
+    if config_controlled_ids:
+        return set(config_controlled_ids)
+    if config_target_id:
+        return {config_target_id}
+    if controller_target_id:
+        return {controller_target_id}
+    return set(available_tls)
 
 
 def extract_green_phases(scenario_name: str, tl_id: str, phases: List[PhaseInfo]) -> List[str]:
@@ -112,6 +136,7 @@ class SimulationRunner:
                 all_red_duration=self.config.all_red_duration,
                 min_green=self.config.min_green,
                 max_green=self.config.max_green,
+                max_red=self.config.max_red,
             )
 
         self.tripinfo_path: Optional[str] = (
@@ -133,17 +158,16 @@ class SimulationRunner:
         self.has_run: bool = False
         self._final_summary = None
         self.tls_controlled_links: Dict[str, List[ControlledLink]] = {}
+        self.tls_topologies: Dict[str, IntersectionTopology] = {}
 
-        if self.control_mode == "original":
-            self._controlled_tls_ids = set()
-        elif self.controlled_tls_ids:
-            self._controlled_tls_ids = set(self.controlled_tls_ids)
-        elif self.target_tls_id:
-            self._controlled_tls_ids = {self.target_tls_id}
-        elif self.controller and getattr(self.controller, "target_tls_id", None):
-            self._controlled_tls_ids = {self.controller.target_tls_id}
-        else:
-            self._controlled_tls_ids = set(self.tls_managers.keys())
+        controller_target = getattr(self.controller, "target_tls_id", None) if self.controller else None
+        self._controlled_tls_ids = resolve_controlled_tls_ids(
+            control_mode=self.control_mode,
+            available_tls=self.tls_managers.keys(),
+            config_controlled_ids=self.controlled_tls_ids or self.config.controlled_tls_ids,
+            config_target_id=self.target_tls_id or self.config.target_tls_id,
+            controller_target_id=controller_target,
+        )
 
         if self._controlled_tls_ids - self.tls_managers.keys():
             raise ValueError("Controlled TLS not found in scenario")
@@ -155,6 +179,7 @@ class SimulationRunner:
         self._steps_since_last_decision: int = 0
 
         self.total_teleports: int = 0
+        self.safety_events: List[Dict[str, Any]] = []
         self.total_collision_incidents: int = 0
         self.total_collision_steps: int = 0
         self.total_collision_vehicle_involvements: int = 0
@@ -234,10 +259,13 @@ class SimulationRunner:
 
         for tl_id in self.tls_managers:
             raw = self.traci.trafficlight.getControlledLinks(tl_id)
-            self.tls_controlled_links[tl_id] = [
+            links = [
                 ControlledLink(s_idx, c[0], c[1], c[2] if len(c) > 2 else None)
                 for s_idx, conns in enumerate(raw) for c in conns
             ]
+            self.tls_controlled_links[tl_id] = links
+            self.tls_topologies[tl_id] = build_intersection_topology(tl_id, links)
+            self.tls_managers[tl_id].configure_links(links)
 
         if self.control_mode == "agent":
             for tls_id in self._controlled_tls_ids:
@@ -248,13 +276,21 @@ class SimulationRunner:
         pending_cnt = len(self.traci.simulation.getPendingVehicles())
         obs = {}
         for tl_id, mgr in self.tls_managers.items():
-            links = self.tls_controlled_links[tl_id]
-            in_lanes = {link.from_lane for link in links}
-            out_lanes = {link.to_lane for link in links}
+            topology = self.tls_topologies.get(tl_id)
+            if topology is not None:
+                in_lanes = topology.in_lanes
+                out_lanes = topology.out_lanes
+                links = list(topology.controlled_links)
+            else:
+                links = self.tls_controlled_links.get(tl_id, [])
+                in_lanes = tuple(sorted({link.from_lane for link in links if link.from_lane}))
+                out_lanes = tuple(sorted({link.to_lane for link in links if link.to_lane}))
+
             in_q = {lane: float(self.traci.lane.getLastStepHaltingNumber(lane)) for lane in in_lanes}
             out_q = {lane: float(self.traci.lane.getLastStepHaltingNumber(lane)) for lane in out_lanes}
             in_v = {lane: float(self.traci.lane.getLastStepVehicleNumber(lane)) for lane in in_lanes}
             out_v = {lane: float(self.traci.lane.getLastStepVehicleNumber(lane)) for lane in out_lanes}
+            mgr.update_queues(in_q)
 
             obs[tl_id] = IntersectionObservation(
                 tls_id=tl_id,
@@ -271,6 +307,7 @@ class SimulationRunner:
                 step=self.current_step,
                 pending_vehicles=pending_cnt,
                 valid_actions=mgr.valid_actions(),
+                topology=topology,
             )
         return obs
 
@@ -299,12 +336,9 @@ class SimulationRunner:
                 raise ValueError("Actions must target configured controlled TLS IDs")
             for tls_id, target_phase in actions.items():
                 self.tls_managers[tls_id].request_phase(target_phase)
-        # Max green fallback enforcement
+        # The phase manager owns both requested and mandatory phase changes.
         for tls_id in self._controlled_tls_ids:
-            mgr = self.tls_managers.get(tls_id)
-            if mgr and mgr.is_max_green_exceeded() and len(mgr.green_phases) > 1:
-                forced_p = (mgr.get_current_phase() + 1) % len(mgr.green_phases)
-                mgr.request_phase(forced_p)
+            self.tls_managers[tls_id].enforce_constraints()
 
         # Apply signals to TraCI
         if self.control_mode == "agent":
@@ -318,7 +352,10 @@ class SimulationRunner:
         self.sim_time = self.traci.simulation.getTime()
 
         # Required safety observations fail the run if they cannot be measured.
-        self.total_teleports += int(self.traci.simulation.getStartingTeleportNumber())
+        teleports = int(self.traci.simulation.getStartingTeleportNumber())
+        self.total_teleports += teleports
+        if teleports:
+            self.safety_events.append({"type": "teleport", "sim_time": self.sim_time, "count": teleports})
         collisions = self.traci.simulation.getCollisions()
         if collisions:
             self.total_collision_steps += 1
@@ -327,6 +364,12 @@ class SimulationRunner:
                 involved = [vid for vid in (collision.collider, collision.victim) if vid]
                 self.total_collision_vehicle_involvements += len(involved)
                 self.unique_colliding_vehicles.update(involved)
+                self.safety_events.append({
+                    "type": "collision", "sim_time": self.sim_time,
+                    "collider": collision.collider, "victim": collision.victim,
+                    "lane": getattr(collision, "lane", None),
+                    "signals": {tls: mgr.get_current_state() for tls, mgr in self.tls_managers.items()},
+                })
         for tls_id, manager in self.tls_managers.items():
             if tls_id in self._controlled_tls_ids:
                 manager.update(step_duration=self.config.step_length)
@@ -345,7 +388,8 @@ class SimulationRunner:
         )
 
     def safety_metadata(self) -> Dict[str, Any]:
-        return {"max_green": self.config.max_green, "safety_events": []}
+        return {"max_green": self.config.max_green, "max_red": self.config.max_red,
+                "safety_events": list(self.safety_events)}
 
     def run(
         self,
@@ -439,18 +483,23 @@ class SimulationRunner:
                 self.metrics_collector.tripinfo_file = final_tripinfo
             json_path, csv_path = self.metrics_collector.export_results(run_folder)
 
-        for path in (self.tripinfo_path, self.sumo_log_path):
-            if path:
-                try:
-                    Path(path).unlink(missing_ok=True)
-                except OSError:
-                    pass
+        self._cleanup_temp_files(warn_on_error=False)
 
         summary = self.metrics_collector.get_summary()
         summary["output_json"] = json_path
         summary["output_csv"] = csv_path
         summary["output_dir"] = run_folder
         return summary
+
+    def _cleanup_temp_files(self, warn_on_error: bool = False) -> None:
+        """Removes temporary files (tripinfo and sumo log)."""
+        for path in (self.tripinfo_path, self.sumo_log_path):
+            if path:
+                try:
+                    Path(path).unlink(missing_ok=True)
+                except OSError as error:
+                    if warn_on_error:
+                        warnings.warn(f"Could not remove temporary output {path}: {error}")
 
     def close(self, clean_temp: bool = True) -> None:
         """Close once; cleanup failures cannot replace an active simulation error."""
@@ -466,12 +515,7 @@ class SimulationRunner:
         finally:
             self.has_run = True
             if clean_temp:
-                for path in (self.tripinfo_path, self.sumo_log_path):
-                    if path:
-                        try:
-                            Path(path).unlink(missing_ok=True)
-                        except OSError as error:
-                            warnings.warn(f"Could not remove temporary output {path}: {error}")
+                self._cleanup_temp_files(warn_on_error=True)
 
     def __enter__(self):
         self.start()

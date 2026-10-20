@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 import os
+import math
 from typing import Any, Dict, List, Optional
 import xml.etree.ElementTree as ET
 
@@ -22,11 +23,11 @@ class ScenarioInfo:
     name: str
     cfg_path: str
     net_path: str
-    rou_path: str
-    begin_time: float
-    end_time: float
-    duration: float
-    tls_count: int
+    rou_path: Optional[str] = None
+    begin_time: float = 0.0
+    end_time: float = 3600.0
+    duration: Optional[float] = None
+    tls_count: Optional[int] = None
     tls_ids: List[str] = field(default_factory=list)
     phases_per_tls: Dict[str, List[PhaseInfo]] = field(default_factory=dict)
     controlled_lanes_per_tls: Dict[str, List[str]] = field(default_factory=dict)
@@ -35,17 +36,32 @@ class ScenarioInfo:
     rou_files: List[str] = field(default_factory=list)
     departure_times: Optional[List[float]] = None
 
+    def __post_init__(self) -> None:
+        if self.duration is None:
+            self.duration = float(self.end_time - self.begin_time)
+        if self.tls_count is None:
+            self.tls_count = len(self.tls_ids)
+        if self.rou_path is None:
+            self.rou_path = self.rou_files[0] if self.rou_files else ""
+        elif not self.rou_files and self.rou_path:
+            self.rou_files = [self.rou_path]
+
 
 def _parse_departures(rou_file: str) -> List[float]:
     root = ET.parse(rou_file).getroot()
     if root.findall("flow"):
         raise ValueError("Exact demand counting supports trip/vehicle routes, not flow definitions")
-    return [float(item.attrib["depart"]) for item in root if item.tag in ("trip", "vehicle")]
+    departures = [float(item.attrib["depart"]) for item in root if item.tag in ("trip", "vehicle")]
+    if any(not math.isfinite(value) or value < 0 for value in departures):
+        raise ValueError("Departure times must be finite and non-negative")
+    return departures
 
 
 def inspect_scenario(scenario_name: str, data_dir: str = "data", cfg_path: Optional[str] = None) -> ScenarioInfo:
     """Inspects a scenario directory or specific sumocfg and extracts metadata."""
-    if cfg_path and os.path.isfile(cfg_path):
+    if cfg_path:
+        if not os.path.isfile(cfg_path):
+            raise FileNotFoundError(f"SUMO configuration not found: {cfg_path}")
         cfg_file = os.path.abspath(cfg_path)
         scenario_path = os.path.dirname(cfg_file)
     else:
@@ -118,11 +134,8 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data", cfg_path: Optio
         name=scenario_name,
         cfg_path=cfg_file,
         net_path=net_file,
-        rou_path=rou_file,
         begin_time=begin_time,
         end_time=end_time,
-        duration=end_time - begin_time,
-        tls_count=len(tls_ids),
         tls_ids=tls_ids,
         phases_per_tls=phases_per_tls,
         controlled_lanes_per_tls=controlled_lanes_per_tls,

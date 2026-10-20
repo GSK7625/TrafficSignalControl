@@ -245,6 +245,34 @@ class TestEvaluateRL:
         captured = capsys.readouterr()
         assert "Checkpoint not found" in captured.err
 
+    def test_cli_unified_singular_and_plural_flags(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        matrix_calls = []
+        monkeypatch.setattr(
+            evaluation,
+            "run_full_benchmark_matrix",
+            lambda **kwargs: (matrix_calls.append(kwargs), ([{"status": "SUCCESS", "is_valid": True}], {}))[1],
+        )
+        monkeypatch.setattr(
+            evaluation,
+            "load_experiments_yaml",
+            lambda path: {"simulation": {"steps": 10}},
+        )
+        # Using plural flags with comma-separated values triggers matrix run
+        ret = evaluation.main(["--scenarios", "cologne1,ingolstadt1", "--algorithms", "ft,mp", "--seeds", "42,99"])
+        assert ret == 0
+        assert len(matrix_calls) == 1
+        assert matrix_calls[0]["scenarios"] == ["cologne1", "ingolstadt1"]
+        assert matrix_calls[0]["algorithms"] == ["Fixed-Time", "Max-Pressure"]
+        assert matrix_calls[0]["seeds"] == [42, 99]
+
+        # Singular flag with comma-separated values also triggers matrix run
+        ret = evaluation.main(["--scenario", "cologne1,cologne3", "--algorithm", "Fixed-Time", "--seed", "42"])
+        assert ret == 0
+        assert len(matrix_calls) == 2
+        assert matrix_calls[1]["scenarios"] == ["cologne1", "cologne3"]
+
+
     def test_aggregate_benchmark_statistics_rejects_controlled_tls_mismatch(self):
         base_record = {
             "scenario_name": "cologne3",
@@ -368,13 +396,16 @@ def test_improvements_match_seeds_independently_of_record_order():
     assert stats["improvements_vs_baseline"]["mean_waiting_time_improvement_pct"] == 70.0
 
 
-def test_improvements_reject_unequal_successful_seed_sets():
-    with pytest.raises(ValueError, match="Cannot compare"):
-        aggregate_benchmark_statistics([
-            comparable_record(seed=1), comparable_record(seed=2),
-            comparable_record("Max-Pressure", seed=1),
-            comparable_record("Max-Pressure", seed=2, status="FAILED", is_valid=False),
-        ])
+def test_partial_failures_preserve_summary_without_unpaired_improvements():
+    result = aggregate_benchmark_statistics([
+        comparable_record(seed=1), comparable_record(seed=2),
+        comparable_record("Max-Pressure", seed=1),
+        comparable_record("Max-Pressure", seed=2, status="FAILED", is_valid=False),
+    ])["audit"]["Max-Pressure"]
+    assert result["status"] == "PARTIAL"
+    assert result["failed_seeds"] == [2]
+    assert "comparison_unavailable_reason" in result
+    assert "improvements_vs_baseline" not in result
 
 
 def test_real_short_runs_keep_summary_status_and_comparison_window_consistent(tmp_path):
@@ -393,3 +424,146 @@ def test_real_short_runs_keep_summary_status_and_comparison_window_consistent(tm
         records.append(record)
     stats = aggregate_benchmark_statistics(records)["cologne1"]["Max-Pressure"]
     assert "throughput_vph_improvement_pct" in stats["improvements_vs_baseline"]
+
+
+def test_direct_experiment_execution(tmp_path):
+    cfg = ExperimentConfig("cologne1", "Fixed-Time", steps=10, output_dir=str(tmp_path))
+    record, summary = run_single_experiment(cfg, include_summary=True)
+    assert record["status"] == "SUCCESS"
+    assert record["is_valid"] is True
+    assert record["total_steps"] == 10
+    assert summary["total_steps"] == 10
+
+
+def test_checkpoint_preserves_watchdog_in_evaluation(tmp_path):
+    path = tmp_path / "model.json"
+    QLearningController(8, max_red=37).save(path)
+    agent, env = create_evaluation_session("cologne1", str(path))
+    try:
+        assert agent.max_red == env.config.max_red == 37
+        assert env.runner.tls_managers[env.tls_id].watchdog.max_red == 37
+    finally:
+        env.close()
+    agent.load(path)
+    QLearningController(8, max_red=None).save(path)
+    agent.load(path)
+    assert agent.max_red is None
+
+
+def test_run_all_honors_explicit_single_filters(monkeypatch):
+    captured = {}
+
+    def run(**kwargs):
+        captured.update(kwargs)
+        return [], {}
+
+    monkeypatch.setattr(evaluation, "run_full_benchmark_matrix", run)
+    assert evaluation.main(["--run-all", "--scenario", "cologne3", "--algorithm", "mp", "--seed", "0"]) == 0
+    assert captured["scenarios"] == ["cologne3"]
+    assert captured["algorithms"] == ["Max-Pressure"]
+    assert captured["seeds"] == [0]
+
+
+def test_checkpoint_resolution_failure_returns_failed_record(monkeypatch):
+    def resolve(_):
+        raise ValueError("Historical checkpoint is stale")
+
+    monkeypatch.setattr(evaluation, "resolve_model_path", resolve)
+    result = evaluation.run_single_experiment(evaluation.ExperimentConfig("cologne1", "ql"))
+    assert result["status"] == "FAILED"
+    assert "stale" in result["error_message"]
+
+
+@pytest.mark.parametrize("overrides, expected", [({}, None), ({"max_green": 40}, 40), ({"max_green": None}, None)])
+def test_simulation_inherits_checkpoint_and_explicit_overrides(tmp_path, overrides, expected):
+    from src.rl.environment import TrafficSignalRLEnv
+    probe = TrafficSignalRLEnv("cologne1")
+    path = str(tmp_path / "agent.json")
+    QLearningController(probe.num_actions, min_green=7, max_green=None, decision_interval=10).save(path)
+    config = ExperimentConfig("cologne1", "Q-Learning", steps=0, model_path=path, timing_overrides=overrides)
+    record, summary = run_single_experiment(config, include_summary=True)
+    assert record["status"] == "SUCCESS"
+    assert summary["min_green"] == 7
+    assert summary["max_green"] == expected
+    assert summary["decision_interval"] == 10
+
+
+def test_fingerprint_uses_effective_timing(tmp_path):
+    path = str(tmp_path / "agent.json")
+    QLearningController(2, max_green=None).save(path)
+    inherited = ExperimentConfig("cologne1", "Q-Learning", model_path=path)
+    explicit = replace(inherited, timing_overrides={"max_green": None})
+    assert compute_run_fingerprint(inherited) == compute_run_fingerprint(explicit)
+
+
+def test_benchmark_rejects_diagnostic_run_without_tripinfo():
+    result = run_single_experiment(ExperimentConfig("cologne1", "Fixed-Time", use_tripinfo=False, steps=0))
+    assert result["status"] == "FAILED"
+
+
+def test_full_summary_distinguishes_no_demand():
+    _, summary = run_single_experiment(ExperimentConfig("cologne1", "Fixed-Time", steps=0), include_summary=True)
+    assert summary["service_status"] == summary["completion_status"] == "NO_DEMAND"
+
+
+@pytest.mark.parametrize("data", [{"config": None, "q_table": {}}, {"config": {"num_actions": 2}, "q_table": None}])
+def test_malformed_checkpoint_does_not_stop_benchmark_matrix(tmp_path, monkeypatch, data):
+    path = tmp_path / "broken.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    config = tmp_path / "experiment.yaml"
+    config.write_text("simulation:\n  steps: 0\n", encoding="utf-8")
+    monkeypatch.setattr(evaluation, "resolve_q_learning_checkpoint", lambda _: str(path))
+    records, _ = evaluation.run_full_benchmark_matrix(
+        scenarios=["cologne1"], algorithms=["Q-Learning", "Fixed-Time"], seeds=[42],
+        config_file=str(config), output_dir=str(tmp_path / "evaluation"), generate_report=False,
+    )
+    assert [record["status"] for record in records] == ["FAILED", "SUCCESS"]
+
+
+@pytest.mark.parametrize("steps", [0, 17, None])
+def test_master_benchmark_window_overrides_single_simulation(tmp_path, steps):
+    from src.training.train_q_learning import TrainingConfig
+    path = tmp_path / "master.yaml"
+    path.write_text(
+        "simulation:\n  steps: 999\nsafety:\n  max_green: null\n  max_red: 37\n"
+        f"benchmark:\n  steps: {steps if steps is not None else 'null'}\n",
+        encoding="utf-8",
+    )
+    simulation = load_experiments_yaml(str(path))["simulation"]
+    assert simulation["steps"] == steps
+    assert simulation["max_green"] is None
+    assert simulation["max_red"] == 37
+    training_cfg = TrainingConfig.from_yaml("configs/config.yaml")
+    benchmark = load_experiments_yaml()["simulation"]
+    assert benchmark["steps"] == 3600
+    for key in ("yellow_duration", "all_red_duration", "min_green", "max_green", "max_red"):
+        assert getattr(training_cfg, key) == benchmark[key]
+
+
+def test_missing_explicit_benchmark_config_is_not_replaced():
+    with pytest.raises(FileNotFoundError):
+        load_experiments_yaml("missing-custom-experiment.yaml")
+
+
+def test_corrupt_resume_history_remains_available(tmp_path):
+    path = tmp_path / "benchmark_runs.json"
+    path.write_text("[broken", encoding="utf-8")
+    with pytest.raises(ValueError, match="Cannot resume"):
+        run_full_benchmark_matrix(output_dir=str(tmp_path))
+    assert path.read_text(encoding="utf-8") == "[broken"
+
+
+def test_requested_report_failure_is_visible(tmp_path, monkeypatch):
+    from src.evaluation import compare_algorithms
+
+    def fail(**kwargs):
+        raise OSError("report disk unavailable")
+
+    monkeypatch.setattr(compare_algorithms, "generate_comparison_report", fail)
+    with pytest.raises(OSError, match="report disk unavailable"):
+        evaluation.run_full_benchmark_matrix(
+            scenarios=["cologne1"], algorithms=["Fixed-Time"], seeds=[42],
+            config_file="configs/config.yaml", output_dir=str(tmp_path),
+        )
+    assert (tmp_path / "benchmark_runs.json").is_file()
+

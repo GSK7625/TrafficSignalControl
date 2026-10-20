@@ -197,11 +197,6 @@ class TestQLearningController:
         with pytest.raises(ValueError, match="num_actions must be positive"):
             QLearningController(num_actions=0)
 
-        with pytest.raises(ValueError, match="learning_rate must be in"):
-            QLearningController(num_actions=2, learning_rate=0.0)
-
-        with pytest.raises(ValueError, match="gamma must be in"):
-            QLearningController(num_actions=2, gamma=-0.1)
 
     def test_action_selection_epsilon_greedy(self):
         ctrl = QLearningController(num_actions=3, epsilon=0.0, eval_mode=True, tie_break_strategy="first")
@@ -339,42 +334,10 @@ class TestQLearningController:
         assert agent.discretizer.min_green == 7.0
 
     def test_checkpoint_metadata_keeps_explicit_disabled_max_green(self, tmp_path):
-        from src.evaluation.evaluate_rl import checkpoint_env_params
         path = str(tmp_path / "agent.json")
         QLearningController(num_actions=2, max_green=None).save(path)
-        assert checkpoint_env_params(QLearningController.from_checkpoint(path).get_config())["max_green"] is None
+        assert QLearningController.from_checkpoint(path).get_config()["max_green"] is None
 
-    @pytest.mark.parametrize("bad_cfg,match", [
-        ({"learning_rate": -1.0}, "learning_rate"),
-        ({"learning_rate": 0.0}, "learning_rate"),
-        ({"gamma": 2.0}, "gamma"),
-        ({"gamma": -0.1}, "gamma"),
-        ({"learning_rate": float("nan")}, "finite"),
-        ({"gamma": float("nan")}, "finite"),
-        ({"num_actions": 0}, "num_actions"),
-        ({"min_green": -5.0}, "min_green"),
-        ({"min_green": 10.0, "max_green": 5.0}, "max_green"),
-    ])
-    def test_checkpoint_loading_rejects_invalid_hyperparameters(self, tmp_path, bad_cfg, match):
-        base_cfg = {
-            "num_actions": 2,
-            "learning_rate": 0.1,
-            "gamma": 0.95,
-            "epsilon": 0.1,
-            "epsilon_min": 0.01,
-            "epsilon_decay": 0.995,
-            "min_green": 5.0,
-            "max_green": 60.0,
-            "yellow_duration": 3.0,
-            "all_red_duration": 1.0,
-            "decision_interval": 5.0,
-            "tie_break_strategy": "first",
-        }
-        base_cfg.update(bad_cfg)
-        path = tmp_path / "bad_checkpoint.json"
-        path.write_text(json.dumps({"config": base_cfg, "q_table": {}}), encoding="utf-8")
-        with pytest.raises(ValueError, match=match):
-            QLearningController.from_checkpoint(str(path))
 
 
 
@@ -417,14 +380,15 @@ class TestMakeController:
 
     @pytest.mark.parametrize("name", ["ql", "Q Learning", "q_learning", "QLearning"])
     def test_algorithm_aliases_use_same_factory_and_benchmark_path(self, name, tmp_path):
-        from src.evaluation.experiment_runner import ExperimentConfig, resolve_effective_decision_interval, resolve_model_path
+        from src.evaluation.experiment_runner import ExperimentConfig, effective_timing, resolve_model_path
         path = str(tmp_path / "agent.json")
         QLearningController(2).save(path)
         agent, _ = make_controller(name, model_path=path)
         assert isinstance(agent, QLearningController)
         cfg = ExperimentConfig(scenario_name="cologne1", algorithm=name)
-        assert resolve_effective_decision_interval(cfg) == 5.0
-        assert resolve_model_path(cfg) == "models/q_learning/q_learning_cologne1_best.json"
+        assert effective_timing(cfg)["decision_interval"] == 5.0
+        import os
+        assert os.path.normpath(resolve_model_path(cfg)) == os.path.normpath("models/q_learning/q_learning_cologne1_best.json")
 
     def test_resolve_q_learning_checkpoint_avoids_stale_best_when_validation_failed(self, tmp_path):
         from src.controllers import resolve_q_learning_checkpoint
@@ -464,3 +428,68 @@ class TestMakeController:
         assert any("exceeds max_green" in err for err in errors)
         assert any("less than min_green" in err for err in errors)
         assert any("finite" in err for err in errors)
+
+    def test_max_pressure_obeys_watchdog_action_mask(self, sample_observation):
+        sample_observation.valid_actions = [0]
+        assert MaxPressureController().select_action({"tls": sample_observation}) == {"tls": 0}
+
+    @pytest.mark.parametrize("options", [
+        {"learning_rate": float("nan")}, {"gamma": 2}, {"epsilon": -1},
+        {"num_actions": 2.5}, {"max_red": float("inf")},
+    ])
+    def test_agent_rejects_invalid_parameters(self, options):
+        with pytest.raises(ValueError):
+            QLearningController(**{"num_actions": 2, **options})
+
+    def test_invalid_checkpoint_save_preserves_existing_file(self, tmp_path):
+        path = tmp_path / "model.json"
+        agent = QLearningController(2)
+        agent.save(path)
+        original = path.read_bytes()
+        agent.q_table[(0, 0, 0, 0)] = np.array([float("nan"), 0])
+        with pytest.raises(ValueError):
+            agent.save(path)
+        assert path.read_bytes() == original
+        assert not list(tmp_path.glob("*.tmp"))
+
+    def test_failed_json_replace_preserves_result_and_cleans_temporary_file(self, tmp_path, monkeypatch):
+        from pathlib import Path
+        from src.io_utils import write_json_atomic
+        path = tmp_path / "result.json"
+        path.write_text('{"old": true}', encoding="utf-8")
+
+        def fail(*_):
+            raise PermissionError("File locked")
+
+        monkeypatch.setattr(Path, "replace", fail)
+        with pytest.raises(PermissionError, match="locked"):
+            write_json_atomic(path, {"new": True})
+        assert json.loads(path.read_text(encoding="utf-8")) == {"old": True}
+        assert not list(tmp_path.glob("*.tmp"))
+
+    @pytest.mark.parametrize("key", ["min_green", "yellow_duration", "all_red_duration", "decision_interval"])
+    def test_legacy_checkpoint_nulls_keep_loader_defaults(self, tmp_path, key):
+        from src.evaluation.experiment_runner import effective_timing, ExperimentConfig
+        path = tmp_path / "legacy.json"
+        path.write_text(json.dumps({"config": {"num_actions": 2, key: None}, "q_table": {}}), encoding="utf-8")
+        config = ExperimentConfig("cologne1", "Q-Learning", model_path=str(path))
+        assert effective_timing(config)[key] == QLearningController.from_checkpoint(str(path)).get_config()[key]
+
+    def test_agents_have_independent_reproducible_exploration(self):
+        import random
+        python_state, numpy_state = random.getstate(), np.random.get_state()
+        reference = QLearningController(3, seed=17)
+        expected = [reference.select_action_for_state((0, 0, 0, 0)) for _ in range(30)]
+        agent = QLearningController(3, seed=17)
+        other = QLearningController(3, seed=99)
+        actual = []
+        for _ in range(30):
+            other.select_action_for_state((0, 0, 0, 0))
+            actual.append(agent.select_action_for_state((0, 0, 0, 0)))
+        assert actual == expected
+        assert random.getstate() == python_state
+        current_numpy_state = np.random.get_state()
+        assert current_numpy_state[0] == numpy_state[0]
+        np.testing.assert_array_equal(current_numpy_state[1], numpy_state[1])
+        assert current_numpy_state[2:] == numpy_state[2:]
+

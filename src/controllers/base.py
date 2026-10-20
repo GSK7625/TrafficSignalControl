@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 
 @dataclass
@@ -12,6 +12,54 @@ class ControlledLink:
     from_lane: str
     to_lane: str
     via_lane: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class IntersectionTopology:
+    """Static network topology for an intersection."""
+    tls_id: str
+    controlled_links: Tuple[ControlledLink, ...]
+    in_lanes: Tuple[str, ...]
+    out_lanes: Tuple[str, ...]
+    branches: Tuple[str, ...]
+    branch_to_lanes: Dict[str, Tuple[str, ...]]
+    outs_per_in: Dict[str, Set[str]]
+
+
+def build_intersection_topology(
+    tls_id: str,
+    controlled_links: Sequence[ControlledLink],
+) -> IntersectionTopology:
+    """Builds static topology mapping from controlled links."""
+    in_lanes_set: Set[str] = set()
+    out_lanes_set: Set[str] = set()
+    branch_map: Dict[str, Set[str]] = {}
+    outs_map: Dict[str, Set[str]] = {}
+
+    for link in controlled_links:
+        from_l = link.from_lane
+        to_l = link.to_lane
+        if from_l:
+            in_lanes_set.add(from_l)
+            b = from_l.rsplit("_", 1)[0]
+            branch_map.setdefault(b, set()).add(from_l)
+            if to_l:
+                outs_map.setdefault(from_l, set()).add(to_l)
+        if to_l:
+            out_lanes_set.add(to_l)
+
+    branches = tuple(sorted(branch_map.keys()))
+    branch_to_lanes = {b: tuple(sorted(branch_map[b])) for b in branches}
+
+    return IntersectionTopology(
+        tls_id=tls_id,
+        controlled_links=tuple(controlled_links),
+        in_lanes=tuple(sorted(in_lanes_set)),
+        out_lanes=tuple(sorted(out_lanes_set)),
+        branches=branches,
+        branch_to_lanes=branch_to_lanes,
+        outs_per_in=outs_map,
+    )
 
 
 @dataclass
@@ -31,6 +79,7 @@ class IntersectionObservation:
     step: int
     pending_vehicles: int = 0
     valid_actions: Optional[List[int]] = None
+    topology: Optional[IntersectionTopology] = None
 
 
 class BaseTrafficController(ABC):

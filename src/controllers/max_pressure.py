@@ -9,18 +9,23 @@ def compute_phase_pressure(
     controlled_links: List[ControlledLink],
     in_lane_metrics: Dict[str, float],
     out_lane_metrics: Dict[str, float],
+    total_outs: Optional[Dict[str, Set[str]]] = None,
 ) -> float:
     """Computes traffic pressure for a green phase state (Inflow - Outflow)."""
     if not phase_state or not controlled_links:
         return 0.0
 
-    total_outs: Dict[str, Set[str]] = {}
+    if total_outs is None:
+        total_outs = {}
+        for link in controlled_links:
+            if link.from_lane and link.to_lane:
+                total_outs.setdefault(link.from_lane, set()).add(link.to_lane)
+
     active_ins: Dict[str, Set[str]] = {}
     active_outs: Set[str] = set()
 
     for link in controlled_links:
         if link.from_lane and link.to_lane:
-            total_outs.setdefault(link.from_lane, set()).add(link.to_lane)
             if 0 <= link.signal_index < len(phase_state) and phase_state[link.signal_index] in ("G", "g", "s"):
                 active_ins.setdefault(link.from_lane, set()).add(link.to_lane)
                 active_outs.add(link.to_lane)
@@ -75,21 +80,32 @@ class MaxPressureController(BaseTrafficController):
             in_q = obs.in_lane_queues if self.pressure_metric == "queue" else obs.in_lane_vehicles
             out_q = obs.out_lane_queues if self.pressure_metric == "queue" else obs.out_lane_vehicles
 
+            total_outs = obs.topology.outs_per_in if getattr(obs, "topology", None) is not None else None
+            if total_outs is None:
+                total_outs = {}
+                for link in obs.controlled_links:
+                    if link.from_lane and link.to_lane:
+                        total_outs.setdefault(link.from_lane, set()).add(link.to_lane)
+
             pressures = [
-                compute_phase_pressure(p, obs.controlled_links, in_q, out_q)
+                compute_phase_pressure(p, obs.controlled_links, in_q, out_q, total_outs=total_outs)
                 for p in obs.green_phases
             ]
-            max_p = max(pressures)
             curr = obs.current_phase if 0 <= obs.current_phase < len(pressures) else 0
+            candidates = list(range(len(pressures))) if obs.valid_actions is None else list(obs.valid_actions)
+            if not candidates:
+                raise ValueError("Action mask must contain valid action indices")
 
             # Switch away if max_green exceeded; otherwise hold current phase on ties
             if self.max_green is not None and obs.time_in_phase >= self.max_green and len(pressures) > 1:
-                other_indices = [i for i in range(len(pressures)) if i != curr]
-                chosen = max(other_indices, key=lambda i: pressures[i])
-            elif abs(pressures[curr] - max_p) <= 1e-6:
+                alternatives = [i for i in candidates if i != curr]
+                if alternatives:
+                    candidates = alternatives
+            max_p = max(pressures[i] for i in candidates)
+            if curr in candidates and abs(pressures[curr] - max_p) <= 1e-6:
                 chosen = curr
             else:
-                chosen = pressures.index(max_p)
+                chosen = max(candidates, key=lambda i: pressures[i])
 
             self._target_phases[tls_id] = chosen
             actions[tls_id] = chosen

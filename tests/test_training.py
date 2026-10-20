@@ -99,6 +99,43 @@ class TestQLearningTraining:
         assert result["hyperparameters"]["gamma"] == 0.9
         assert (tmp_path / "models" / "q_learning_ingolstadt1_final.json").exists()
 
+    def test_training_config_group_by_support(self, tmp_path):
+        from src.training.train_q_learning import TrainingConfig
+
+        yaml_file = tmp_path / "q_learning.yaml"
+        yaml_file.write_text("""
+discretization:
+  group_by: branch
+  max_effective_green: 30.0
+""", encoding="utf-8")
+
+        cfg = TrainingConfig.from_yaml(str(yaml_file))
+        assert cfg.group_by == "branch"
+        assert cfg.max_effective_green == 30.0
+
+        with pytest.raises(ValueError, match="group_by must be one of"):
+            TrainingConfig(group_by="unknown_mode")
+
+    def test_training_checkpoint_preserves_group_by(self, tmp_path, monkeypatch, training_env):
+        from src.training.train_q_learning import TrainingConfig
+
+        monkeypatch.setattr(training, "evaluate_greedy_q_learning", lambda **kw: {"reward": -1.0, "completion_rate": 1.0, "validation_viable": True, "is_valid": True})
+
+        cfg = TrainingConfig(
+            scenario_name="ingolstadt1",
+            num_episodes=1,
+            val_interval=1,
+            group_by="aggregate",
+            model_dir=str(tmp_path / "models"),
+            log_dir=str(tmp_path / "logs"),
+        )
+        result = training.train_q_learning(config=cfg)
+        final_ckpt = Path(result["final_checkpoint_path"])
+        assert final_ckpt.exists()
+        import json
+        saved = json.loads(final_ckpt.read_text(encoding="utf-8"))
+        assert saved["config"]["discretizer_config"]["group_by"] == "aggregate"
+
     @pytest.mark.parametrize("episodes", [0, -1])
     def test_training_rejects_non_positive_episodes(self, tmp_path, monkeypatch, training_env, episodes):
         checkpoint_dir = tmp_path / "models"
@@ -197,3 +234,63 @@ class TestValidationCheckpointSelector:
         with pytest.raises(ValueError, match="actions"):
             evaluate_greedy_q_learning(agent, scenario_name="cologne3")
         env.close.assert_called_once()
+
+    def test_training_yaml_watchdog_reaches_training_validation_and_checkpoint(self, tmp_path, monkeypatch):
+        from src.controllers.q_learning import QLearningController
+        path = tmp_path / "train.yaml"
+        path.write_text("max_red: 37\nhyperparameters:\n  num_episodes: 1\n", encoding="utf-8")
+        cfg = training.TrainingConfig.from_yaml(
+            str(path), val_interval=1, val_seeds=[7],
+            model_dir=str(tmp_path / "models"), log_dir=str(tmp_path / "logs"),
+        )
+        observed = []
+        env = MagicMock()
+        env.num_actions, env.tls_id = 2, "junction"
+        info = {"discrete_state": (0, 0, 0, 0), "valid_actions": [0, 1]}
+        env.reset.return_value = (None, info)
+        env.step.return_value = (None, -1, True, False, info)
+        env.get_summary.return_value = {"mean_waiting_time": 0, "is_valid": True}
+
+        def make_env(**options):
+            observed.append(options)
+            return env
+
+        monkeypatch.setattr(training, "TrafficSignalRLEnv", make_env)
+        training.train_q_learning(cfg)
+        assert len(observed) == 2
+        assert all(options["max_red"] == 37 for options in observed)
+        saved = QLearningController.from_checkpoint(str(tmp_path / "models" / "q_learning_ingolstadt1_final.json"))
+        assert saved.max_red == 37
+
+    def test_invalid_training_measurements_do_not_write_final_checkpoint(self, tmp_path, monkeypatch):
+        env = MagicMock()
+        env.num_actions, env.tls_id = 2, "junction"
+        info = {"discrete_state": (0, 0, 0, 0), "valid_actions": [0, 1]}
+        env.reset.return_value = (None, info)
+        env.step.return_value = (None, -1, True, False, info)
+        env.get_summary.return_value = {"is_valid": False, "measurement_errors": 1}
+        monkeypatch.setattr(training, "TrafficSignalRLEnv", lambda **_: env)
+        with pytest.raises(ValueError, match="Invalid training measurements"):
+            training.train_q_learning(num_episodes=1, model_dir=str(tmp_path / "models"), log_dir=str(tmp_path / "logs"))
+        assert not list((tmp_path / "models").glob("*.json"))
+        env.close.assert_called_once()
+
+    def test_training_yaml_preserves_explicit_null_override(self, tmp_path):
+        from src.training.train_q_learning import TrainingConfig
+        path = tmp_path / "training.yaml"
+        path.write_text("max_green: 25\nhyperparameters:\n  seed: 17\nmodel_dir: custom_models\n", encoding="utf-8")
+        config = TrainingConfig.from_yaml(str(path), max_green=None)
+        assert config.max_green is None
+        assert config.seed == 17
+        assert config.model_dir == "custom_models"
+
+    def test_training_rejects_ambiguous_config_and_overrides(self, tmp_path):
+        from src.training.train_q_learning import TrainingConfig, train_q_learning
+        with pytest.raises(TypeError, match="config"):
+            train_q_learning(config=TrainingConfig(num_episodes=1, model_dir=str(tmp_path / "models"), log_dir=str(tmp_path / "logs")), num_episodes=2)
+
+    def test_diagnostic_summary_cannot_select_best_checkpoint(self):
+        result = {"reward": 0, "summary": {"is_valid": True, "total_completed_vehicles": 100,
+                  "scheduled_demand_in_window": 100, "tripinfo_required": False}}
+        assert ValidationCheckpointSelector().consider(1, [result]) is False
+

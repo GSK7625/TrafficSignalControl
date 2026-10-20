@@ -79,6 +79,40 @@ class TestStateDiscretizer:
         assert state[1] == 1  # serving bin
         assert state[2] == 0  # waiting bin
 
+    def test_discretizer_aggregate_mode(self):
+        """Tests that StateDiscretizer in aggregate mode discretizes queues correctly."""
+        links = [
+            ControlledLink(signal_index=0, from_lane="lane_N_0", to_lane="out_S"),
+            ControlledLink(signal_index=1, from_lane="lane_E_0", to_lane="out_W"),
+        ]
+        from src.controllers.base import IntersectionObservation
+        obs = IntersectionObservation(
+            tls_id="tls_test",
+            current_phase=0,
+            time_in_phase=10.0,
+            is_in_transition=False,
+            green_phases=["Gr", "rG"],
+            controlled_links=links,
+            in_lane_queues={"lane_N_0": 3.0, "lane_E_0": 8.0},
+            out_lane_queues={}, in_lane_vehicles={}, out_lane_vehicles={}, sim_time=100.0, step=100,
+        )
+        disc = StateDiscretizer(group_by="aggregate")
+        state = disc.discretize(obs)
+        assert state == (0, 1, 2, 1)
+
+    def test_discretizer_config_serialization_and_validation(self):
+        disc = StateDiscretizer(min_green=6.0, group_by="aggregate")
+        cfg = disc.get_config()
+        assert cfg["group_by"] == "aggregate"
+        assert cfg["min_green"] == 6.0
+
+        restored = StateDiscretizer.from_config(cfg)
+        assert restored.group_by == "aggregate"
+        assert restored.min_green == 6.0
+
+        with pytest.raises(ValueError, match="group_by only supports 'aggregate'"):
+            StateDiscretizer(group_by="invalid_mode")
+
 
 class TestRewards:
     """Test suite for RL Reward functions."""
@@ -125,6 +159,28 @@ class TestRewards:
             controlled_links=links,
         )
         assert pytest.approx(reward_fn.calculate_reward(), 1e-6) == -7.0
+
+    def test_negative_pressure_reward_static_topology(self):
+        links = [
+            ControlledLink(signal_index=0, from_lane="in_1", to_lane="out_1"),
+            ControlledLink(signal_index=1, from_lane="in_2", to_lane="out_2"),
+        ]
+        reward_fn = NegativePressureReward(scale=2.0)
+        reward_fn.set_topology_from_links(links)
+        assert reward_fn.topology == {"in_1": {"out_1"}, "in_2": {"out_2"}}
+
+        reward_fn.record_step(
+            in_lane_queues={"in_1": 4.0, "in_2": 2.0},
+            out_lane_queues={"out_1": 1.0, "out_2": 1.0},
+        )
+        # in_1: |4 - 1| = 3, in_2: |2 - 1| = 1 -> sum = 4.0. With scale 2.0 -> -8.0
+        assert pytest.approx(reward_fn.calculate_reward(), 1e-6) == -8.0
+
+    def test_negative_pressure_reward_validation(self):
+        with pytest.raises(ValueError, match="scale must be non-negative"):
+            NegativePressureReward(scale=-1.0)
+        with pytest.raises(ValueError, match="pending_weight must be non-negative"):
+            NegativePressureReward(pending_weight=-0.5)
 
 
 class TestTrafficSignalRLEnv:
@@ -214,10 +270,10 @@ class TestQLearningEvaluation:
         mock_env = MagicMock()
         mock_env.num_actions = 2
         mock_env.tls_id = "junction-1"
-        mock_env.reset.return_value = (np.zeros(10), {"discrete_state": (0, 0, 0, 0), "valid_actions": [0, 1]})
+        mock_env.reset.return_value = ((0, 0, 0, 0), {"discrete_state": (0, 0, 0, 0), "valid_actions": [0, 1]})
         mock_env.step.side_effect = [
-            (np.zeros(10), -5.0, False, False, {"discrete_state": (0, 0, 0, 1), "valid_actions": [0, 1]}),
-            (np.zeros(10), -3.0, True, False, {"discrete_state": (0, 0, 0, 1), "valid_actions": [0, 1]}),
+            ((0, 0, 0, 1), -5.0, False, False, {"discrete_state": (0, 0, 0, 1), "valid_actions": [0, 1]}),
+            ((0, 0, 0, 1), -3.0, True, False, {"discrete_state": (0, 0, 0, 1), "valid_actions": [0, 1]}),
         ]
         mock_env.get_summary.return_value = {
             "total_completed_vehicles": 95,
@@ -331,5 +387,15 @@ class TestQLearningEvaluation:
     def test_no_observation_builder_dependency(self):
         import src.rl
         assert not hasattr(src.rl, "ObservationBuilder")
+
+    @pytest.mark.parametrize("factory", [
+        lambda: StateDiscretizer(serving_queue_thresholds=(5, 1)),
+        lambda: NegativePressureReward(scale=float("nan")),
+        lambda: SafePhaseManager("tls", ["Gr", "rG"], yellow_duration=float("nan")),
+    ])
+    def test_invalid_state_reward_and_clearance_parameters_fail_early(self, factory):
+        with pytest.raises(ValueError):
+            factory()
+
 
 

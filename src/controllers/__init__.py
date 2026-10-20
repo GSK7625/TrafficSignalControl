@@ -7,6 +7,8 @@ from src.controllers.base import (
     BaseTrafficController,
     ControlledLink,
     IntersectionObservation,
+    IntersectionTopology,
+    build_intersection_topology,
 )
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController, compute_phase_pressure
@@ -100,7 +102,7 @@ def make_controller(
     if algo_key == "q-learning":
         from src.controllers.q_learning import QLearningController
         target_path = resolve_q_learning_checkpoint(dataset_name, model_path)
-        allowed = (*DEFAULT_SAFETY_CONFIG, "decision_interval", "target_tls_id")
+        allowed = (*DEFAULT_SAFETY_CONFIG, "decision_interval", "target_tls_id", "max_red")
         ctrl_kwargs = {k: kwargs[k] for k in allowed if k in kwargs}
 
         ctrl = QLearningController.from_checkpoint(
@@ -125,6 +127,8 @@ __all__ = [
     "BaseTrafficController",
     "ControlledLink",
     "IntersectionObservation",
+    "IntersectionTopology",
+    "build_intersection_topology",
     "FixedTimeController",
     "MaxPressureController",
     "QLearningController",

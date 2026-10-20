@@ -16,8 +16,7 @@ import xml.etree.ElementTree as ET
 
 from src.data_inspector import ScenarioInfo, get_window_demand
 
-
-METRIC_SCHEMA_VERSION = "6.0.0"
+METRIC_SCHEMA_VERSION = "7.0.0"
 
 # Canonical aggregation keys and whether larger values are better.
 BENCHMARK_METRICS = (
@@ -38,11 +37,9 @@ COMPARISON_METRICS = (
     ("completion_rate_pct", "completion_rate", "Completion Rate (%)", "Traffic Demand Completion Rate", "%.1f%%", 1.0),
 )
 
-
 # Experiment acceptance and stricter report warnings serve different purposes.
 BENCHMARK_COMPLETION_THRESHOLD = 0.95
 REPORT_COMPLETION_THRESHOLD = 0.98
-
 
 def completion_statistics(
     summary: Dict[str, Any], fallback_demand: Optional[int] = None,
@@ -54,13 +51,11 @@ def completion_statistics(
         demand = completed + summary["running_vehicles_at_end"] + summary["pending_insertion_vehicles"]
     return completed, demand, completed / demand if demand and demand > 0 else 0.0
 
-
 def service_status(completion_rate: float, threshold: float = BENCHMARK_COMPLETION_THRESHOLD) -> str:
     """Classifies a completion fraction using the caller's named policy."""
     if completion_rate is None:
         return "NO_DATA"
     return "COMPLETED" if completion_rate >= threshold else "LOW_COMPLETION"
-
 
 def parse_tripinfo_output(xml_path: str) -> Dict[str, Any]:
     """Parses SUMO native --tripinfo-output XML file for ground-truth statistics."""
@@ -84,7 +79,7 @@ def parse_tripinfo_output(xml_path: str) -> Dict[str, Any]:
     return {
         "tripinfo_completed_vehicles": count,
         "tripinfo_completed_ids": completed_ids,
-        "tripinfo_unfinished_vehicles": 0,
+
         "tripinfo_mean_travel_time": round(sum(durations) / count, 2) if count else None,
         "tripinfo_mean_waiting_time": round(sum(waiting_times) / count, 2) if count else None,
         "tripinfo_total_waiting_time": round(sum(waiting_times), 2) if count else 0.0,
@@ -92,7 +87,6 @@ def parse_tripinfo_output(xml_path: str) -> Dict[str, Any]:
         "tripinfo_total_time_loss": round(sum(time_losses), 2) if count else 0.0,
         "tripinfo_metrics_available": bool(count),
     }
-
 
 def build_vehicle_accounting(
     scenario_info: ScenarioInfo,
@@ -152,7 +146,6 @@ def build_vehicle_accounting(
         "accounting_error_reasons": accounting_error_reasons,
     }
 
-
 @dataclass
 class StepMetrics:
     """Metrics recorded at an individual simulation step."""
@@ -167,7 +160,6 @@ class StepMetrics:
     cumulative_completed_vehicles: int = 0
     pending_vehicles: Optional[int] = 0
 
-
 class MetricsCollector:
     """Collects traffic performance metrics from TraCI and exports formatted results."""
 
@@ -179,11 +171,14 @@ class MetricsCollector:
         self.completed_ids: set = set()
         self.running_ids: set = set()
         self.vehicle_departure_times: Dict[str, float] = {}
-        self.completed_travel_times: List[float] = []
+        self.total_completed_travel_time: float = 0.0
+        self.total_completed_travel_count: int = 0
+        self.total_completed_waiting_time: float = 0.0
+        self.total_completed_time_loss: float = 0.0
         self.vehicle_last_waiting_time: Dict[str, float] = {}
         self.vehicle_last_time_loss: Dict[str, float] = {}
-        self.completed_waiting_times: List[float] = []
-        self.completed_time_losses: List[float] = []
+
+
         self.total_delay_seconds: float = 0.0
         self.total_pending_delay: float = 0.0
         self.last_pending_count: int = 0
@@ -194,7 +189,6 @@ class MetricsCollector:
         self.observed_duration: float = 0.0
         self._reconciled: bool = False
         self._cached_tripinfo_summary: Optional[Dict[str, Any]] = None
-
 
     def reconcile_tripinfo(self) -> Dict[str, Any]:
         """Reconciles completed IDs after SUMO has closed its output file."""
@@ -231,7 +225,6 @@ class MetricsCollector:
         self.is_valid = False
         self.error_messages.append(message)
 
-
     def record_step(
         self,
         step: int,
@@ -262,9 +255,10 @@ class MetricsCollector:
         for vid in new_arrived:
             dep = self.vehicle_departure_times.pop(vid, None)
             if dep is not None:
-                self.completed_travel_times.append(max(0.0, sim_time - dep))
-            self.completed_waiting_times.append(self.vehicle_last_waiting_time.pop(vid, 0.0))
-            self.completed_time_losses.append(self.vehicle_last_time_loss.pop(vid, 0.0))
+                self.total_completed_travel_time += max(0.0, sim_time - dep)
+                self.total_completed_travel_count += 1
+            self.total_completed_waiting_time += self.vehicle_last_waiting_time.pop(vid, 0.0)
+            self.total_completed_time_loss += self.vehicle_last_time_loss.pop(vid, 0.0)
         self.completed_ids.update(new_arrived)
         self._cumulative_completed += len(new_arrived)
         self.running_ids = set(running)
@@ -284,13 +278,46 @@ class MetricsCollector:
         self.step_records.append(record)
         return record
 
-    def get_core_metrics(self) -> Dict[str, Any]:
-        """Extracts strictly the 3 core traffic metrics."""
-        summary = self.get_summary()
+    def _calculate_queue_stats(self) -> Tuple[float, int]:
+        """Returns mean and max queue lengths across simulation steps."""
+        if not self.step_records:
+            return 0.0, 0
+        qlens = [r.queue_length for r in self.step_records]
+        return round(sum(qlens) / len(qlens), 2), max(qlens)
+
+    def _calculate_waiting_and_delays(
+        self, completed: int, trip_stats: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculates waiting time, delay, travel time, and time loss metrics."""
+        comp_wait = trip_stats.get("tripinfo_total_waiting_time", self.total_completed_waiting_time)
+        run_wait = sum(self.vehicle_last_waiting_time.values())
+        net_wait = comp_wait + run_wait
+        total_wait = net_wait if (self.total_completed_waiting_time > 0 or self.vehicle_last_waiting_time) else (
+            self.total_delay_seconds if self.total_delay_seconds > 0.0 else sum(r.waiting_time for r in self.step_records)
+        )
+        mean_wait = round(comp_wait / completed, 2) if completed > 0 else None
+
+        mean_travel = trip_stats.get(
+            "tripinfo_mean_travel_time",
+            round(self.total_completed_travel_time / self.total_completed_travel_count, 2)
+            if self.total_completed_travel_count else None,
+        )
+        loss = trip_stats.get("tripinfo_total_time_loss", self.total_completed_time_loss) + sum(self.vehicle_last_time_loss.values())
+        if loss == 0.0 and self.step_records:
+            loss = self.step_records[-1].time_loss
+
+        sys_delay = net_wait + self.total_pending_delay
+        den = float(self.run_metadata.get("demand_denominator", completed + len(self.running_ids) + self.last_pending_count))
+        sys_mean_delay = round(sys_delay / den, 2) if den > 0 else 0.0
+
         return {
-            key: value
-            for group in summary["core_metrics"].values()
-            for key, value in group.items()
+            "mean_wait": mean_wait,
+            "total_wait": round(total_wait, 2),
+            "mean_travel": mean_travel,
+            "total_loss": round(loss, 2),
+            "sys_delay": round(sys_delay, 2),
+            "sys_mean_delay": sys_mean_delay,
+            "demand_denominator": den,
         }
 
     def get_summary(self) -> Dict[str, Any]:
@@ -301,9 +328,7 @@ class MetricsCollector:
         }
 
         steps = len(self.step_records)
-        qlens = [r.queue_length for r in self.step_records]
-        mean_q = round(sum(qlens) / steps, 2) if steps else 0.0
-        max_q = max(qlens) if qlens else 0
+        mean_q, max_q = self._calculate_queue_stats()
 
         completed = self._cumulative_completed or (
             self.step_records[-1].cumulative_completed_vehicles if self.step_records else 0
@@ -314,52 +339,29 @@ class MetricsCollector:
             or (steps * float(self.run_metadata.get("step_length", 1.0)))
         )
         throughput = round(completed * (3600.0 / dur), 1) if dur > 0 else 0.0
-
-        comp_wait = trip_stats.get("tripinfo_total_waiting_time", sum(self.completed_waiting_times))
-        run_wait = sum(self.vehicle_last_waiting_time.values())
-        net_wait = comp_wait + run_wait
-        total_wait = net_wait if (self.completed_waiting_times or self.vehicle_last_waiting_time) else (
-            self.total_delay_seconds if self.total_delay_seconds > 0.0 else sum(r.waiting_time for r in self.step_records)
-        )
-        mean_wait = round(comp_wait / completed, 2) if completed > 0 else None
-
-        mean_travel = trip_stats.get("tripinfo_mean_travel_time", round(sum(self.completed_travel_times) / len(self.completed_travel_times), 2) if self.completed_travel_times else None)
-        loss = trip_stats.get("tripinfo_total_time_loss", sum(self.completed_time_losses)) + sum(self.vehicle_last_time_loss.values())
-        if loss == 0.0 and self.step_records:
-            loss = self.step_records[-1].time_loss
-
-        sys_delay = net_wait + self.total_pending_delay
-        den = float(self.run_metadata.get("demand_denominator", completed + len(self.running_ids) + self.last_pending_count))
-        sys_mean_delay = round(sys_delay / den, 2) if den > 0 else 0.0
+        delays = self._calculate_waiting_and_delays(completed, trip_stats)
 
         summary: Dict[str, Any] = {
             "metric_schema_version": METRIC_SCHEMA_VERSION,
             "scenario_name": self.scenario_name,
             "total_steps": steps,
             "observation_window_duration": dur,
-            "mean_waiting_time": mean_wait,
-            "completed_mean_waiting_time": mean_wait,
-            "total_waiting_time": round(total_wait, 2),
-            "completed_vehicles_waiting_time": round(comp_wait, 2),
-            "running_vehicles_waiting_time": round(run_wait, 2),
-            "total_network_waiting_time": round(net_wait, 2),
-            "system_mean_delay": sys_mean_delay,
-            "system_total_delay": round(sys_delay, 2),
+            "mean_waiting_time": delays["mean_wait"],
+            "total_waiting_time": delays["total_wait"],
+            "system_mean_delay": delays["sys_mean_delay"],
+            "system_total_delay": delays["sys_delay"],
             "total_pending_delay": round(self.total_pending_delay, 2),
             "mean_queue_length": mean_q,
             "max_queue_length": max_q,
-            "total_queue_delay": round(self.total_delay_seconds, 2),
             "throughput_vph": throughput,
             "total_completed_vehicles": completed,
-            "arrival_count": completed,
-            "demand_denominator": den,
+            "demand_denominator": delays["demand_denominator"],
             "pending_insertion_vehicles": self.last_pending_count,
             "completed_metrics_available": completed > 0,
             "completion_status": "COMPLETED" if completed > 0 else "NO_COMPLETED_VEHICLES",
-            "mean_travel_time": mean_travel,
-            "total_time_loss": round(loss, 2),
+            "mean_travel_time": delays["mean_travel"],
+            "total_time_loss": delays["total_loss"],
             "is_valid": self.is_valid,
-            "data_validity": "VALID" if self.is_valid else "INVALID",
             "status": "OK" if self.is_valid else "INVALID",
             "accounting_valid": True,
             "safety_status": "INCIDENTS_DETECTED" if (self.run_metadata.get("collision_count", 0) or self.run_metadata.get("teleport_count", 0)) else "SAFE",
@@ -376,17 +378,15 @@ class MetricsCollector:
         if demand == 0:
             summary.update(service_status="NO_DEMAND", completion_status="NO_DEMAND")
         if summary.get("accounting_valid") is False:
-            summary.update(is_valid=False, data_validity="INVALID", status="INVALID")
+            summary.update(is_valid=False, status="INVALID")
             for err in summary.get("accounting_error_reasons", []):
                 if err not in summary["measurement_error_messages"]:
                     summary["measurement_error_messages"].append(err)
             summary["measurement_errors"] = len(summary["measurement_error_messages"])
 
         if trip_stats.get("tripinfo_metrics_available"):
-            summary["completed_mean_waiting_time"] = trip_stats["tripinfo_mean_waiting_time"]
             summary["mean_waiting_time"] = trip_stats["tripinfo_mean_waiting_time"]
             summary["mean_travel_time"] = trip_stats["tripinfo_mean_travel_time"]
-            summary["completed_mean_time_loss"] = trip_stats["tripinfo_mean_time_loss"]
 
         summary["core_metrics"] = {
             "waiting_time": {"mean_waiting_time": summary.get("mean_waiting_time"), "total_waiting_time": summary.get("total_waiting_time")},
@@ -418,7 +418,3 @@ class MetricsCollector:
             writer.writerows(asdict(record) for record in self.step_records)
 
         return json_path, csv_path
-
-
-# Alias for compatibility
-SimulationMetricsCollector = MetricsCollector

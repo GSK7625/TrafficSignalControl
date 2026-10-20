@@ -1,0 +1,51 @@
+# Shared safety settings, in seconds. null disables an optional upper limit.
+safety:
+  yellow_duration: 3.0
+  all_red_duration: 1.0
+  min_green: 5.0
+  max_green: 60.0
+  max_red: 90.0
+
+# python main.py; command-line flags override this section.
+simulation:
+  algorithm: max-pressure
+  dataset: cologne1
+  gui: false
+  gui_delay: 50.0
+  steps: null
+  seed: 42
+  step_length: 1.0
+  use_tripinfo: true
+  output_dir: results
+  model_path: null
+
+# python -m src.training.train_q_learning
+# Q-Learning remains a research comparison; baseline runs need no training.
+q_learning:
+  decision_interval: 5.0
+  hyperparameters:
+    learning_rate: 0.1
+    gamma: 0.95
+    epsilon_start: 1.0
+    epsilon_min: 0.05
+    epsilon_decay: 0.94
+    num_episodes: 60
+    seed: 42
+  discretization:
+    group_by: aggregate
+    max_effective_green: 25.0
+    serving_queue_thresholds: [2.0, 8.0]
+    waiting_queue_thresholds: [4.0, 15.0, 35.0]
+  reward:
+    name: NegativePressureReward
+    scale: 1.0
+    pending_weight: 0.5
+
+# python -m src.evaluation.experiment_runner --run-all
+# Add Q-Learning explicitly after training a checkpoint for each scenario.
+benchmark:
+  scenarios: [cologne1, ingolstadt1]
+  algorithms: [Fixed-Time, Max-Pressure]
+  seeds: [45, 999, 200]
+  simulation:
+    steps: 3600

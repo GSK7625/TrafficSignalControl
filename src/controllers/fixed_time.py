@@ -17,8 +17,8 @@ class FixedTimeController(BaseTrafficController):
         max_green: Optional[float] = None,
     ):
         super().__init__(name="FixedTime")
-        if default_green_time <= 0:
-            raise ValueError(f"default_green_time must be positive, got {default_green_time}")
+        if not math.isfinite(default_green_time) or default_green_time <= 0:
+            raise ValueError(f"default_green_time must be positive and finite, got {default_green_time}")
 
         self.default_green_time = float(default_green_time)
         self.phase_durations = phase_durations or {}

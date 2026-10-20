@@ -4,33 +4,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from src.config import DEFAULT_SAFETY_CONFIG
 from src.controllers.q_learning import QLearningController
-from src.rl.discretization import StateDiscretizer
 from src.rl.environment import TrafficSignalRLEnv
 from src.rl.rewards import NegativePressureReward
-
-
-def checkpoint_env_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Maps controller metadata to environment options in one place."""
-    params: Dict[str, Any] = {}
-    if "num_actions" in cfg:
-        try:
-            params["num_actions"] = int(cfg["num_actions"])
-        except (ValueError, TypeError, OverflowError):
-            pass
-    if "target_tls_id" in cfg and cfg["target_tls_id"] is not None:
-        params["target_tls_id"] = str(cfg["target_tls_id"])
-
-    params["decision_interval"] = float(cfg.get("decision_interval", 5.0))
-    params["yellow_duration"] = float(cfg.get("yellow_duration", DEFAULT_SAFETY_CONFIG["yellow_duration"]))
-    params["all_red_duration"] = float(cfg.get("all_red_duration", DEFAULT_SAFETY_CONFIG["all_red_duration"]))
-    params["min_green"] = float(cfg.get("min_green", DEFAULT_SAFETY_CONFIG["min_green"]))
-    max_green = cfg.get("max_green", DEFAULT_SAFETY_CONFIG["max_green"])
-    params["max_green"] = float(max_green) if max_green is not None else None
-
-    d_cfg = cfg.get("discretizer_config", {})
-    if isinstance(d_cfg, dict) and d_cfg:
-        params["state_discretizer"] = StateDiscretizer.from_config(d_cfg, params["min_green"])
-    return params
 
 
 def create_evaluation_session(
@@ -49,14 +24,14 @@ def create_evaluation_session(
     if not model_path:
         raise FileNotFoundError("Evaluation requires a trained Q-Learning checkpoint")
     agent = QLearningController.from_checkpoint(model_path, seed=seed, **(timing_overrides or {}))
-    params = checkpoint_env_params(agent.get_config())
-    params.pop("num_actions", None)
-    params.update(timing_overrides or {})
+    config = agent.get_config()
+    params = {key: config[key] for key in (*DEFAULT_SAFETY_CONFIG, "max_red", "decision_interval", "target_tls_id")}
     params["state_discretizer"] = agent.discretizer
     reward = dict(agent.reward_config or {})
     if reward.pop("name", "NegativePressureReward") != "NegativePressureReward":
         raise ValueError("Unsupported checkpoint reward function")
-    env_options.setdefault("reward_fn", NegativePressureReward(**reward))
+    reward_kwargs = {k: v for k, v in reward.items() if k in ("scale", "pending_weight")}
+    env_options.setdefault("reward_fn", NegativePressureReward(**reward_kwargs))
     env = TrafficSignalRLEnv(
         scenario_name=scenario_name, seed=seed, **{**params, **env_options},
     )
@@ -89,19 +64,20 @@ def run_greedy_eval_loop(
 
     total_reward = 0.0
     try:
-        _, info = env.reset(seed=seed)
+        discrete_state, info = env.reset(seed=seed)
         valid_actions = info["valid_actions"]
-        discrete_state = info["discrete_state"]
+        if discrete_state is None:
+            discrete_state = info["discrete_state"]
 
         while True:
             curr_phase = discrete_state[0]
             action = agent.select_action_for_state(
                 discrete_state, valid_actions=valid_actions, current_phase=curr_phase
             )
-            _, reward, terminated, truncated, next_info = env.step(action)
+            next_state, reward, terminated, truncated, next_info = env.step(action)
             total_reward += reward
             valid_actions = next_info["valid_actions"]
-            discrete_state = next_info["discrete_state"]
+            discrete_state = next_state if next_state is not None else next_info.get("discrete_state")
             if terminated or truncated:
                 break
     finally:

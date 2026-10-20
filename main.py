@@ -1,12 +1,15 @@
 """Command-line interface for the Traffic Signal Control simulation platform.
 
 Giao diện dòng lệnh (CLI):
-- Không chạy trực tiếp không tham số. Bắt buộc truyền cờ qua dòng lệnh.
-- Các cờ lệnh chính: --algorithm (-a), --dataset (-d), --gui, --steps (-s).
+- Mặc định đọc toàn bộ cấu hình từ file YAML (mặc định: configs/config.yaml).
+- Cho phép chạy trực tiếp không cần truyền cờ: `python main.py`.
+- Các cờ lệnh (nếu truyền) sẽ ghi đè cấu hình trong YAML:
+  --config (-c), --algorithm (-a), --dataset (-d), --gui, --steps (-s), --model (-m).
 """
 
 import argparse
 import json
+import os
 import sys
 
 # Ensure UTF-8 output and error encoding across Windows consoles
@@ -17,10 +20,12 @@ for stream in (sys.stdout, sys.stderr):
         except (OSError, ValueError):
             pass
 
+from src.config import load_yaml_config, resolve_config_path
 from src.evaluation.experiment_runner import ExperimentConfig, run_single_experiment
 
 
 # Cấu hình mặc định môi trường CLI
+DEFAULT_CONFIG_PATH = "configs/config.yaml"
 DEFAULT_DATASET = "cologne1"
 DEFAULT_GUI_DELAY = 50.0
 RANDOM_SEED = 42
@@ -31,61 +36,109 @@ def parse_args():
     """Phân tích các đối số dòng lệnh CLI."""
     parser = argparse.ArgumentParser(
         description="SUMO Traffic Signal Control Platform (CLI)",
-        epilog="Example: python main.py -a max-pressure --gui",
+        epilog="Example: python main.py (reads configs/config.yaml) or python main.py -a max-pressure --gui",
+    )
+    parser.add_argument(
+        "--config", "-c",
+        type=str,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Path to YAML configuration file (default: {DEFAULT_CONFIG_PATH})",
     )
     parser.add_argument(
         "--algorithm", "-a",
-        required=True,
+        default=None,
         choices=["fixed-time", "max-pressure", "q-learning", "none"],
-        help="Traffic control algorithm (fixed-time, max-pressure, q-learning, none)",
+        help="Traffic control algorithm (override YAML config)",
     )
     parser.add_argument(
         "--dataset", "-d",
-        default=DEFAULT_DATASET,
+        default=None,
         choices=["cologne1", "ingolstadt1", "cologne3"],
-        help=f"Scenario dataset name (default: {DEFAULT_DATASET})",
+        help="Scenario dataset name (override YAML config)",
     )
     parser.add_argument(
         "--gui",
         action="store_true",
-        default=False,
-        help="Enable SUMO-GUI visual simulation (default: headless)",
+        default=None,
+        help="Enable SUMO-GUI visual simulation (override YAML config)",
     )
     parser.add_argument(
         "--steps", "-s",
         type=int,
         default=None,
-        help="Max simulation steps (default: run entire scenario)",
+        help="Max simulation steps (override YAML config)",
     )
     parser.add_argument(
         "--model", "-m",
         type=str,
         default=None,
-        help="Path to Q-Learning model checkpoint (default: models/q_learning/q_learning_<dataset>_best.json)",
+        help="Path to Q-Learning model checkpoint (override YAML config)",
     )
-
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
 
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    record, summary = run_single_experiment(ExperimentConfig(
-        scenario_name=args.dataset, algorithm=args.algorithm, steps=args.steps,
-        model_path=args.model,
-        gui=args.gui, gui_delay=DEFAULT_GUI_DELAY if args.gui else 0.0,
-        seed=RANDOM_SEED, output_dir=OUTPUT_DIR,
-    ), include_summary=True)
+
+    # Bắt buộc phải có file cấu hình YAML để chạy
+    config_path = resolve_config_path(args.config)
+
+    yaml_data = load_yaml_config(config_path)
+    sim_cfg = yaml_data.get("simulation", {})
+    safety_cfg = yaml_data.get("safety", {})
+    ql_cfg = yaml_data.get("q_learning", {})
+
+    # Ánh xạ tên cờ CLI sang tên thuộc tính của ExperimentConfig
+    cli_key_map = {"dataset": "scenario_name", "model": "model_path"}
+    cli_overrides = {
+        cli_key_map.get(k, k): v
+        for k, v in vars(args).items()
+        if v is not None and k != "config"
+    }
+
+    base_cfg = {
+        "scenario_name": sim_cfg.get("dataset", DEFAULT_DATASET),
+        "algorithm": sim_cfg.get("algorithm"),
+        "gui": sim_cfg.get("gui", False),
+        "steps": sim_cfg.get("steps", None),
+        "model_path": sim_cfg.get("model_path", ql_cfg.get("model_path", None)),
+        "seed": int(sim_cfg.get("seed", RANDOM_SEED)),
+        "output_dir": str(sim_cfg.get("output_dir", OUTPUT_DIR)),
+        "step_length": float(sim_cfg.get("step_length", 1.0)),
+        "use_tripinfo": bool(sim_cfg.get("use_tripinfo", True)),
+    }
+    final_cfg = {**base_cfg, **cli_overrides}
+
+    if not final_cfg.get("algorithm"):
+        raise ValueError(
+            f"Chưa xác định thuật toán điều khiển (algorithm). "
+            f"Vui lòng cấu hình 'simulation.algorithm' trong {config_path} hoặc truyền qua cờ -a."
+        )
+
+    gui = final_cfg["gui"]
+    gui_delay = float(sim_cfg.get("gui_delay", DEFAULT_GUI_DELAY)) if gui else 0.0
+
+    timing_overrides = {
+        key: safety_cfg[key]
+        for key in ("yellow_duration", "all_red_duration", "min_green", "max_green", "max_red")
+        if key in safety_cfg
+    }
+
+    exp_config = ExperimentConfig(
+        **final_cfg,
+        gui_delay=gui_delay,
+        timing_overrides=timing_overrides,
+    )
+
+    record, summary = run_single_experiment(exp_config, include_summary=True)
     if record["status"] == "FAILED":
         err = record["error_message"]
         if "Model file not found" in err:
             err += (
-                f"\nGợi ý: Kịch bản '{args.dataset}' chưa có checkpoint sẵn. "
+                f"\nGợi ý: Kịch bản '{exp_config.scenario_name}' chưa có checkpoint sẵn. "
                 f"Hãy chạy huấn luyện trước bằng lệnh:\n"
-                f"  python -m src.training.train_q_learning --dataset {args.dataset}\n"
+                f"  python -m src.training.train_q_learning --dataset {exp_config.scenario_name}\n"
                 f"hoặc chỉ định đường dẫn model qua cờ '--model' / '-m'."
             )
         raise RuntimeError(err)

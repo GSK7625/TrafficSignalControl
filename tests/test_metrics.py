@@ -88,6 +88,29 @@ class TestMetricsCollector:
         assert step_record.waiting_time == 10.0  # 5.0 * 2 vehs
         assert step_record.time_loss == 12.0     # 6.0 * 2 vehs
 
+    def test_online_tracking_accumulates_scalar_travel_and_waiting(self, mock_traci):
+        collector = MetricsCollector("test_scen")
+        mock_traci.simulation.getDepartedIDList.return_value = ["v1"]
+        mock_traci.vehicle.getDeparture.return_value = 0.0
+        mock_traci.vehicle.getIDList.return_value = ["v1"]
+        mock_traci.vehicle.getAccumulatedWaitingTime.return_value = 5.0
+        mock_traci.vehicle.getTimeLoss.return_value = 2.0
+        mock_traci.vehicle.getSpeed.return_value = 10.0
+        mock_traci.simulation.getPendingVehicles.return_value = []
+        mock_traci.lane.getLastStepHaltingNumber.return_value = 0
+
+        collector.record_step(step=1, sim_time=1.0, controlled_lanes=[], traci_module=mock_traci)
+        mock_traci.simulation.getDepartedIDList.return_value = []
+        mock_traci.simulation.getArrivedIDList.return_value = ["v1"]
+        mock_traci.vehicle.getIDList.return_value = []
+
+        collector.record_step(step=2, sim_time=10.0, controlled_lanes=[], traci_module=mock_traci)
+        summary = collector.get_summary()
+        assert summary["total_completed_vehicles"] == 1
+        assert summary["mean_travel_time"] == 10.0
+        assert summary["mean_waiting_time"] == 5.0
+        assert not hasattr(collector, "completed_travel_times")
+
     def test_export_results_safety_and_structure(self, tmp_path):
         collector = MetricsCollector(scenario_name="test_scen")
         collector.step_records.append(
@@ -130,15 +153,12 @@ class TestMetricsCollector:
                 cumulative_completed_vehicles=1,
             )
         )
-        core = collector.get_core_metrics()
-        assert "mean_waiting_time" in core
-        assert core["mean_queue_length"] == 3.0
-        assert core["max_queue_length"] == 3
-        assert core["total_completed_vehicles"] == 1
-        assert "throughput_vph" in core
-
         summary = collector.get_summary()
         assert "core_metrics" in summary
+        assert summary["mean_queue_length"] == 3.0
+        assert summary["max_queue_length"] == 3
+        assert summary["total_completed_vehicles"] == 1
+        assert "throughput_vph" in summary
         assert summary["core_metrics"]["queue_length"]["mean_queue_length"] == 3.0
 
     def test_required_metric_failure_is_not_a_zero_queue(self, mock_traci):
@@ -302,7 +322,9 @@ class TestVehicleAccounting:
         assert summary["accounting_valid"] is False
         assert summary["is_valid"] is False
         assert summary["status"] == "INVALID"
-        assert summary["data_validity"] == "INVALID"
+        assert "data_validity" not in summary
+        assert "arrival_count" not in summary
+        assert "completed_mean_waiting_time" not in summary
         assert len(summary["measurement_error_messages"]) > 0
 
     def test_get_summary_includes_completion_rate_pct(self):
@@ -311,3 +333,24 @@ class TestVehicleAccounting:
         collector.run_metadata["scheduled_demand_in_window"] = 100
         summary = collector.get_summary()
         assert summary["completion_rate_pct"] == 50.0
+
+    @pytest.mark.parametrize("ids", [["other"], [], ["arrived", "extra"], ["arrived", "arrived"]])
+    def test_tripinfo_must_match_arrived_ids(self, tmp_path, ids):
+        path = tmp_path / "tripinfo.xml"
+        trips = ''.join(f'<tripinfo id="{vid}" duration="5" waitingTime="1" timeLoss="2"/>' for vid in ids)
+        path.write_text(f'<tripinfos>{trips}</tripinfos>', encoding="utf-8")
+        collector = MetricsCollector("test", str(path))
+        collector.completed_ids = {"arrived"}
+        collector._cumulative_completed = 1
+        assert collector.reconcile_tripinfo()["tripinfo_reconciliation_status"] == "MISMATCH"
+        assert collector.get_summary()["is_valid"] is False
+
+    def test_departure_and_arrival_in_same_step_does_not_query_removed_vehicle(self, mock_traci):
+        mock_traci.simulation.getDepartedIDList.return_value = ["short"]
+        mock_traci.simulation.getArrivedIDList.return_value = ["short"]
+        mock_traci.vehicle.getDeparture.side_effect = RuntimeError("vehicle already removed")
+        collector = MetricsCollector("test")
+        collector.record_step(1, 1.0, [], mock_traci)
+        assert collector.completed_ids == {"short"}
+        assert collector._cumulative_completed == 1
+

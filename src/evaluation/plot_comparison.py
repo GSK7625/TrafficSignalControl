@@ -1,17 +1,19 @@
-"""Comprehensive visualization and publication-quality chart generator for Phase 6.
+"""Comprehensive visualization and publication-quality chart generator for benchmark evaluations.
 
 Generates benchmark charts across Groups A, B, and C:
-- Group A: Algorithm Comparisons (Waiting Time, Queue Length, Throughput, Time Loss, Completion Rate, Improvement %)
+- Group A: Algorithm Comparisons (Waiting Time, Queue Length, Throughput, Time Loss, Completion Rate)
 - Group B: Traffic Dynamics Over Time (Queue over time, Running vehicles, Cumulative completed, Green time allocation)
 - Group C: Reinforcement Learning Dynamics (Q-Learning reward, Epsilon decay, RL Convergence)
 """
 
+import csv
 import os
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
-import pandas as pd
+import numpy as np
 
 from src.evaluation.compare_algorithms import load_json
+from src.evaluation.experiment_runner import normalize_algo_name
 from src.metrics import COMPARISON_METRICS
 
 
@@ -31,6 +33,29 @@ ALGO_COLORS = {
     "Max-Pressure": "#2ca02c",   # Forest Green
     "Q-Learning": "#ff7f0e",     # Amber Orange
 }
+
+
+def extract_metric_series(
+    scen_data: Dict[str, Any],
+    active_algos: List[str],
+    metric_key: str,
+    scale: float = 1.0,
+    fallback_key: Optional[str] = None,
+) -> Tuple[List[str], List[float], List[float], List[str]]:
+    """Extracts (categories, means, stds, colors) for a metric across active algorithms."""
+    categories, means, stds, colors = [], [], [], []
+    for algo in active_algos:
+        stats = scen_data.get(algo, {}).get(metric_key, {})
+        if stats.get("mean") is None and fallback_key:
+            stats = scen_data.get(algo, {}).get(fallback_key, {})
+        mean = stats.get("mean")
+        if mean is not None:
+            categories.append(algo)
+            means.append(float(mean) / scale)
+            std = stats.get("std") or 0.0
+            stds.append(float(std) / scale)
+            colors.append(ALGO_COLORS.get(algo, "#333333"))
+    return categories, means, stds, colors
 
 
 def _draw_metric_bar(
@@ -75,6 +100,27 @@ def _save_plot(fig: plt.Figure, filepath: str) -> str:
     return filepath
 
 
+def _load_step_metrics_csv(csv_path: str) -> List[Dict[str, float]]:
+    """Loads step metrics from a CSV file into a list of row dictionaries."""
+    rows = []
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                parsed = {
+                    "step": int(row["step"]),
+                    "sim_time": float(row["sim_time"]),
+                    "queue_length": float(row.get("queue_length", 0.0)),
+                    "running_vehicles": float(row.get("running_vehicles", 0.0)),
+                    "cumulative_completed_vehicles": float(row.get("cumulative_completed_vehicles", 0.0)),
+                    "pending_vehicles": float(row.get("pending_vehicles", 0.0)),
+                }
+                rows.append(parsed)
+            except (ValueError, KeyError):
+                continue
+    return rows
+
+
 def plot_group_a_comparisons(
     summary_file: str = "results/evaluation/benchmark_summary.json",
     output_dir: str = "results/figures",
@@ -96,38 +142,18 @@ def plot_group_a_comparisons(
             continue
 
         for key, suffix, ylabel, title, fmt, scale in COMPARISON_METRICS:
-            available_algos = [a for a in active_algos if scen_data[a].get(key, {}).get("mean") is not None]
+            available_algos, means, stds, colors = extract_metric_series(scen_data, active_algos, key, scale=scale)
             if not available_algos:
                 continue
             fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
             _draw_metric_bar(
-                ax, available_algos,
-                [scen_data[a][key]["mean"] / scale for a in available_algos],
-                [(scen_data[a][key].get("std") or 0.0) / scale for a in available_algos],
+                ax, available_algos, means, stds,
                 ylabel=ylabel, title=f"{title} — {scen.upper()}", fmt=fmt,
-                colors=[ALGO_COLORS.get(a, "#333333") for a in available_algos],
+                colors=colors,
             )
             if suffix == "completion_rate":
                 ax.set_ylim(0, 110)
             generated.append(_save_plot(fig, os.path.join(output_dir, f"{scen}_{suffix}_comparison.png")))
-
-        # 6. Percentage Improvement vs Fixed-Time
-        compared_algos = [a for a in active_algos if a != "Fixed-Time" and scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct") is not None]
-        if compared_algos:
-            fig, ax = plt.subplots(figsize=(8, 4.8), dpi=300)
-            c_colors = [ALGO_COLORS.get(a, "#333333") for a in compared_algos]
-            imps = [
-                scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0)
-                for a in compared_algos
-            ]
-            _draw_metric_bar(
-                ax, compared_algos, imps,
-                ylabel="Waiting Time Improvement (%)",
-                title=f"Relative Improvement vs Fixed-Time — {scen.upper()}",
-                fmt="%+.1f%%", colors=c_colors,
-            )
-            ax.axhline(0, color="gray", linewidth=1.0, linestyle="--")
-            generated.append(_save_plot(fig, os.path.join(output_dir, f"{scen}_improvement_vs_fixed_time.png")))
 
     return generated
 
@@ -144,8 +170,6 @@ def plot_group_b_dynamics(
     if not isinstance(raw_runs, list) or not raw_runs:
         return []
 
-    from src.evaluation.experiment_runner import normalize_algo_name
-
     allowed_algos = ["Fixed-Time", "Max-Pressure", "Q-Learning"]
     valid_runs = []
     for r in raw_runs:
@@ -155,24 +179,28 @@ def plot_group_b_dynamics(
         if norm_algo in allowed_algos:
             valid_runs.append({**r, "algorithm": norm_algo})
 
-    latest_cohorts = {}
-    for r in valid_runs:
-        key = (r.get("scenario_name"), r.get("algorithm"))
-        cohort = r.get("cohort_fingerprint")
-        if cohort:
-            latest_cohorts[key] = cohort
+    if selected_records is not None:
+        runs = valid_runs
+    else:
+        latest_cohorts = {}
+        for r in valid_runs:
+            key = (r.get("scenario_name"), r.get("algorithm"))
+            cohort = r.get("cohort_fingerprint")
+            if cohort:
+                latest_cohorts[key] = cohort
 
-    runs_by_key = {}
-    for idx, r in enumerate(valid_runs):
-        key = (r.get("scenario_name"), r.get("algorithm"))
-        cohort = r.get("cohort_fingerprint")
-        target_cohort = latest_cohorts.get(key)
-        if target_cohort is not None and cohort != target_cohort:
-            continue
-        seed_key = r.get("seed", idx)
-        runs_by_key[(key[0], key[1], seed_key)] = r
+        runs_by_key = {}
+        for idx, r in enumerate(valid_runs):
+            key = (r.get("scenario_name"), r.get("algorithm"))
+            cohort = r.get("cohort_fingerprint")
+            target_cohort = latest_cohorts.get(key)
+            if target_cohort is not None and cohort != target_cohort:
+                continue
+            seed_key = r.get("seed", idx)
+            runs_by_key[(key[0], key[1], seed_key)] = r
 
-    runs = list(runs_by_key.values())
+        runs = list(runs_by_key.values())
+
     if not runs:
         return []
 
@@ -202,44 +230,46 @@ def plot_group_b_dynamics(
                 continue
 
             color = ALGO_COLORS.get(algo, "#333333")
-            dfs = []
+            by_step: Dict[int, Dict[str, List[float]]] = {}
             for r in algo_runs:
-                r_dir = r.get("output_dir")
-                if not r_dir:
-                    continue
-                csv_path = os.path.join(r_dir, "step_metrics.csv")
-                if not os.path.isfile(csv_path):
-                    for root, _, files in os.walk(r_dir):
-                        if "step_metrics.csv" in files:
-                            csv_path = os.path.join(root, "step_metrics.csv")
-                            break
+                csv_path = r.get("output_csv")
+                if not csv_path or not os.path.isfile(csv_path):
+                    r_dir = r.get("output_dir")
+                    if r_dir:
+                        candidate = os.path.join(r_dir, "step_metrics.csv")
+                        if os.path.isfile(candidate):
+                            csv_path = candidate
 
-                if os.path.isfile(csv_path):
-                    dfs.append(pd.read_csv(csv_path))
+                if csv_path and os.path.isfile(csv_path):
+                    for row in _load_step_metrics_csv(csv_path):
+                        s = row["step"]
+                        if s not in by_step:
+                            by_step[s] = {
+                                "sim_time": [], "queue_length": [], "running_vehicles": [],
+                                "cumulative_completed_vehicles": [], "pending_vehicles": [],
+                            }
+                        for k in by_step[s]:
+                            by_step[s][k].append(row[k])
 
-            if not dfs:
+            if not by_step:
                 continue
 
-            combined = pd.concat(dfs, ignore_index=True)
-            steps_unique = sorted(combined["step"].unique())
+            steps_unique = sorted(by_step.keys())
             sampled_steps = steps_unique[::15] if len(steps_unique) > 100 else steps_unique
-            combined_sampled = combined[combined["step"].isin(sampled_steps)]
 
-            grouped = combined_sampled.groupby("step").agg({
-                "sim_time": "mean",
-                **{key: ["mean", "std"] for key, _, _, _ in dynamics},
-            })
-
-            times = grouped["sim_time"]["mean"]
+            times = [float(np.mean(by_step[s]["sim_time"])) for s in sampled_steps]
 
             for key, _, _, _ in dynamics:
                 if key not in figures:
                     figures[key] = plt.subplots(figsize=(10, 5), dpi=300)
                 _, ax = figures[key]
-                means = grouped[key]["mean"]
-                stds = grouped[key]["std"].fillna(0)
+                means = np.array([float(np.mean(by_step[s][key])) for s in sampled_steps])
+                stds = np.array([
+                    float(np.std(by_step[s][key], ddof=1)) if len(by_step[s][key]) > 1 else 0.0
+                    for s in sampled_steps
+                ])
                 ax.plot(times, means, label=algo, color=color, linewidth=1.8, alpha=0.9)
-                ax.fill_between(times, (means - stds).clip(lower=0), means + stds, color=color, alpha=0.15)
+                ax.fill_between(times, np.clip(means - stds, a_min=0, a_max=None), means + stds, color=color, alpha=0.15)
 
         for key, title, ylabel, suffix in dynamics:
             if key not in figures:
@@ -333,7 +363,7 @@ def plot_benchmark_dashboard(
     summary_file: str = "results/evaluation/benchmark_summary.json",
     output_dir: str = "results/figures",
 ) -> List[str]:
-    """Generates a single comprehensive 2x2 Dashboard per scenario combining key comparison metrics."""
+    """Generates a comprehensive 1x3 Dashboard per scenario combining the 3 core metrics: Waiting Time, Queue Length, and Throughput."""
     os.makedirs(output_dir, exist_ok=True)
     set_plot_style()
     data = load_json(summary_file)
@@ -348,39 +378,22 @@ def plot_benchmark_dashboard(
         if not active_algos:
             continue
 
-        fig, axes = plt.subplots(2, 2, figsize=(12, 9), dpi=300)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), dpi=300)
 
         for ax, (key, _, ylabel, title, fmt, _) in zip(axes.flat, COMPARISON_METRICS[:3]):
             fallback = "mean_waiting_time" if key == "tripinfo_mean_waiting_time" else None
-            values = []
-            for algo in active_algos:
-                stats = scen_data[algo].get(key, {})
-                if stats.get("mean") is None and fallback:
-                    stats = scen_data[algo].get(fallback, {})
-                if stats.get("mean") is not None:
-                    values.append((algo, stats["mean"], stats.get("std") or 0.0))
+            algos, means, stds, colors = extract_metric_series(
+                scen_data, active_algos, key, fallback_key=fallback
+            )
             _draw_metric_bar(
-                ax, [v[0] for v in values], [v[1] for v in values], [v[2] for v in values],
+                ax, algos, means, stds,
                 ylabel=ylabel, title=title, fmt=fmt,
-                colors=[ALGO_COLORS.get(v[0], "#333333") for v in values],
+                colors=colors,
                 fontsize=8, padding=3, yerr_capsize=4, title_fontsize=11, ylabel_fontsize=10,
             )
 
-        # 4. Relative Improvement vs Fixed-Time
-        compared_algos = [a for a in active_algos if a != "Fixed-Time" and scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct") is not None]
-        if compared_algos:
-            c_colors = [ALGO_COLORS.get(a, "#333333") for a in compared_algos]
-            imps = [
-                scen_data[a].get("improvements_vs_baseline", {}).get("tripinfo_mean_waiting_time_improvement_pct", 0.0)
-                for a in compared_algos
-            ]
-            _draw_metric_bar(axes[1, 1], compared_algos, imps, ylabel="Improvement (%)", title="Waiting Time Improvement vs Fixed-Time", fmt="%+.1f%%", colors=c_colors, fontsize=8, padding=3, yerr_capsize=4, title_fontsize=11, ylabel_fontsize=10)
-            axes[1, 1].axhline(0, color="gray", linewidth=0.8, linestyle="--")
-        else:
-            axes[1, 1].set_axis_off()
-
-        fig.suptitle(f"Benchmark Performance Dashboard — {scen.upper()}", fontsize=14, fontweight="bold", y=0.98)
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        fig.suptitle(f"Benchmark Performance Dashboard — {scen.upper()}", fontsize=13, fontweight="bold", y=0.98)
+        plt.tight_layout(rect=[0, 0, 1, 0.94])
         out_p = os.path.join(output_dir, f"{scen}_benchmark_dashboard.png")
         plt.savefig(out_p)
         plt.close(fig)
@@ -389,7 +402,7 @@ def plot_benchmark_dashboard(
     return generated
 
 
-def generate_all_phase6_charts(
+def generate_all_benchmark_charts(
     output_dir: str = "results/figures", dashboard_only: bool = False, *,
     summary_file: str = "results/evaluation/benchmark_summary.json",
     runs_file: str = "results/evaluation/benchmark_runs.json", log_dir: str = "results/training",
@@ -410,6 +423,10 @@ def generate_all_phase6_charts(
     return all_charts
 
 
+# Backwards compatibility alias
+generate_all_phase6_charts = generate_all_benchmark_charts
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Plot Benchmark Comparison Charts")
@@ -419,4 +436,4 @@ if __name__ == "__main__":
     parser.add_argument("--runs-file", default="results/evaluation/benchmark_runs.json")
     parser.add_argument("--log-dir", default="results/training")
     args = parser.parse_args()
-    generate_all_phase6_charts(**vars(args))
+    generate_all_benchmark_charts(**vars(args))
