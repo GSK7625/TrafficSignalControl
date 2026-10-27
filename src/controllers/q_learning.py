@@ -14,7 +14,9 @@ import os
 import random
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from src.controllers.fixed_time import build_yellow_state
+from src.controllers.base import BaseController, register_controller
+
+__all__ = ["CompactStateDiscretizer", "QLearningController"]
 
 
 class CompactStateDiscretizer:
@@ -43,16 +45,7 @@ class CompactStateDiscretizer:
         time_in_phase: float,
         phase_queues: Dict[int, float],
     ) -> Tuple[int, int, int, int, int]:
-        """Discretizes current traffic condition.
-
-        Args:
-            curr_phase: Active green phase index.
-            time_in_phase: Elapsed time in the current phase (seconds).
-            phase_queues: Mapping from phase index to estimated queue length.
-
-        Returns:
-            Tuple of discrete state values.
-        """
+        """Discretizes current traffic condition."""
         time_bin = self._bin_value(time_in_phase, self.time_thresholds)
         serving_q = float(phase_queues.get(curr_phase, 0.0))
         serving_bin = self._bin_value(serving_q, self.queue_thresholds)
@@ -69,7 +62,8 @@ class CompactStateDiscretizer:
         return (int(curr_phase), int(time_bin), int(serving_bin), int(strongest_competing), int(competing_bin))
 
 
-class QLearningController:
+@register_controller("q_learning")
+class QLearningController(BaseController):
     """Tabular Q-Learning Traffic Signal Controller with traffic safety bounds."""
 
     def __init__(
@@ -87,29 +81,26 @@ class QLearningController:
         lane_vehicle_fn: Optional[Callable[[str], int]] = None,
         discretizer: Optional[CompactStateDiscretizer] = None,
     ) -> None:
-        if not green_phases:
-            raise ValueError("green_phases must contain at least one phase.")
         if min_green <= 0:
             raise ValueError(f"min_green must be positive, got {min_green}.")
         if max_green < min_green:
             raise ValueError(f"max_green ({max_green}) must be >= min_green ({min_green}).")
-        if yellow_time < 0:
-            raise ValueError(f"yellow_time must be non-negative, got {yellow_time}.")
 
-        self.green_phases: List[str] = [
-            p.state if hasattr(p, "state") else str(p) for p in green_phases
-        ]
         self.movements: List[Any] = list(movements) if movements is not None else []
         self.decision_interval: float = float(decision_interval)
         self.min_green: float = float(min_green)
         self.max_green: float = float(max_green)
-        self.yellow_time: float = float(yellow_time)
         self.lr: float = float(lr)
         self.gamma: float = float(gamma)
         self.epsilon: float = float(epsilon)
-        self.tls_id: Optional[str] = tls_id
-        self._lane_vehicle_fn: Optional[Callable[[str], int]] = lane_vehicle_fn
         self.discretizer: CompactStateDiscretizer = discretizer or CompactStateDiscretizer()
+
+        super().__init__(
+            green_phases=green_phases,
+            yellow_time=yellow_time,
+            tls_id=tls_id,
+            lane_vehicle_fn=lane_vehicle_fn,
+        )
 
         # Precompute incoming lanes per green phase
         self._phase_incoming_lanes: List[List[str]] = []
@@ -129,62 +120,11 @@ class QLearningController:
         self.action_counts: Dict[Tuple[Tuple[int, ...], int], int] = {}
         self.explore_mode: bool = False
 
-        # Internal execution state
-        self._current_phase_idx: int = 0
-        self._next_phase_idx: int = 0
-        self._is_yellow: bool = False
-        self._time_in_phase: float = 0.0
-        self._total_time: float = 0.0
-        self._step_count: int = 0
+    def reset(self) -> None:
+        """Resets dynamic execution state without wiping learned Q-table."""
+        super().reset()
         self._time_since_last_decision: float = 0.0
         self.last_decision: Optional[Tuple[Tuple[int, ...], int]] = None
-
-    @property
-    def num_phases(self) -> int:
-        return len(self.green_phases)
-
-    @property
-    def current_phase(self) -> int:
-        return self._current_phase_idx
-
-    @property
-    def is_yellow(self) -> bool:
-        return self._is_yellow
-
-    @property
-    def time_in_phase(self) -> float:
-        return self._time_in_phase
-
-    @property
-    def total_time(self) -> float:
-        return self._total_time
-
-    @property
-    def step_count(self) -> int:
-        return self._step_count
-
-    def get_current_state(self) -> str:
-        curr_green = self.green_phases[self._current_phase_idx]
-        if self._is_yellow:
-            next_green = self.green_phases[self._next_phase_idx]
-            return build_yellow_state(curr_green, next_green)
-        return curr_green
-
-    def _get_vehicle_count(self, lane_id: str) -> int:
-        if not lane_id:
-            return 0
-        if self._lane_vehicle_fn is not None:
-            try:
-                return int(self._lane_vehicle_fn(lane_id))
-            except Exception:
-                return 0
-        try:
-            import traci
-            if traci.isLoaded():
-                return int(traci.lane.getLastStepVehicleNumber(lane_id))
-        except (ImportError, AttributeError, Exception):
-            pass
-        return 0
 
     def calculate_phase_queues(self) -> Dict[int, float]:
         """Calculates total vehicle queue/demand per green phase."""
@@ -212,14 +152,7 @@ class QLearningController:
             return val
 
     def choose_action(self, state: Tuple[int, ...], explore: bool = False) -> int:
-        """Selects next action according to epsilon-greedy policy with action masking.
-
-        In greedy mode (explore=False):
-        - Action masking: prevents switching to phases with zero queue when current phase has queue > 0.
-        - Unvisited penalty: unvisited switch actions (default 0.0) are never favored over visited
-          phases with negative rewards when current phase has active traffic.
-        - Tie-breaking: prioritizes keeping current phase to minimize yellow clearance lost time.
-        """
+        """Selects next action according to epsilon-greedy policy with action masking."""
         queues = self.calculate_phase_queues()
         curr_q = queues.get(self._current_phase_idx, 0.0)
 
@@ -284,11 +217,7 @@ class QLearningController:
         return td_error
 
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool]:
-        """Advances controller state by step_duration seconds.
-
-        Returns:
-            Tuple[str, bool]: (active_signal_state, is_phase_switched)
-        """
+        """Advances controller state by step_duration seconds."""
         step_duration = float(step_duration)
         self.last_decision = None
 
@@ -346,17 +275,6 @@ class QLearningController:
                 return self.get_current_state(), True
 
         return self.get_current_state(), False
-
-    def reset(self) -> None:
-        """Resets dynamic execution state without wiping learned Q-table."""
-        self._current_phase_idx = 0
-        self._next_phase_idx = 0
-        self._is_yellow = False
-        self._time_in_phase = 0.0
-        self._total_time = 0.0
-        self._step_count = 0
-        self._time_since_last_decision = 0.0
-        self.last_decision = None
 
     def save(self, filepath: str) -> None:
         """Serializes learned Q-table and hyperparameters to a JSON file."""
