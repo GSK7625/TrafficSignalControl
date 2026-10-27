@@ -7,6 +7,7 @@ import traci
 
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
+from src.controllers.q_learning import QLearningController
 from src.data_inspector import inspect_scenario
 from src.simulation_runner import SimulationRunner, SimulationResult
 
@@ -209,4 +210,59 @@ def test_simulation_runner_max_pressure_execution_50_steps():
     assert result.max_queue_length >= 0
     assert result.completed is True
     assert not traci.isLoaded()
+
+
+def test_simulation_runner_q_learning_initialization():
+    """Test SimulationRunner initialization with controller_type='q_learning'."""
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    runner = SimulationRunner(cfg_path=cfg_path, controller_type="q_learning")
+
+    assert runner.controller_type == "q_learning"
+    assert runner.controller is not None
+    assert isinstance(runner.controller, QLearningController)
+    assert runner.controller.tls_id == runner.tls_id
+    assert len(runner.controller.movements) > 0
+    assert runner.controller.min_green == 10.0
+    assert runner.controller.max_green == 60.0
+    assert runner.controller.yellow_time == 3.0
+    assert runner.controller.decision_interval == 5.0
+
+
+def test_simulation_runner_explicit_q_learning_controller():
+    """Test passing an explicit QLearningController instance."""
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    info = inspect_scenario("cologne1", data_dir="data")
+    green_phases = info.get_green_phases()
+    movements = info.get_movements(info.tls_ids[0])
+    ctrl = QLearningController(
+        green_phases=green_phases,
+        movements=movements,
+        min_green=12.0,
+        max_green=50.0,
+        yellow_time=4.0,
+        tls_id=info.tls_ids[0],
+    )
+    runner = SimulationRunner(cfg_path=cfg_path, controller=ctrl)
+
+    assert runner.controller is ctrl
+    assert runner.controller_type == "q_learning"
+    assert runner.tls_id == info.tls_ids[0]
+
+
+def test_simulation_runner_q_learning_execution_50_steps():
+    """Test short 50-step simulation execution using QLearningController."""
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    runner = SimulationRunner(cfg_path=cfg_path, controller_type="q_learning")
+
+    result = runner.run(gui=False, max_steps=50)
+
+    assert isinstance(result, SimulationResult)
+    assert result.total_steps == 50
+    assert len(result.queue_history) == 50
+    assert result.controller_step_count == 50
+    assert result.mean_queue_length >= 0.0
+    assert result.max_queue_length >= 0
+    assert result.completed is True
+    assert not traci.isLoaded()
+
 

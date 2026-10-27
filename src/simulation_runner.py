@@ -102,6 +102,8 @@ class SimulationRunner:
             self.controller = controller
             if isinstance(controller, MaxPressureController):
                 self.controller_type = "max_pressure"
+            elif isinstance(controller, QLearningController):
+                self.controller_type = "q_learning"
             elif isinstance(controller, FixedTimeController):
                 self.controller_type = "fixed_time"
             else:
@@ -122,6 +124,17 @@ class SimulationRunner:
                     min_green=10.0,
                     max_green=60.0,
                     yellow_time=3.0,
+                    tls_id=self.tls_id,
+                )
+            elif self.controller_type == "q_learning":
+                movements = scenario_info.get_movements(self.tls_id)
+                self.controller = QLearningController(
+                    green_phases=green_phases,
+                    movements=movements,
+                    min_green=10.0,
+                    max_green=60.0,
+                    yellow_time=3.0,
+                    decision_interval=5.0,
                     tls_id=self.tls_id,
                 )
             else:
