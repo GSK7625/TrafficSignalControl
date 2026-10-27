@@ -136,3 +136,31 @@ def test_base_controller_all_red_and_max_red_defaults():
     with pytest.raises(ValueError, match="max_red must be positive"):
         DummyController(green_phases=["GG", "rr"], max_red=-10.0)
 
+
+
+def test_get_halting_count():
+    """Kiểm thử đếm số lượng xe dừng qua lane_halting_fn tùy chỉnh và cơ chế fallback."""
+    # Custom lane_halting_fn
+    ctrl = DummyController(
+        green_phases=["GG"],
+        lane_vehicle_fn=lambda lane_id: 10 if lane_id == "lane_1" else 0,
+        lane_halting_fn=lambda lane_id: 3 if lane_id == "lane_1" else 0,
+    )
+    assert ctrl._get_vehicle_count("lane_1") == 10
+    assert ctrl._get_halting_count("lane_1") == 3
+    assert ctrl._get_halting_count("lane_2") == 0
+    assert ctrl._get_halting_count("") == 0
+
+    # Fallback to lane_vehicle_fn when lane_halting_fn is None
+    ctrl_fallback = DummyController(
+        green_phases=["GG"],
+        lane_vehicle_fn=lambda lane_id: 7 if lane_id == "lane_1" else 0,
+    )
+    assert ctrl_fallback._get_halting_count("lane_1") == 7
+
+    # Failing lane_halting_fn returns 0
+    def failing_fn(lane_id: str) -> int:
+        raise RuntimeError("Sensor offline")
+
+    ctrl_fail = DummyController(green_phases=["GG"], lane_halting_fn=failing_fn)
+    assert ctrl_fail._get_halting_count("lane_1") == 0

@@ -111,6 +111,7 @@ class BaseController(ABC):
         max_red: float = 90.0,
         tls_id: Optional[str] = None,
         lane_vehicle_fn: Optional[Callable[[str], int]] = None,
+        lane_halting_fn: Optional[Callable[[str], int]] = None,
     ) -> None:
         if not green_phases:
             raise ValueError("green_phases must contain at least one phase.")
@@ -129,6 +130,7 @@ class BaseController(ABC):
         self.max_red: float = float(max_red)
         self.tls_id: Optional[str] = tls_id
         self._lane_vehicle_fn: Optional[Callable[[str], int]] = lane_vehicle_fn
+        self._lane_halting_fn: Optional[Callable[[str], int]] = lane_halting_fn
 
         self.reset()
 
@@ -210,6 +212,36 @@ class BaseController(ABC):
                 return int(traci.lane.getLastStepVehicleNumber(lane_id))
         except (ImportError, AttributeError, Exception):
             pass
+        return 0
+
+    def _get_halting_count(self, lane_id: str) -> int:
+        """Lấy số lượng xe dừng chờ (tốc độ < 0.1 m/s) trên một làn đường qua hàm tùy biến hoặc libsumo/TraCI fallback."""
+        if not lane_id:
+            return 0
+        if self._lane_halting_fn is not None:
+            try:
+                return int(self._lane_halting_fn(lane_id))
+            except Exception:
+                return 0
+        try:
+            try:
+                import libsumo
+                if libsumo.isLoaded():
+                    return int(libsumo.lane.getLastStepHaltingNumber(lane_id))
+            except (ImportError, AttributeError, Exception):
+                pass
+
+            import traci
+            if traci.isLoaded():
+                return int(traci.lane.getLastStepHaltingNumber(lane_id))
+        except (ImportError, AttributeError, Exception):
+            pass
+
+        if self._lane_vehicle_fn is not None:
+            try:
+                return int(self._lane_vehicle_fn(lane_id))
+            except Exception:
+                return 0
         return 0
 
     def _handle_clearance(self) -> bool:

@@ -11,7 +11,7 @@ căn chỉnh trực tiếp theo 5 chỉ số hiệu năng giao thông cốt lõi
 
 import argparse
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.controllers.q_learning import QLearningController
 from src.data_inspector import inspect_scenario
@@ -40,6 +40,8 @@ def train_q_learning_agent(
     verbose: bool = True,
     use_libsumo: bool = True,
     init_model: Optional[str] = None,
+    seed: Optional[int] = 42,
+    seeds: Optional[Sequence[int]] = None,
 ) -> Tuple[QLearningController, List[Dict[str, Any]]]:
     """Huấn luyện tác tử Q-Learning trên một kịch bản giao thông SUMO.
 
@@ -62,6 +64,8 @@ def train_q_learning_agent(
         verbose: Nếu True, in tiến trình chi tiết qua từng tập.
         use_libsumo: Sử dụng backend libsumo để tăng tốc thực thi.
         init_model: Đường dẫn file JSON Q-table có sẵn để huấn luyện tiếp (fine-tune).
+        seed: Seed SUMO cơ sở cho các episode (mỗi ep: seed + ep).
+        seeds: Danh sách cụ thể các seed SUMO theo thứ tự từng episode.
 
     Trả về:
         Tuple gồm (QLearningController đã huấn luyện, danh sách thống kê qua các episode).
@@ -109,8 +113,8 @@ def train_q_learning_agent(
         "scale": 1.0,
         "w_completed": 2.0,
         "w_queue": 0.05,
-        "w_waiting": 0.02,
-        "w_time_loss": 0.01,
+        "w_waiting": 0.005,
+        "w_time_loss": 0.002,
         "w_switch": 2.0,
     }
     reward_fn = MetricsAlignedReward(**r_cfg)
@@ -133,10 +137,19 @@ def train_q_learning_agent(
         controller.reset()
         reward_fn.reset()
 
+        if seeds is not None and len(seeds) > 0:
+            ep_seed = int(seeds[ep % len(seeds)])
+        elif seed is not None:
+            ep_seed = int(seed + ep)
+        else:
+            ep_seed = None
+
+        runner_args = ["--seed", str(ep_seed)] if ep_seed is not None else []
         runner = SimulationRunner(
             cfg_path=info.cfg_path,
             controller=controller,
             tls_id=tls_id,
+            additional_args=runner_args if runner_args else None,
             use_libsumo=use_libsumo,
         )
 
@@ -154,6 +167,9 @@ def train_q_learning_agent(
                 # 1. Truy vấn điều kiện trên các làn đi vào
                 in_queues: Dict[str, float] = {}
                 step_halted = 0
+                step_waiting_time = 0.0
+                step_time_loss = 0.0
+
                 for lane_id in runner.incoming_lanes:
                     try:
                         q = float(conn.lane.getLastStepHaltingNumber(lane_id))
@@ -161,6 +177,18 @@ def train_q_learning_agent(
                         step_halted += int(q)
                     except Exception:
                         pass
+
+                    try:
+                        step_waiting_time += float(conn.lane.getWaitingTime(lane_id))
+                    except Exception:
+                        pass
+
+                    try:
+                        for vid in conn.lane.getLastStepVehicleIDs(lane_id):
+                            step_time_loss += float(conn.vehicle.getTimeLoss(vid))
+                    except Exception:
+                        pass
+
                 queue_samples.append(step_halted)
 
                 completed = 0
@@ -177,9 +205,9 @@ def train_q_learning_agent(
                 # 3. Ghi nhận bước đo lường cho hàm phần thưởng
                 reward_fn.record_step(
                     in_lane_queues=in_queues,
-                    waiting_time=float(step_halted),
+                    waiting_time=step_waiting_time,
                     completed_vehicles=completed,
-                    time_loss=float(step_halted),
+                    time_loss=step_time_loss,
                     is_switch=changed,
                 )
 
@@ -201,12 +229,17 @@ def train_q_learning_agent(
                 if step_idx > 300 and conn.simulation.getMinExpectedNumber() <= 0:
                     break
 
-            # Cập nhật trạng thái kết thúc (Terminal update) tại cuối episode
+            # Cập nhật trạng thái kết thúc (Terminal update) tại cuối episode theo lý thuyết RL
             if last_decision_state is not None and last_decision_action is not None:
                 r_val = reward_fn.calculate_reward()
                 ep_reward += r_val
-                final_state = controller.get_state()
-                controller.update_q(last_decision_state, last_decision_action, r_val, final_state)
+                controller.update_q(
+                    last_decision_state,
+                    last_decision_action,
+                    r_val,
+                    next_state=None,
+                    done=True,
+                )
                 reward_fn.reset_interval()
 
         finally:
@@ -258,6 +291,7 @@ def main() -> None:
     parser.add_argument("--epsilon-min", type=float, default=0.05, help="Minimum exploration rate floor (default: 0.05)")
     parser.add_argument("--epsilon-decay", type=float, default=None, help="Epsilon decay rate per episode (geometric)")
     parser.add_argument("--init-model", type=str, default=None, help="Path to existing Q-table JSON model to resume or fine-tune")
+    parser.add_argument("--seed", type=int, default=42, help="Base random seed for SUMO simulation across episodes (default: 42)")
     parser.add_argument("--save-dir", type=str, default="models/q_learning", help="Directory to save models")
     parser.add_argument("--min-green", type=float, default=20.0, help="Minimum green phase duration in seconds (default: 20.0)")
     parser.add_argument("--use-libsumo", dest="use_libsumo", action="store_true", default=True, help="Use libsumo instead of traci for faster execution (default: True)")
@@ -280,6 +314,7 @@ def main() -> None:
         epsilon_decay=args.epsilon_decay,
         init_model=args.init_model,
         use_libsumo=args.use_libsumo,
+        seed=args.seed,
     )
 
 

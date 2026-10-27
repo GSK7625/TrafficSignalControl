@@ -134,3 +134,21 @@ def test_training_loop_updates_switch_actions(tmp_path):
 
 
 
+
+def test_training_pipeline_multi_episode_seed_variation(tmp_path):
+    """Verify train_q_learning_agent executes multi-episode training with seed variation."""
+    save_file = str(tmp_path / "test_multi_seed_model.json")
+    ctrl, stats = train_q_learning_agent(
+        scenario_name="cologne1",
+        data_dir="data",
+        episodes=2,
+        max_steps_per_episode=30,
+        save_path=save_file,
+        seeds=[101, 202],
+        use_libsumo=True,
+        verbose=False,
+    )
+    assert len(stats) == 2
+    assert stats[0]["episode"] == 1
+    assert stats[1]["episode"] == 2
+    assert os.path.isfile(save_file)

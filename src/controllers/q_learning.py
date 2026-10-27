@@ -69,6 +69,8 @@ class QLearningController(BaseController):
         epsilon: float = 0.1,
         tls_id: Optional[str] = None,
         lane_vehicle_fn: Optional[Callable[[str], int]] = None,
+        lane_halting_fn: Optional[Callable[[str], int]] = None,
+        use_halting_for_state: bool = True,
     ) -> None:
         if min_green <= 0:
             raise ValueError(f"min_green must be positive, got {min_green}.")
@@ -82,6 +84,7 @@ class QLearningController(BaseController):
             max_red=max_red,
             tls_id=tls_id,
             lane_vehicle_fn=lane_vehicle_fn,
+            lane_halting_fn=lane_halting_fn,
         )
 
         self.movements: List[Any] = list(movements) if movements is not None else []
@@ -91,6 +94,7 @@ class QLearningController(BaseController):
         self.lr: float = float(lr)
         self.gamma: float = float(gamma)
         self.epsilon: float = float(epsilon)
+        self.use_halting_for_state: bool = bool(use_halting_for_state)
         self.discretizer: CompactStateDiscretizer = CompactStateDiscretizer()
 
         # Tính toán trước các làn xe đi vào cho từng pha xanh
@@ -116,9 +120,10 @@ class QLearningController(BaseController):
         self.last_decision: Optional[Tuple[Tuple[int, ...], int]] = None
 
     def calculate_phase_queues(self) -> Dict[int, float]:
-        """Tính toán tổng hàng đợi/nhu cầu xe cho từng pha đèn xanh."""
+        """Tính toán tổng hàng đợi/nhu cầu xe dừng cho từng pha đèn xanh."""
+        count_fn = self._get_halting_count if self.use_halting_for_state else self._get_vehicle_count
         return {
-            p: float(sum(self._get_vehicle_count(l) for l in lanes))
+            p: float(sum(count_fn(l) for l in lanes))
             for p, lanes in enumerate(self._phase_incoming_lanes)
         }
 
@@ -178,11 +183,18 @@ class QLearningController(BaseController):
         state: Tuple[int, ...],
         action: int,
         reward: float,
-        next_state: Tuple[int, ...],
+        next_state: Optional[Tuple[int, ...]] = None,
+        done: bool = False,
     ) -> float:
-        """Cập nhật giá trị Q-Learning theo phương trình Bellman: Q(s, a) <- Q + lr * [r + gamma * max Q(s', a') - Q]."""
+        """Cập nhật giá trị Q-Learning theo phương trình Bellman:
+        - Nếu trạng thái tiếp theo chưa kết thúc (done=False): Q(s, a) <- Q + lr * [r + gamma * max Q(s', a') - Q]
+        - Nếu là trạng thái kết thúc (done=True hoặc next_state is None): Q(s, a) <- Q + lr * [r - Q]
+        """
         q_vals = self._get_q_entry(state)
-        target = float(reward) + self.gamma * max(self._get_q_entry(next_state))
+        if done or next_state is None:
+            target = float(reward)
+        else:
+            target = float(reward) + self.gamma * max(self._get_q_entry(next_state))
         td_error = target - q_vals[action]
         q_vals[action] += self.lr * td_error
         self.action_counts[(state, action)] = self.action_counts.get((state, action), 0) + 1

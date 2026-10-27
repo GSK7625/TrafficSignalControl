@@ -423,3 +423,64 @@ def test_controller_decision_point_metadata(four_phase_controller):
     assert isinstance(dec_state, tuple)
     assert isinstance(dec_action, int)
 
+
+
+def test_terminal_q_update_does_not_bootstrap(sample_setup):
+    """Verify terminal Q-update (done=True or next_state=None) sets target=reward without discounting next state."""
+    phases, movements = sample_setup
+    ctrl = QLearningController(
+        green_phases=phases,
+        movements=movements,
+        lr=0.5,
+        gamma=0.9,
+    )
+    s = (0, 1, 0, 0)
+    a = 0
+    ctrl.q_table[s] = [2.0, 1.0]
+
+    s_next = (1, 1, 0, 1)
+    ctrl.q_table[s_next] = [10.0, 20.0]  # max Q is 20.0
+
+    # If done=True: target = reward = 6.0
+    # Expected Q: 2.0 + 0.5 * (6.0 - 2.0) = 4.0
+    # (If it incorrectly bootstrapped: target = 6.0 + 0.9 * 20.0 = 24.0 -> Q = 2.0 + 0.5 * 22 = 13.0)
+    td_error = ctrl.update_q(s, a, reward=6.0, next_state=s_next, done=True)
+    assert td_error == 4.0
+    assert ctrl.q_table[s][a] == 4.0
+
+    # Also test with next_state=None
+    td_error2 = ctrl.update_q(s, a, reward=8.0, next_state=None)
+    # Q was 4.0, target=8.0 -> error = 4.0 -> new Q = 4.0 + 0.5 * 4.0 = 6.0
+    assert td_error2 == 4.0
+    assert ctrl.q_table[s][a] == 6.0
+
+
+def test_halting_count_used_for_state_representation(sample_setup):
+    """Verify QLearningController uses halting/stopped vehicles rather than total vehicles for state."""
+    phases, movements = sample_setup
+    # Total vehicles: lane_0 has 10 vehicles (moving)
+    # Halting vehicles: lane_0 has 0 halted vehicles
+    vehicle_map = {"E2_0": 10, "E2_1": 0}
+    halting_map = {"E2_0": 0, "E2_1": 0}
+
+    ctrl_halting = QLearningController(
+        green_phases=phases,
+        movements=movements,
+        lane_vehicle_fn=lambda l: vehicle_map.get(l, 0),
+        lane_halting_fn=lambda l: halting_map.get(l, 0),
+        use_halting_for_state=True,
+    )
+    # Halting queues should be 0 for all phases
+    phase_queues = ctrl_halting.calculate_phase_queues()
+    assert phase_queues[0] == 0.0
+
+    ctrl_total = QLearningController(
+        green_phases=phases,
+        movements=movements,
+        lane_vehicle_fn=lambda l: vehicle_map.get(l, 0),
+        lane_halting_fn=lambda l: halting_map.get(l, 0),
+        use_halting_for_state=False,
+    )
+    # Total vehicles for phase 0 includes 10 vehicles
+    phase_queues_total = ctrl_total.calculate_phase_queues()
+    assert phase_queues_total[0] == 10.0
