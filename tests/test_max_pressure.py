@@ -32,20 +32,26 @@ def test_max_pressure_initialization():
         green_phases=phases,
         movements=movements,
         min_green=10.0,
-        max_green=60.0,
+        max_green=45.0,
         yellow_time=3.0,
+        all_red_time=1.0,
+        max_red=90.0,
         tls_id="tls_test",
     )
 
     assert controller.tls_id == "tls_test"
     assert controller.min_green == 10.0
-    assert controller.max_green == 60.0
+    assert controller.max_green == 45.0
     assert controller.yellow_time == 3.0
+    assert controller.all_red_time == 1.0
+    assert controller.max_red == 90.0
     assert controller.num_phases == 2
     assert controller.current_phase == 0
     assert controller.get_current_phase() == 0
     assert controller.is_yellow is False
     assert controller.is_in_yellow() is False
+    assert controller.is_all_red is False
+    assert controller.is_in_all_red() is False
     assert controller.time_in_phase == 0.0
     assert controller.total_time == 0.0
     assert controller.step_count == 0
@@ -197,6 +203,7 @@ def test_timing_and_safety_constraints():
         min_green=10.0,
         max_green=60.0,
         yellow_time=3.0,
+        all_red_time=0.0,
         lane_vehicle_fn=lambda l: traffic.get(l, 0),
     )
 
@@ -262,6 +269,7 @@ def test_max_green_forced_switch():
         min_green=10.0,
         max_green=60.0,
         yellow_time=3.0,
+        all_red_time=0.0,
         lane_vehicle_fn=lambda l: traffic.get(l, 0),
     )
 
@@ -292,7 +300,91 @@ def test_max_green_forced_switch():
     assert controller.current_phase == 1
 
 
-def test_reset():
+def test_max_pressure_all_red_clearance():
+    """Verify Green -> Yellow (3s) -> All-Red (1s) -> Next Green transition."""
+    from src.controllers.max_pressure import MaxPressureController
+
+    phases = ["GGGrrr", "rrrGGG"]
+    movements = [
+        MovementInfo(link_index=0, from_lane="in0", to_lane="out0", direction="s"),
+        MovementInfo(link_index=3, from_lane="in1", to_lane="out1", direction="s"),
+    ]
+    # Phase 1 has overwhelming traffic
+    traffic = {"in0": 0, "out0": 0, "in1": 50, "out1": 0}
+
+    controller = MaxPressureController(
+        green_phases=phases,
+        movements=movements,
+        min_green=10.0,
+        max_green=45.0,
+        yellow_time=3.0,
+        all_red_time=1.0,
+        max_red=90.0,
+        lane_vehicle_fn=lambda l: traffic.get(l, 0),
+    )
+
+    # 10 steps of min_green in Phase 0
+    for _ in range(10):
+        controller.step(1.0)
+        assert controller.is_yellow is False
+        assert controller.is_all_red is False
+
+    # At step 11: min_green reached, switch triggered -> 3 steps of yellow
+    s11, _ = controller.step(1.0)
+    assert s11 == "yyyrrr"
+    assert controller.is_yellow is True
+    assert controller.is_all_red is False
+
+    controller.step(1.0)  # yellow step 2
+    controller.step(1.0)  # yellow step 3
+
+    # Step 14: All-red clearance (1 step)
+    s14, _ = controller.step(1.0)
+    assert s14 == "rrrrrr"
+    assert controller.is_yellow is False
+    assert controller.is_all_red is True
+
+    # Step 15: Green phase 1
+    s15, _ = controller.step(1.0)
+    assert s15 == "rrrGGG"
+    assert controller.is_yellow is False
+    assert controller.is_all_red is False
+    assert controller.current_phase == 1
+
+
+def test_max_pressure_max_red_starvation_watchdog():
+    """Verify max_red (90s) forces serving starving phase even if current phase has higher pressure."""
+    from src.controllers.max_pressure import MaxPressureController
+
+    phases = ["GGGrrr", "rrrGGG"]
+    movements = [
+        MovementInfo(link_index=0, from_lane="in0", to_lane="out0", direction="s"),
+        MovementInfo(link_index=3, from_lane="in1", to_lane="out1", direction="s"),
+    ]
+    # Phase 0 always has higher pressure (100 vs 5)
+    traffic = {"in0": 100, "out0": 0, "in1": 5, "out1": 0}
+
+    controller = MaxPressureController(
+        green_phases=phases,
+        movements=movements,
+        min_green=10.0,
+        max_green=45.0,
+        yellow_time=3.0,
+        all_red_time=1.0,
+        max_red=90.0,
+        lane_vehicle_fn=lambda l: traffic.get(l, 0),
+    )
+
+    # Simulate Phase 1 red timer reaching 90s
+    controller._phase_red_timers[1] = 90.0
+
+    # Ensure min_green is met
+    controller._time_in_phase = 10.0
+
+    # Next phase selection must pick phase 1 due to max_red starvation
+    next_p = controller.select_next_phase()
+    assert next_p == 1
+
     """Test resetting controller state to initial configuration."""
     from src.controllers.max_pressure import MaxPressureController
 
@@ -306,6 +398,7 @@ def test_reset():
         min_green=10.0,
         max_green=60.0,
         yellow_time=3.0,
+        all_red_time=0.0,
         lane_vehicle_fn=lambda l: traffic.get(l, 0),
     )
 
@@ -381,6 +474,7 @@ def test_edge_cases_and_step_durations():
         min_green=5.0,
         max_green=15.0,
         yellow_time=0.0,
+        all_red_time=0.0,
         lane_vehicle_fn=lambda l: 20 if l == "in0" else (0 if l != "in1" else 5),
     )
     # Force switch: run 5 steps

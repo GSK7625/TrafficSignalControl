@@ -44,9 +44,12 @@ def test_fixed_time_initialization():
 
     assert controller.green_time == 30.0
     assert controller.yellow_time == 3.0
+    assert controller.all_red_time == 1.0
+    assert controller.max_red == 90.0
     assert controller.tls_id == "tls_1"
     assert controller.get_current_phase() == 0
     assert controller.is_in_yellow() is False
+    assert controller.is_in_all_red() is False
     assert controller.get_current_state() == "GGGrrr"
 
     # Validation errors
@@ -60,6 +63,52 @@ def test_fixed_time_initialization():
         FixedTimeController(green_phases=phases, yellow_time=-1.0)
 
 
+def test_fixed_time_step_cycle_with_all_red_1s():
+    """Test full cycle: 30s green -> 3s yellow -> 1s all-red -> 30s next green."""
+    from src.controllers.fixed_time import FixedTimeController
+
+    p0 = "GGGrrr"
+    p1 = "rrrGGG"
+    controller = FixedTimeController(
+        green_phases=[p0, p1],
+        green_time=30.0,
+        yellow_time=3.0,
+        all_red_time=1.0,
+    )
+
+    states = []
+    yellow_flags = []
+    all_red_flags = []
+
+    # 30 green + 3 yellow + 1 all-red + 30 green = 64 steps
+    for _ in range(64):
+        state, _ = controller.step(step_duration=1.0)
+        states.append(state)
+        yellow_flags.append(controller.is_in_yellow())
+        all_red_flags.append(controller.is_in_all_red())
+
+    # 1. First 30 steps: Green phase 0
+    assert all(s == p0 for s in states[:30])
+    assert all(y is False for y in yellow_flags[:30])
+    assert all(r is False for r in all_red_flags[:30])
+
+    # 2. Next 3 steps (steps 30, 31, 32): Yellow phase
+    assert all(s == "yyyrrr" for s in states[30:33])
+    assert all(y is True for y in yellow_flags[30:33])
+    assert all(r is False for r in all_red_flags[30:33])
+
+    # 3. Next 1 step (step 33): All-Red clearance
+    assert states[33] == "rrrrrr"
+    assert yellow_flags[33] is False
+    assert all_red_flags[33] is True
+
+    # 4. Next 30 steps (steps 34 to 63): Green phase 1
+    assert all(s == p1 for s in states[34:64])
+    assert all(y is False for y in yellow_flags[34:64])
+    assert all(r is False for r in all_red_flags[34:64])
+
+
+
 def test_fixed_time_step_cycle_30_3_30():
     """Test full cycle step counting: 30s green -> 3s yellow -> 30s next green."""
     from src.controllers.fixed_time import FixedTimeController
@@ -70,6 +119,7 @@ def test_fixed_time_step_cycle_30_3_30():
         green_phases=[p0, p1],
         green_time=30.0,
         yellow_time=3.0,
+        all_red_time=0.0,
     )
 
     states = []
@@ -120,6 +170,7 @@ def test_infinite_cycle_loop():
         green_phases=[p0, p1],
         green_time=30.0,
         yellow_time=3.0,
+        all_red_time=0.0,
     )
 
     cycle_length = 30 + 3 + 30 + 3  # 66 steps per full 2-phase cycle
@@ -163,6 +214,7 @@ def test_controller_reset():
         green_phases=[p0, p1],
         green_time=30.0,
         yellow_time=3.0,
+        all_red_time=0.0,
     )
 
     # Advance 45 steps (into green phase 1)

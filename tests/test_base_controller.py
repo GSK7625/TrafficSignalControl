@@ -4,6 +4,8 @@ import pytest
 from typing import Tuple
 from src.controllers.base import (
     BaseController,
+    build_all_red_state,
+    build_yellow_state,
     register_controller,
     create_controller,
     get_controller_class,
@@ -113,3 +115,28 @@ def test_controller_registry():
 
     with pytest.raises(KeyError, match="Unknown controller type"):
         get_controller_class("non_existent_controller")
+
+
+def test_build_all_red_state():
+    """Verify build_all_red_state returns all-red clearance string."""
+    assert build_all_red_state("GGGrrr") == "rrrrrr"
+    assert build_all_red_state("yyyrrr") == "rrrrrr"
+    assert build_all_red_state("") == ""
+
+
+def test_base_controller_all_red_and_max_red_defaults():
+    """Verify default values and validation for all_red_time and max_red."""
+    ctrl = DummyController(green_phases=["GG", "rr"])
+    assert ctrl.all_red_time == 1.0
+    assert ctrl.max_red == 90.0
+    assert ctrl.is_all_red is False
+    assert ctrl.is_in_all_red() is False
+    assert len(ctrl.phase_red_timers) == 2
+    assert ctrl.phase_red_timers == [0.0, 0.0]
+
+    with pytest.raises(ValueError, match="all_red_time must be non-negative"):
+        DummyController(green_phases=["GG", "rr"], all_red_time=-0.5)
+
+    with pytest.raises(ValueError, match="max_red must be positive"):
+        DummyController(green_phases=["GG", "rr"], max_red=-10.0)
+

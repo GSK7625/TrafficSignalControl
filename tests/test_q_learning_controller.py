@@ -38,21 +38,47 @@ def sample_setup():
 
 
 def test_compact_state_discretizer():
-    """Verify CompactStateDiscretizer computes expected compact tuple."""
+    """Verify CompactStateDiscretizer computes expected 4-element compact tuple."""
     discretizer = CompactStateDiscretizer(
-        time_thresholds=(10.0, 25.0, 45.0),
-        queue_thresholds=(2.0, 8.0, 20.0),
+        serving_threshold=2.0,
+        competing_threshold=6.0,
     )
-    # Phase 0, time = 15s (bin 1), serving queue = 10 (bin 2),
-    # phase 1 queue = 25 (strongest competing, bin 3)
+    # Phase 0, serving queue = 10 (>= 2.0 -> 1),
+    # phase 1 queue = 25 (strongest competing=1, >= 6.0 -> 1)
     phase_queues = {0: 10.0, 1: 25.0}
     state = discretizer.discretize(
         curr_phase=0,
         time_in_phase=15.0,
         phase_queues=phase_queues,
     )
-    # Expected: (curr_phase=0, time_bin=1, serving_bin=2, competing_phase=1, competing_bin=3)
-    assert state == (0, 1, 2, 1, 3)
+    # Expected: (curr_phase=0, serving_bin=1, competing_phase=1, competing_bin=1)
+    assert state == (0, 1, 1, 1)
+
+    # Empty queue condition
+    empty_queues = {0: 0.0, 1: 1.0}
+    state_empty = discretizer.discretize(
+        curr_phase=0,
+        time_in_phase=20.0,
+        phase_queues=empty_queues,
+    )
+    # serving_q=0 (< 2.0 -> 0), competing_q=1 (< 6.0 -> 0)
+    assert state_empty == (0, 0, 1, 0)
+
+
+def test_compact_state_discretizer_backward_compatibility():
+    """Verify CompactStateDiscretizer handles legacy threshold parameters cleanly."""
+    discretizer = CompactStateDiscretizer(
+        time_thresholds=(10.0, 25.0, 45.0),
+        queue_thresholds=(2.0, 8.0, 20.0),
+    )
+    assert discretizer.serving_threshold == 2.0
+    assert discretizer.competing_threshold == 8.0
+    state = discretizer.discretize(
+        curr_phase=0,
+        time_in_phase=15.0,
+        phase_queues={0: 5.0, 1: 15.0},
+    )
+    assert state == (0, 1, 1, 1)
 
 
 def test_q_learning_controller_initialization(sample_setup):
@@ -62,8 +88,10 @@ def test_q_learning_controller_initialization(sample_setup):
         green_phases=phases,
         movements=movements,
         min_green=10.0,
-        max_green=60.0,
+        max_green=45.0,
         yellow_time=3.0,
+        all_red_time=1.0,
+        max_red=90.0,
         lr=0.1,
         gamma=0.95,
         epsilon=0.1,
@@ -71,6 +99,11 @@ def test_q_learning_controller_initialization(sample_setup):
     assert ctrl.num_phases == 2
     assert ctrl.current_phase == 0
     assert not ctrl.is_yellow
+    assert not ctrl.is_all_red
+    assert ctrl.min_green == 10.0
+    assert ctrl.max_green == 45.0
+    assert ctrl.all_red_time == 1.0
+    assert ctrl.max_red == 90.0
     assert ctrl.time_in_phase == 0.0
     assert ctrl.step_count == 0
 
@@ -149,6 +182,7 @@ def test_safety_yellow_clearance_transition(sample_setup):
         min_green=5.0,
         decision_interval=5.0,
         yellow_time=3.0,
+        all_red_time=0.0,
     )
     # Step 4s in phase 0
     for _ in range(4):
@@ -177,6 +211,81 @@ def test_safety_yellow_clearance_transition(sample_setup):
     assert ctrl.current_phase == 1
     assert state == phases[1]
     assert changed
+
+
+def test_safety_all_red_clearance_transition(sample_setup):
+    """Verify Green -> Yellow (3s) -> All-Red (1s) -> Next Green sequence."""
+    from collections import defaultdict
+
+    phases, movements = sample_setup
+    ctrl = QLearningController(
+        green_phases=phases,
+        movements=movements,
+        min_green=5.0,
+        decision_interval=5.0,
+        yellow_time=3.0,
+        all_red_time=1.0,
+    )
+    for _ in range(4):
+        ctrl.step(1.0)
+
+    # Force switch to phase 1
+    ctrl.q_table = defaultdict(lambda: [-100.0, 100.0])
+
+    # t=5: yellow starts
+    s5, c5 = ctrl.step(1.0)
+    assert ctrl.is_yellow and not ctrl.is_all_red and c5
+
+    # t=6, 7: yellow continues
+    ctrl.step(1.0)
+    ctrl.step(1.0)
+
+    # t=8: yellow complete -> all-red starts!
+    s8, c8 = ctrl.step(1.0)
+    assert not ctrl.is_yellow
+    assert ctrl.is_all_red
+    assert s8 == "r" * len(phases[0])
+    assert c8
+
+    # t=9: all-red complete -> next green starts!
+    s9, c9 = ctrl.step(1.0)
+    assert not ctrl.is_yellow
+    assert not ctrl.is_all_red
+    assert ctrl.current_phase == 1
+    assert s9 == phases[1]
+    assert c9
+
+
+def test_q_learning_max_red_starvation_override(sample_setup):
+    """Verify max_red (90s) overrides greedy action to serve starved phase."""
+    from collections import defaultdict
+
+    phases, movements = sample_setup
+    ctrl = QLearningController(
+        green_phases=phases,
+        movements=movements,
+        min_green=10.0,
+        max_green=45.0,
+        yellow_time=3.0,
+        all_red_time=1.0,
+        max_red=90.0,
+    )
+    # Q-table strongly prefers staying in phase 0
+    ctrl.q_table = defaultdict(lambda: [100.0, -100.0])
+
+    # Advance 10s of min_green in phase 0
+    for _ in range(10):
+        ctrl.step(1.0)
+
+    # Simulate Phase 1 starving at 90s red wait
+    ctrl._phase_red_timers[1] = 90.0
+
+    # Step at t=11: starvation watchdog triggers switch to phase 1!
+    s11, c11 = ctrl.step(1.0)
+    assert ctrl.is_yellow
+    assert ctrl._next_phase_idx == 1
+    assert c11
+
 
 
 def test_safety_max_green_forced_switch(sample_setup):

@@ -2,9 +2,9 @@
 
 Optimized to minimize waiting time, travel time, queue length, and time loss,
 while maximizing network throughput and enforcing safety bounds:
-  - min_green (default 10s): prevents rapid phase flickering
+  - min_green (default 20s): prevents rapid phase flickering
   - yellow_time (default 3s): clearance interval between opposing green phases
-  - max_green (default 60s): prevents movement starvation
+  - max_green (default 45s): prevents movement starvation
 """
 
 import ast
@@ -20,35 +20,43 @@ __all__ = ["CompactStateDiscretizer", "QLearningController"]
 
 
 class CompactStateDiscretizer:
-    """Discretizes continuous intersection observations into compact discrete state tuples.
+    """Discretizes continuous intersection observations into compact 4-element discrete state tuples.
 
-    Produces a compact 5-element state tuple:
-        (curr_phase, time_bin, serving_q_bin, max_competing_phase, competing_q_bin)
+    Produces a compact 4-element state tuple:
+        (curr_phase, serving_q_bin, max_competing_phase, competing_q_bin)
 
-    This representation prevents state-space explosion and allows rapid Q-table convergence.
+    By eliminating redundant time bins (handled safely by min_green/max_green bounds) and
+    simplifying queue pressure into binary indicators, the state space is reduced
+    from 4,096 to ~256 states, allowing rapid and stable Q-table convergence.
     """
 
     def __init__(
         self,
-        time_thresholds: Tuple[float, ...] = (10.0, 25.0, 45.0),
-        queue_thresholds: Tuple[float, ...] = (2.0, 8.0, 20.0),
+        serving_threshold: float = 2.0,
+        competing_threshold: float = 6.0,
+        time_thresholds: Optional[Sequence[float]] = None,
+        queue_thresholds: Optional[Sequence[float]] = None,
     ) -> None:
-        self.time_thresholds = tuple(float(x) for x in time_thresholds)
-        self.queue_thresholds = tuple(float(x) for x in queue_thresholds)
-
-    def _bin_value(self, val: float, thresholds: Tuple[float, ...]) -> int:
-        return bisect.bisect_right(thresholds, float(val))
+        if queue_thresholds is not None and len(queue_thresholds) >= 2:
+            self.serving_threshold = float(queue_thresholds[0])
+            self.competing_threshold = float(queue_thresholds[1])
+        elif queue_thresholds is not None and len(queue_thresholds) == 1:
+            self.serving_threshold = float(queue_thresholds[0])
+            self.competing_threshold = float(competing_threshold)
+        else:
+            self.serving_threshold = float(serving_threshold)
+            self.competing_threshold = float(competing_threshold)
+        self.time_thresholds = tuple(float(x) for x in time_thresholds) if time_thresholds else ()
 
     def discretize(
         self,
         curr_phase: int,
         time_in_phase: float,
         phase_queues: Dict[int, float],
-    ) -> Tuple[int, int, int, int, int]:
-        """Discretizes current traffic condition."""
-        time_bin = self._bin_value(time_in_phase, self.time_thresholds)
+    ) -> Tuple[int, int, int, int]:
+        """Discretizes current traffic condition into a compact 4-element tuple."""
         serving_q = float(phase_queues.get(curr_phase, 0.0))
-        serving_bin = self._bin_value(serving_q, self.queue_thresholds)
+        serving_bin = 0 if serving_q < self.serving_threshold else 1
 
         competing_phases = [p for p in phase_queues.keys() if p != curr_phase]
         if competing_phases:
@@ -57,9 +65,9 @@ class CompactStateDiscretizer:
             strongest_competing = curr_phase
 
         competing_q = float(phase_queues.get(strongest_competing, 0.0))
-        competing_bin = self._bin_value(competing_q, self.queue_thresholds)
+        competing_bin = 0 if competing_q < self.competing_threshold else 1
 
-        return (int(curr_phase), int(time_bin), int(serving_bin), int(strongest_competing), int(competing_bin))
+        return (int(curr_phase), int(serving_bin), int(strongest_competing), int(competing_bin))
 
 
 @register_controller("q_learning")
@@ -71,9 +79,11 @@ class QLearningController(BaseController):
         green_phases: Sequence[Any],
         movements: Sequence[Any],
         decision_interval: float = 5.0,
-        min_green: float = 10.0,
-        max_green: float = 60.0,
+        min_green: float = 20.0,
+        max_green: float = 45.0,
         yellow_time: float = 3.0,
+        all_red_time: float = 1.0,
+        max_red: float = 90.0,
         lr: float = 0.1,
         gamma: float = 0.95,
         epsilon: float = 0.1,
@@ -98,6 +108,8 @@ class QLearningController(BaseController):
         super().__init__(
             green_phases=green_phases,
             yellow_time=yellow_time,
+            all_red_time=all_red_time,
+            max_red=max_red,
             tls_id=tls_id,
             lane_vehicle_fn=lane_vehicle_fn,
         )
@@ -134,7 +146,7 @@ class QLearningController(BaseController):
             queues[p_idx] = float(total_q)
         return queues
 
-    def get_state(self) -> Tuple[int, int, int, int, int]:
+    def get_state(self) -> Tuple[int, int, int, int]:
         """Observes the current intersection state and discretizes it."""
         phase_queues = self.calculate_phase_queues()
         return self.discretizer.discretize(
@@ -161,7 +173,10 @@ class QLearningController(BaseController):
             eligible = [p for p in range(self.num_phases) if p == self._current_phase_idx or queues.get(p, 0.0) > 0]
             if not eligible:
                 eligible = list(range(self.num_phases))
-            return random.choice(eligible)
+            # 50% random exploration, 50% count-guided exploration to discover under-visited actions
+            if random.random() < 0.5:
+                return random.choice(eligible)
+            return min(eligible, key=lambda a: self.action_counts.get((state, a), 0))
 
         q_vals = self._get_q_entry(state)
 
@@ -225,11 +240,29 @@ class QLearningController(BaseController):
             self._time_in_phase += step_duration
             self._total_time += step_duration
             self._step_count += 1
+            self._update_red_timers(step_duration)
             if self._time_in_phase >= self.yellow_time - 1e-6:
-                # Clearance complete: switch into target green phase
-                self._current_phase_idx = self._next_phase_idx
-                self._is_yellow = False
                 self._time_in_phase = 0.0
+                self._is_yellow = False
+                if self.all_red_time > 0:
+                    self._is_all_red = True
+                    return self.get_current_state(), True
+                else:
+                    self._is_all_red = False
+                    self._current_phase_idx = self._next_phase_idx
+                    self._time_since_last_decision = 0.0
+                    return self.get_current_state(), True
+            return self.get_current_state(), False
+
+        if self._is_all_red:
+            self._time_in_phase += step_duration
+            self._total_time += step_duration
+            self._step_count += 1
+            self._update_red_timers(step_duration)
+            if self._time_in_phase >= self.all_red_time - 1e-6:
+                self._time_in_phase = 0.0
+                self._is_all_red = False
+                self._current_phase_idx = self._next_phase_idx
                 self._time_since_last_decision = 0.0
                 return self.get_current_state(), True
             return self.get_current_state(), False
@@ -239,8 +272,32 @@ class QLearningController(BaseController):
         self._total_time += step_duration
         self._step_count += 1
         self._time_since_last_decision += step_duration
+        self._update_red_timers(step_duration)
 
-        # 1. Check max_green constraint (forced switch)
+        # 1. Check max_red constraint (Starvation Watchdog)
+        if self._time_in_phase >= self.min_green - 1e-6:
+            starved = [
+                p for p in range(self.num_phases)
+                if p != self._current_phase_idx and self.get_phase_red_time(p) >= self.max_red - 1e-6
+            ]
+            if starved:
+                queues = self.calculate_phase_queues()
+                chosen = max(starved, key=lambda p: (self.get_phase_red_time(p), queues.get(p, 0.0)))
+                state = self.get_state()
+                self.last_decision = (state, chosen)
+                self._time_since_last_decision = 0.0
+                if chosen != self._current_phase_idx:
+                    self._next_phase_idx = chosen
+                    self._time_in_phase = 0.0
+                    if self.yellow_time > 0:
+                        self._is_yellow = True
+                    elif self.all_red_time > 0:
+                        self._is_all_red = True
+                    else:
+                        self._current_phase_idx = chosen
+                    return self.get_current_state(), True
+
+        # 2. Check max_green constraint (forced switch)
         if self._time_in_phase >= self.max_green - 1e-6:
             state = self.get_state()
             alt_actions = [p for p in range(self.num_phases) if p != self._current_phase_idx]
@@ -251,14 +308,20 @@ class QLearningController(BaseController):
                 chosen = self._current_phase_idx
 
             self.last_decision = (state, chosen)
+            self._time_since_last_decision = 0.0
 
             if chosen != self._current_phase_idx:
-                self._is_yellow = True
                 self._next_phase_idx = chosen
                 self._time_in_phase = 0.0
+                if self.yellow_time > 0:
+                    self._is_yellow = True
+                elif self.all_red_time > 0:
+                    self._is_all_red = True
+                else:
+                    self._current_phase_idx = chosen
                 return self.get_current_state(), True
 
-        # 2. Check RL decision interval (only allowed when time_in_phase >= min_green)
+        # 3. Check RL decision interval (only allowed when time_in_phase >= min_green)
         if (
             self._time_since_last_decision >= self.decision_interval - 1e-6
             and self._time_in_phase >= self.min_green - 1e-6
@@ -269,9 +332,14 @@ class QLearningController(BaseController):
             self.last_decision = (state, chosen)
 
             if chosen != self._current_phase_idx:
-                self._is_yellow = True
                 self._next_phase_idx = chosen
                 self._time_in_phase = 0.0
+                if self.yellow_time > 0:
+                    self._is_yellow = True
+                elif self.all_red_time > 0:
+                    self._is_all_red = True
+                else:
+                    self._current_phase_idx = chosen
                 return self.get_current_state(), True
 
         return self.get_current_state(), False
@@ -287,8 +355,11 @@ class QLearningController(BaseController):
             "min_green": self.min_green,
             "max_green": self.max_green,
             "yellow_time": self.yellow_time,
+            "all_red_time": self.all_red_time,
+            "max_red": self.max_red,
             "decision_interval": self.decision_interval,
             "q_table": {str(k): v for k, v in self.q_table.items()},
+            "action_counts": {str(k): v for k, v in self.action_counts.items()},
         }
         with open(abs_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
@@ -308,6 +379,8 @@ class QLearningController(BaseController):
         self.min_green = float(data.get("min_green", self.min_green))
         self.max_green = float(data.get("max_green", self.max_green))
         self.yellow_time = float(data.get("yellow_time", self.yellow_time))
+        self.all_red_time = float(data.get("all_red_time", self.all_red_time))
+        self.max_red = float(data.get("max_red", self.max_red))
         self.decision_interval = float(data.get("decision_interval", self.decision_interval))
 
         raw_q = data.get("q_table", {})
@@ -319,3 +392,15 @@ class QLearningController(BaseController):
             except Exception:
                 pass
         self.q_table = parsed_q
+
+        raw_counts = data.get("action_counts", {})
+        parsed_counts: Dict[Tuple[Tuple[int, ...], int], int] = {}
+        for k_str, c_val in raw_counts.items():
+            try:
+                k_parsed = ast.literal_eval(k_str)
+                state_tuple = tuple(int(x) for x in k_parsed[0])
+                act_int = int(k_parsed[1])
+                parsed_counts[(state_tuple, act_int)] = int(c_val)
+            except Exception:
+                pass
+        self.action_counts = parsed_counts

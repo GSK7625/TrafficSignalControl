@@ -6,6 +6,13 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import sumolib
 import traci
 
+try:
+    import libsumo
+    HAS_LIBSUMO = True
+except ImportError:
+    libsumo = None
+    HAS_LIBSUMO = False
+
 from src.controllers import FixedTimeController, MaxPressureController, QLearningController
 from src.data_inspector import inspect_scenario, ScenarioInfo
 
@@ -24,6 +31,7 @@ class SimulationResult:
     completed: bool = True
     tls_id: Optional[str] = None
     controller_type: Optional[str] = None
+    backend: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts result metrics to dictionary format."""
@@ -40,6 +48,8 @@ class SimulationResult:
         }
         if self.controller_type is not None:
             d["controller_type"] = self.controller_type
+        if self.backend is not None:
+            d["backend"] = self.backend
         return d
 
 
@@ -63,6 +73,7 @@ class SimulationRunner:
         incoming_lanes: Optional[Sequence[str]] = None,
         additional_args: Optional[Sequence[str]] = None,
         controller_type: str = "fixed_time",
+        use_libsumo: bool = False,
     ) -> None:
         if not os.path.isfile(cfg_path):
             raise FileNotFoundError(f"SUMO configuration file not found: {cfg_path}")
@@ -74,6 +85,9 @@ class SimulationRunner:
         self.step_duration = float(step_duration)
         self.tripinfo_output = os.path.abspath(tripinfo_output) if tripinfo_output else None
         self.additional_args = list(additional_args) if additional_args else []
+        self.use_libsumo = bool(use_libsumo)
+        self._conn: Optional[Any] = None
+        self._backend: str = "traci"
         self._is_running = False
 
         # Load scenario metadata if controller or tls_id or lanes are omitted
@@ -121,9 +135,11 @@ class SimulationRunner:
                 self.controller = MaxPressureController(
                     green_phases=green_phases,
                     movements=movements,
-                    min_green=10.0,
-                    max_green=60.0,
+                    min_green=20.0,
+                    max_green=45.0,
                     yellow_time=3.0,
+                    all_red_time=1.0,
+                    max_red=90.0,
                     tls_id=self.tls_id,
                 )
             elif self.controller_type == "q_learning":
@@ -131,9 +147,11 @@ class SimulationRunner:
                 self.controller = QLearningController(
                     green_phases=green_phases,
                     movements=movements,
-                    min_green=10.0,
-                    max_green=60.0,
+                    min_green=20.0,
+                    max_green=45.0,
                     yellow_time=3.0,
+                    all_red_time=1.0,
+                    max_red=90.0,
                     decision_interval=5.0,
                     tls_id=self.tls_id,
                 )
@@ -142,6 +160,8 @@ class SimulationRunner:
                     green_phases=green_phases,
                     green_time=30.0,
                     yellow_time=3.0,
+                    all_red_time=1.0,
+                    max_red=90.0,
                     tls_id=self.tls_id,
                 )
 
@@ -185,23 +205,49 @@ class SimulationRunner:
 
         return cmd
 
+    @property
+    def conn(self) -> Any:
+        """Returns the active simulation backend connection (libsumo or traci)."""
+        if self._conn is not None:
+            return self._conn
+        if self.use_libsumo and HAS_LIBSUMO:
+            return libsumo
+        return traci
+
+    @property
+    def backend(self) -> str:
+        """Active backend name: 'libsumo' or 'traci'."""
+        return self._backend
+
     def start(self, gui: bool = False) -> None:
-        """Starts the SUMO process and connects TraCI.
+        """Starts the SUMO process and connects libsumo or TraCI.
 
         Args:
-            gui: If True, launches sumo-gui. Otherwise launches headless sumo.
+            gui: If True, launches sumo-gui (forces traci since libsumo does not support GUI).
+                 Otherwise launches headless sumo with libsumo if requested and available.
         """
         # Ensure any dangling connection is closed before starting new one
         self.close()
 
+        if self.use_libsumo and not gui:
+            if HAS_LIBSUMO:
+                self._conn = libsumo
+                self._backend = "libsumo"
+            else:
+                self._conn = traci
+                self._backend = "traci"
+        else:
+            self._conn = traci
+            self._backend = "traci"
+
         cmd = self.build_sumo_cmd(gui=gui)
-        traci.start(cmd)
+        self.conn.start(cmd)
         self._is_running = True
 
         # If incoming lanes were not known ahead of time, query them dynamically
         if not self.incoming_lanes and self.tls_id:
             try:
-                lanes = traci.trafficlight.getControlledLanes(self.tls_id)
+                lanes = self.conn.trafficlight.getControlledLanes(self.tls_id)
                 self.incoming_lanes = sorted(list(set(lanes)))
             except Exception:
                 pass
@@ -217,7 +263,7 @@ class SimulationRunner:
         total_halted = 0
         for lane_id in self.incoming_lanes:
             try:
-                total_halted += traci.lane.getLastStepHaltingNumber(lane_id)
+                total_halted += self.conn.lane.getLastStepHaltingNumber(lane_id)
             except Exception:
                 pass
         return total_halted
@@ -225,9 +271,9 @@ class SimulationRunner:
     def step(self) -> Tuple[str, int]:
         """Executes a single coordination step:
 
-        1. Updates traffic signal phase via FixedTimeController
+        1. Updates traffic signal phase via controller
         2. Measures queue length on incoming lanes
-        3. Advances simulation step (traci.simulationStep())
+        3. Advances simulation step (conn.simulationStep())
 
         Returns:
             Tuple[str, int]: (signal_state, queue_length)
@@ -235,32 +281,48 @@ class SimulationRunner:
         # 1. Update traffic signal state
         state, _ = self.controller.step(self.step_duration)
         if self.tls_id:
-            traci.trafficlight.setRedYellowGreenState(self.tls_id, state)
+            self.conn.trafficlight.setRedYellowGreenState(self.tls_id, state)
 
         # 2. Measure queue length
         queue = self.measure_queue()
 
         # 3. Next simulation step
-        traci.simulationStep()
+        self.conn.simulationStep()
 
         return state, queue
 
     def close(self) -> None:
-        """Safely closes TraCI connection if currently loaded."""
+        """Safely closes TraCI or libsumo connection if currently loaded."""
         try:
-            if traci.isLoaded():
-                traci.close()
+            if self._conn is not None:
+                try:
+                    if self._conn.isLoaded():
+                        self._conn.close()
+                except Exception:
+                    pass
+            if HAS_LIBSUMO:
+                try:
+                    if libsumo.isLoaded():
+                        libsumo.close()
+                except Exception:
+                    pass
+            try:
+                if traci.isLoaded():
+                    traci.close()
+            except Exception:
+                pass
         except Exception:
             pass
         finally:
             self._is_running = False
+            self._conn = None
 
     def __enter__(self) -> "SimulationRunner":
         """Context manager entry."""
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Context manager exit ensures TraCI is closed."""
+        """Context manager exit ensures TraCI or libsumo is closed."""
         self.close()
 
     def run(
@@ -291,13 +353,13 @@ class SimulationRunner:
 
         try:
             self.start(gui=gui)
-            sim_time_start = float(traci.simulation.getTime())
+            sim_time_start = float(self.conn.simulation.getTime())
 
             for step_idx in range(max_steps):
-                # 1. Cập nhật tín hiệu đèn Fixed Time
+                # 1. Cập nhật tín hiệu đèn Fixed Time / Max Pressure / Q-Learning
                 state, _ = self.controller.step(self.step_duration)
                 if self.tls_id:
-                    traci.trafficlight.setRedYellowGreenState(self.tls_id, state)
+                    self.conn.trafficlight.setRedYellowGreenState(self.tls_id, state)
 
                 # 2. Đo hàng đợi
                 current_queue = self.measure_queue()
@@ -307,16 +369,16 @@ class SimulationRunner:
                     step_callback(step_idx, state, current_queue)
 
                 # 3. Bước mô phỏng tiếp theo
-                traci.simulationStep()
+                self.conn.simulationStep()
 
                 # If no more vehicles exist and simulation can end early
-                if traci.simulation.getMinExpectedNumber() <= 0 and step_idx > 10:
+                if self.conn.simulation.getMinExpectedNumber() <= 0 and step_idx > 10:
                     break
 
-            sim_time_end = float(traci.simulation.getTime())
+            sim_time_end = float(self.conn.simulation.getTime())
             completed = True
         finally:
-            # Luôn đảm bảo đóng TraCI an toàn
+            # Luôn đảm bảo đóng TraCI / libsumo an toàn
             self.close()
 
         mean_queue = float(sum(queue_history) / len(queue_history)) if queue_history else 0.0
@@ -334,4 +396,5 @@ class SimulationRunner:
             completed=completed,
             tls_id=self.tls_id,
             controller_type=self.controller_type,
+            backend=self.backend,
         )

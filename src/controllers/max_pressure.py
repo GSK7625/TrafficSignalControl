@@ -18,8 +18,8 @@ class MaxPressureController(BaseController):
     Attributes:
         green_phases: List of green phase signal state strings.
         movements: Sequence of controlled movement link objects or dicts.
-        min_green: Minimum green phase duration in seconds (default: 10.0s).
-        max_green: Maximum green phase duration before forced switch in seconds (default: 60.0s).
+        min_green: Minimum green phase duration in seconds (default: 20.0s).
+        max_green: Maximum green phase duration before forced switch in seconds (default: 45.0s).
         yellow_time: Clearance yellow duration in seconds (default: 3.0s).
         tls_id: Traffic light identifier.
     """
@@ -28,9 +28,11 @@ class MaxPressureController(BaseController):
         self,
         green_phases: Sequence[Any],
         movements: Sequence[Any],
-        min_green: float = 10.0,
-        max_green: float = 60.0,
+        min_green: float = 20.0,
+        max_green: float = 45.0,
         yellow_time: float = 3.0,
+        all_red_time: float = 1.0,
+        max_red: float = 90.0,
         tls_id: Optional[str] = None,
         lane_vehicle_fn: Optional[Callable[[str], int]] = None,
     ) -> None:
@@ -48,6 +50,8 @@ class MaxPressureController(BaseController):
         super().__init__(
             green_phases=green_phases,
             yellow_time=yellow_time,
+            all_red_time=all_red_time,
+            max_red=max_red,
             tls_id=tls_id,
             lane_vehicle_fn=lane_vehicle_fn,
         )
@@ -86,7 +90,7 @@ class MaxPressureController(BaseController):
         return pressures
 
     def select_next_phase(self, force_switch: Optional[bool] = None) -> int:
-        """Selects the next green phase according to Max Pressure rules."""
+        """Selects the next green phase according to Max Pressure rules and Starvation Watchdog."""
         if force_switch is None:
             force_switch = (self._time_in_phase >= self.max_green - 1e-6)
 
@@ -98,6 +102,14 @@ class MaxPressureController(BaseController):
             return curr_p
 
         alt_phases = [(curr_p + i) % num_phases for i in range(1, num_phases)]
+
+        # Starvation Watchdog: Check if any competing phase reached max_red
+        starved = [
+            p for p in alt_phases
+            if self.get_phase_red_time(p) >= self.max_red - 1e-6
+        ]
+        if starved:
+            return max(starved, key=lambda p: (self.get_phase_red_time(p), pressures.get(p, 0.0)))
 
         if force_switch:
             return max(alt_phases, key=lambda p: pressures.get(p, 0.0))
@@ -121,20 +133,37 @@ class MaxPressureController(BaseController):
         if self._is_yellow:
             if self._time_in_phase >= self.yellow_time - tolerance:
                 self._is_yellow = False
+                self._time_in_phase = 0.0
+                if self.all_red_time > 0:
+                    self._is_all_red = True
+                else:
+                    self._is_all_red = False
+                    self._current_phase_idx = self._next_phase_idx
+        elif self._is_all_red:
+            if self._time_in_phase >= self.all_red_time - tolerance:
+                self._is_all_red = False
                 self._current_phase_idx = self._next_phase_idx
                 self._time_in_phase = 0.0
         else:
             if self._time_in_phase >= self.min_green - tolerance:
-                force_switch = (self._time_in_phase >= self.max_green - tolerance)
+                has_starvation = any(
+                    self.get_phase_red_time(p) >= self.max_red - tolerance
+                    for p in range(len(self.green_phases))
+                    if p != self._current_phase_idx
+                )
+                force_switch = (self._time_in_phase >= self.max_green - tolerance) or has_starvation
                 next_p = self.select_next_phase(force_switch=force_switch)
                 if next_p != self._current_phase_idx:
                     self._next_phase_idx = next_p
+                    self._time_in_phase = 0.0
                     if self.yellow_time > 0:
                         self._is_yellow = True
-                        self._time_in_phase = 0.0
+                    elif self.all_red_time > 0:
+                        self._is_all_red = True
                     else:
                         self._current_phase_idx = next_p
-                        self._time_in_phase = 0.0
+
+        self._update_red_timers(step_duration)
 
         current_state = self.get_current_state()
         phase_changed = (self._last_state != current_state)
