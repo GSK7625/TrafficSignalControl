@@ -136,24 +136,24 @@
 - Test: `tests/test_simulation_runner.py`
 
 **Interfaces:**
-- Consumes: Đường dẫn cấu hình SUMO (`.sumocfg`), `FixedTimeController`, `MetricsCollector`.
-- Produces: `SimulationRunner.run(gui: bool = False, max_steps: int = 3600) -> Dict[str, Any]` điều phối vòng lặp mô phỏng và trả về kết quả 5 metrics.
+- Consumes: Đường dẫn cấu hình SUMO (`.sumocfg`), `FixedTimeController`.
+- Produces: `SimulationRunner.run(gui: bool = False, max_steps: int = 3600) -> SimulationResult` điều phối vòng lặp mô phỏng và trả về kết quả số bước, thống kê hàng đợi.
 
-- [ ] **Step 1: Viết test cho SimulationRunner (sử dụng mock TraCI hoặc kịch bản mô phỏng ngắn 100 bước)**
-  Kiểm tra khởi động SUMO với `--tripinfo-output`, chuyển giao trạng thái đèn tín hiệu tại mỗi bước, và đóng TraCI an toàn.
+- [x] **Step 1: Viết test cho SimulationRunner (sử dụng mock TraCI hoặc kịch bản mô phỏng ngắn 100 bước)**
+  Kiểm tra khởi động SUMO với `--tripinfo-output`, chuyển giao trạng thái đèn tín hiệu tại mỗi bước, đo hàng đợi và đóng TraCI an toàn.
 
-- [ ] **Step 2: Chạy test để xác nhận FAIL**
+- [x] **Step 2: Chạy test để xác nhận FAIL**
   Run: `pytest tests/test_simulation_runner.py -v`
-  Expected: FAIL.
+  Expected: FAIL (`ModuleNotFoundError: No module named 'src.simulation_runner'`).
 
-- [ ] **Step 3: Cài đặt `SimulationRunner` trong `src/simulation_runner.py`**
-  Tích hợp TraCI, kết nối controller Fixed Time, ghi nhận hàng đợi trên các làn vào của nút giao, gọi `--tripinfo-output`.
+- [x] **Step 3: Cài đặt `SimulationRunner` trong `src/simulation_runner.py`**
+  Tích hợp TraCI, kết nối controller Fixed Time, đo hàng đợi trên các làn vào của nút giao, gọi `--tripinfo-output`, đảm bảo `traci.close()` trong `finally`.
 
-- [ ] **Step 4: Chạy test để xác nhận PASS**
+- [x] **Step 4: Chạy test để xác nhận PASS**
   Run: `pytest tests/test_simulation_runner.py -v`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add src/simulation_runner.py tests/test_simulation_runner.py`
   `git commit -m "feat: implement SimulationRunner orchestrating TraCI and FixedTime control"`
 
