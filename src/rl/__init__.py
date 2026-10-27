@@ -1,13 +1,5 @@
-"""Reinforcement Learning module for traffic signal control."""
+"""Reinforcement Learning components for Traffic Signal Control."""
 
-from src.rl.discretization import StateDiscretizer
-from src.rl.environment import TrafficSignalRLEnv
-from src.rl.rewards import MetricsAlignedReward, NegativePressureReward
+from src.rl.rewards import MetricsAlignedReward
 
-
-__all__ = [
-    "TrafficSignalRLEnv",
-    "StateDiscretizer",
-    "NegativePressureReward",
-    "MetricsAlignedReward",
-]
+__all__ = ["MetricsAlignedReward"]
