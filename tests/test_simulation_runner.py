@@ -6,6 +6,7 @@ import pytest
 import traci
 
 from src.controllers.fixed_time import FixedTimeController
+from src.controllers.max_pressure import MaxPressureController
 from src.data_inspector import inspect_scenario
 from src.simulation_runner import SimulationRunner, SimulationResult
 
@@ -19,6 +20,7 @@ def test_simulation_runner_initialization():
     assert runner.tls_id == "cluster_357187_359543"
     assert runner.controller is not None
     assert isinstance(runner.controller, FixedTimeController)
+    assert runner.controller_type == "fixed_time"
     assert runner.step_duration == 1.0
     assert len(runner.incoming_lanes) > 0
 
@@ -147,3 +149,64 @@ def test_simulation_runner_context_manager():
 
     # After exiting with block, traci must be closed
     assert not traci.isLoaded()
+
+
+def test_simulation_runner_max_pressure_initialization():
+    """Test SimulationRunner initialization with controller_type='max_pressure'."""
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    runner = SimulationRunner(cfg_path=cfg_path, controller_type="max_pressure")
+
+    assert runner.controller_type == "max_pressure"
+    assert runner.controller is not None
+    assert isinstance(runner.controller, MaxPressureController)
+    assert runner.controller.tls_id == runner.tls_id
+    assert len(runner.controller.movements) > 0
+    assert runner.controller.min_green == 10.0
+    assert runner.controller.max_green == 60.0
+    assert runner.controller.yellow_time == 3.0
+
+
+def test_simulation_runner_explicit_max_pressure_controller():
+    """Test passing an explicit MaxPressureController instance."""
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    info = inspect_scenario("cologne1", data_dir="data")
+    green_phases = info.get_green_phases()
+    movements = info.get_movements(info.tls_ids[0])
+    ctrl = MaxPressureController(
+        green_phases=green_phases,
+        movements=movements,
+        min_green=15.0,
+        max_green=45.0,
+        yellow_time=4.0,
+        tls_id=info.tls_ids[0],
+    )
+    runner = SimulationRunner(cfg_path=cfg_path, controller=ctrl)
+
+    assert runner.controller is ctrl
+    assert runner.controller_type == "max_pressure"
+    assert runner.tls_id == info.tls_ids[0]
+
+
+def test_simulation_runner_invalid_controller_type():
+    """Test passing an unsupported controller_type raises ValueError."""
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    with pytest.raises(ValueError, match="Unsupported controller_type"):
+        SimulationRunner(cfg_path=cfg_path, controller_type="reinforcement_learning")
+
+
+def test_simulation_runner_max_pressure_execution_50_steps():
+    """Test short 50-step simulation execution using MaxPressureController."""
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    runner = SimulationRunner(cfg_path=cfg_path, controller_type="max_pressure")
+
+    result = runner.run(gui=False, max_steps=50)
+
+    assert isinstance(result, SimulationResult)
+    assert result.total_steps == 50
+    assert len(result.queue_history) == 50
+    assert result.controller_step_count == 50
+    assert result.mean_queue_length >= 0.0
+    assert result.max_queue_length >= 0
+    assert result.completed is True
+    assert not traci.isLoaded()
+

@@ -1,4 +1,4 @@
-"""TraCI Simulation Runner module for SUMO with Fixed Time traffic signal control."""
+"""TraCI Simulation Runner module for SUMO with traffic signal control (Fixed Time & Max Pressure)."""
 
 from dataclasses import dataclass, field
 import os
@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import sumolib
 import traci
 
-from src.controllers.fixed_time import FixedTimeController
+from src.controllers import FixedTimeController, MaxPressureController, QLearningController
 from src.data_inspector import inspect_scenario, ScenarioInfo
 
 
@@ -23,10 +23,11 @@ class SimulationResult:
     tripinfo_path: Optional[str] = None
     completed: bool = True
     tls_id: Optional[str] = None
+    controller_type: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts result metrics to dictionary format."""
-        return {
+        d = {
             "total_steps": self.total_steps,
             "sim_time_start": self.sim_time_start,
             "sim_time_end": self.sim_time_end,
@@ -37,13 +38,16 @@ class SimulationResult:
             "completed": self.completed,
             "tls_id": self.tls_id,
         }
+        if self.controller_type is not None:
+            d["controller_type"] = self.controller_type
+        return d
 
 
 class SimulationRunner:
-    """Orchestrates SUMO simulation via TraCI with Fixed Time traffic signal control.
+    """Orchestrates SUMO simulation via TraCI with traffic signal control (Fixed Time or Max Pressure).
 
     Coordinates the simulation loop per second:
-      1. Updates traffic signal phase via FixedTimeController
+      1. Updates traffic signal phase via controller
       2. Measures queue length (halting vehicles v < 0.1 m/s) on incoming lanes
       3. Advances simulation step (traci.simulationStep())
     Safely handles TraCI connection closure in try...finally blocks.
@@ -52,15 +56,19 @@ class SimulationRunner:
     def __init__(
         self,
         cfg_path: str,
-        controller: Optional[FixedTimeController] = None,
+        controller: Optional[Any] = None,
         tls_id: Optional[str] = None,
         step_duration: float = 1.0,
         tripinfo_output: Optional[str] = None,
         incoming_lanes: Optional[Sequence[str]] = None,
         additional_args: Optional[Sequence[str]] = None,
+        controller_type: str = "fixed_time",
     ) -> None:
         if not os.path.isfile(cfg_path):
             raise FileNotFoundError(f"SUMO configuration file not found: {cfg_path}")
+
+        if controller_type not in ("fixed_time", "max_pressure", "q_learning"):
+            raise ValueError(f"Unsupported controller_type: {controller_type}. Must be 'fixed_time', 'max_pressure', or 'q_learning'.")
 
         self.cfg_path = os.path.abspath(cfg_path)
         self.step_duration = float(step_duration)
@@ -82,28 +90,47 @@ class SimulationRunner:
         # Resolve TLS ID
         if tls_id:
             self.tls_id = tls_id
-        elif controller and controller.tls_id:
+        elif controller and getattr(controller, "tls_id", None):
             self.tls_id = controller.tls_id
         elif scenario_info and scenario_info.tls_ids:
             self.tls_id = scenario_info.tls_ids[0]
         else:
             self.tls_id = ""
 
-        # Resolve FixedTimeController
+        # Resolve controller and controller_type
         if controller is not None:
             self.controller = controller
+            if isinstance(controller, MaxPressureController):
+                self.controller_type = "max_pressure"
+            elif isinstance(controller, FixedTimeController):
+                self.controller_type = "fixed_time"
+            else:
+                self.controller_type = controller_type
         else:
+            self.controller_type = controller_type
             if scenario_info is None:
-                raise ValueError("Cannot initialize FixedTimeController without scenario metadata.")
+                raise ValueError(f"Cannot initialize {self.controller_type} controller without scenario metadata.")
             green_phases = scenario_info.get_green_phases(self.tls_id)
             if not green_phases:
                 raise ValueError(f"No green phases found for TLS '{self.tls_id}'.")
-            self.controller = FixedTimeController(
-                green_phases=green_phases,
-                green_time=30.0,
-                yellow_time=3.0,
-                tls_id=self.tls_id,
-            )
+
+            if self.controller_type == "max_pressure":
+                movements = scenario_info.get_movements(self.tls_id)
+                self.controller = MaxPressureController(
+                    green_phases=green_phases,
+                    movements=movements,
+                    min_green=10.0,
+                    max_green=60.0,
+                    yellow_time=3.0,
+                    tls_id=self.tls_id,
+                )
+            else:
+                self.controller = FixedTimeController(
+                    green_phases=green_phases,
+                    green_time=30.0,
+                    yellow_time=3.0,
+                    tls_id=self.tls_id,
+                )
 
         # Resolve incoming lanes
         if incoming_lanes is not None:
@@ -293,4 +320,5 @@ class SimulationRunner:
             tripinfo_path=self.tripinfo_output,
             completed=completed,
             tls_id=self.tls_id,
+            controller_type=self.controller_type,
         )
