@@ -30,7 +30,7 @@ def train_q_learning_agent(
     gamma: float = 0.95,
     epsilon_start: float = 1.0,
     epsilon_min: float = 0.05,
-    epsilon_decay: float = 0.85,
+    epsilon_decay: Optional[float] = None,
     decision_interval: float = 5.0,
     min_green: float = 10.0,
     max_green: float = 60.0,
@@ -92,11 +92,19 @@ def train_q_learning_agent(
     }
     reward_fn = MetricsAlignedReward(**r_cfg)
 
+    if epsilon_decay is None:
+        if episodes <= 15:
+            eff_decay = 0.85
+        else:
+            eff_decay = (epsilon_min / max(epsilon_start, 1e-6)) ** (1.0 / max(int(episodes * 0.75), 1))
+    else:
+        eff_decay = float(epsilon_decay)
+
     episode_stats: List[Dict[str, Any]] = []
     best_reward = -float("inf")
 
     for ep in range(episodes):
-        epsilon = max(epsilon_min, epsilon_start * (epsilon_decay ** ep))
+        epsilon = max(epsilon_min, epsilon_start * (eff_decay ** ep))
         controller.epsilon = epsilon
         controller.explore_mode = True
         controller.reset()
@@ -219,6 +227,7 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=3600, help="Max simulation steps per episode")
     parser.add_argument("--lr", type=float, default=0.1, help="Learning rate alpha")
     parser.add_argument("--gamma", type=float, default=0.95, help="Discount factor gamma")
+    parser.add_argument("--epsilon-decay", type=float, default=None, help="Epsilon decay rate")
     parser.add_argument("--save-dir", type=str, default="models/q_learning", help="Directory to save models")
     args = parser.parse_args()
 
@@ -232,6 +241,7 @@ def main() -> None:
         save_path=out_path,
         lr=args.lr,
         gamma=args.gamma,
+        epsilon_decay=args.epsilon_decay,
     )
 
 
