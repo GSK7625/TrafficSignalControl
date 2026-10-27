@@ -42,12 +42,7 @@ class MetricsCollector:
     """
 
     def __init__(self, monitored_lanes: Optional[Sequence[str]] = None) -> None:
-        """Khởi tạo MetricsCollector.
-
-        Tham số:
-            monitored_lanes: Danh sách tùy chọn các mã làn đường cần theo dõi trong mô phỏng.
-        """
-        self.monitored_lanes: List[str] = list(monitored_lanes) if monitored_lanes else []
+        """Khởi tạo MetricsCollector."""
         self.step_records: List[StepRecord] = []
         self.trip_records: List[TripRecord] = []
         self.tripinfo_metrics: Dict[str, Any] = {}

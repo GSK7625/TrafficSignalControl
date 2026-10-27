@@ -4,12 +4,13 @@ from src.controllers.base import (
     BaseController,
     CONTROLLER_REGISTRY,
     build_default_controller,
+    build_yellow_state,
     create_controller,
     get_controller_class,
     get_movement_attr,
     register_controller,
 )
-from src.controllers.fixed_time import FixedTimeController, build_yellow_state
+from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
 from src.controllers.q_learning import CompactStateDiscretizer, QLearningController
 

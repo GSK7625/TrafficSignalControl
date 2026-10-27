@@ -35,7 +35,6 @@ class CompactStateDiscretizer:
         q_th = list(queue_thresholds) if queue_thresholds else []
         self.serving_threshold = float(q_th[0]) if q_th else float(serving_threshold)
         self.competing_threshold = float(q_th[1]) if len(q_th) >= 2 else float(competing_threshold)
-        self.time_thresholds = tuple(float(x) for x in time_thresholds) if time_thresholds else ()
 
     def discretize(
         self,
@@ -70,7 +69,6 @@ class QLearningController(BaseController):
         epsilon: float = 0.1,
         tls_id: Optional[str] = None,
         lane_vehicle_fn: Optional[Callable[[str], int]] = None,
-        discretizer: Optional[CompactStateDiscretizer] = None,
     ) -> None:
         if min_green <= 0:
             raise ValueError(f"min_green must be positive, got {min_green}.")
@@ -93,7 +91,7 @@ class QLearningController(BaseController):
         self.lr: float = float(lr)
         self.gamma: float = float(gamma)
         self.epsilon: float = float(epsilon)
-        self.discretizer: CompactStateDiscretizer = discretizer or CompactStateDiscretizer()
+        self.discretizer: CompactStateDiscretizer = CompactStateDiscretizer()
 
         # Tính toán trước các làn xe đi vào cho từng pha xanh
         self._phase_incoming_lanes: List[List[str]] = []

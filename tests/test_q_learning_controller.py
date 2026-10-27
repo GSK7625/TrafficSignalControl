@@ -8,7 +8,7 @@ from src.controllers.q_learning import CompactStateDiscretizer, QLearningControl
 
 
 class MockMovement:
-    def __init__(self, link_index: int, from_lane: str, to_lane: str):
+    def __init__(self, link_index: int, from_lane: str, to_lane: str = ""):
         self.link_index = link_index
         self.from_lane = from_lane
         self.to_lane = to_lane
@@ -366,3 +366,60 @@ def test_reset_preserves_q_table(sample_setup):
     assert ctrl.current_phase == 0
     assert not ctrl.is_yellow
     assert ctrl.q_table[s] == [5.5, 9.9]
+
+
+@pytest.fixture
+def four_phase_controller():
+    phases = ["GGrr", "rrGG", "GrGr", "rGrG"]
+    movements = [
+        MockMovement(0, "lane_0"),
+        MockMovement(1, "lane_1"),
+        MockMovement(2, "lane_2"),
+        MockMovement(3, "lane_3"),
+    ]
+    # Vehicle count mocking: lane_0 has 10 vehicles, others have 0
+    vehicle_map = {"lane_0": 10, "lane_1": 0, "lane_2": 0, "lane_3": 0}
+    ctrl = QLearningController(
+        green_phases=phases,
+        movements=movements,
+        min_green=10.0,
+        max_green=60.0,
+        decision_interval=5.0,
+        yellow_time=3.0,
+        lane_vehicle_fn=lambda l: vehicle_map.get(l, 0),
+    )
+    return ctrl
+
+
+def test_greedy_policy_does_not_blindly_prefer_unvisited_empty_phases(four_phase_controller):
+    """In greedy mode, if curr_phase=0 has 10 vehicles and Q=-0.5, but unvisited phases 1,2,3
+    have 0 vehicles and default Q=0.0, the controller must NOT switch to an empty phase.
+    """
+    ctrl = four_phase_controller
+    s = ctrl.get_state()
+    ctrl.q_table[s] = [-0.5, 0.0, 0.0, 0.0]
+
+    # In greedy mode, choosing action should KEEP phase 0 because competing phases are empty
+    chosen = ctrl.choose_action(s, explore=False)
+    assert chosen == 0, f"Expected action 0 (keep busy phase), but got {chosen}!"
+
+
+def test_controller_decision_point_metadata(four_phase_controller):
+    """QLearningController should track whether the current step was an RL decision step
+    and what (state, action) was decided, enabling clean SMDP updates.
+    """
+    ctrl = four_phase_controller
+    assert ctrl.last_decision is None
+
+    # Step for 9 seconds (less than min_green 10s): no decision should be made
+    for _ in range(9):
+        ctrl.step(1.0)
+        assert ctrl.last_decision is None
+
+    # At step 10 (min_green reached): RL decision must occur
+    state, changed = ctrl.step(1.0)
+    assert ctrl.last_decision is not None
+    dec_state, dec_action = ctrl.last_decision
+    assert isinstance(dec_state, tuple)
+    assert isinstance(dec_action, int)
+

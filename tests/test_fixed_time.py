@@ -6,7 +6,7 @@ from src.data_inspector import inspect_scenario
 
 def test_build_yellow_state_standalone():
     """Test safe yellow state generation between opposing phases."""
-    from src.controllers.fixed_time import build_yellow_state
+    from src.controllers.base import build_yellow_state
 
     # When next state is opposing, green turning red becomes yellow, red stays red
     curr_state = "GGGrrr"

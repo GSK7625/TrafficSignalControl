@@ -104,3 +104,33 @@ def test_train_q_learning_resume_from_model():
         assert "action_count" in stats2[0]
 
 
+def test_training_loop_updates_switch_actions(tmp_path):
+    """Training with exploration must update switch actions (a != curr_phase) in Q-table."""
+    save_file = str(tmp_path / "test_model.json")
+    ctrl, stats = train_q_learning_agent(
+        scenario_name="ingolstadt1",
+        data_dir="data",
+        episodes=1,
+        max_steps_per_episode=100,
+        save_path=save_file,
+        lr=0.2,
+        gamma=0.9,
+        epsilon_start=1.0,
+        epsilon_min=1.0,  # Force pure exploration
+        min_green=5.0,
+        decision_interval=5.0,
+        verbose=False,
+    )
+
+    # Check non-zero updates where action != state[0]
+    switch_updates = 0
+    for state, q_vals in ctrl.q_table.items():
+        curr_p = state[0]
+        for a, val in enumerate(q_vals):
+            if a != curr_p and val != 0.0:
+                switch_updates += 1
+
+    assert switch_updates > 0, "No switch action (a != curr_phase) was ever updated during training!"
+
+
+

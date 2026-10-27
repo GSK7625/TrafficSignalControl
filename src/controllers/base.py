@@ -103,9 +103,6 @@ def build_default_controller(
 
 class BaseController(ABC):
 
-    build_yellow_state = staticmethod(build_yellow_state)
-    build_all_red_state = staticmethod(build_all_red_state)
-
     def __init__(
         self,
         green_phases: Sequence[Any],
