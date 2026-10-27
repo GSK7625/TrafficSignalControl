@@ -114,8 +114,8 @@ def train_q_learning_agent(
 
         try:
             runner.start(gui=False)
-            curr_state = controller.get_state()
-            last_action = controller.current_phase
+            last_decision_state: Optional[Tuple[int, ...]] = None
+            last_decision_action: Optional[int] = None
 
             for step_idx in range(max_steps_per_episode):
                 # 1. Query lane conditions
@@ -153,19 +153,28 @@ def train_q_learning_agent(
                 # 4. Advance TraCI
                 traci.simulationStep()
 
-                # 5. Bellman Q-update on decision intervals or phase switches
-                if changed or (step_idx > 0 and step_idx % int(decision_interval) == 0):
-                    r_val = reward_fn.calculate_reward()
-                    ep_reward += r_val
-                    next_state = controller.get_state()
-                    controller.update_q(curr_state, last_action, r_val, next_state)
-                    reward_fn.reset_interval()
-                    curr_state = next_state
-                    last_action = controller.current_phase
+                # 5. Bellman Q-update on explicit decision points
+                if controller.last_decision is not None:
+                    dec_state, dec_action = controller.last_decision
+                    if last_decision_state is not None and last_decision_action is not None:
+                        r_val = reward_fn.calculate_reward()
+                        ep_reward += r_val
+                        controller.update_q(last_decision_state, last_decision_action, r_val, dec_state)
+                        reward_fn.reset_interval()
+                    last_decision_state = dec_state
+                    last_decision_action = dec_action
 
                 # Early break if no more expected vehicles
                 if step_idx > 300 and traci.simulation.getMinExpectedNumber() <= 0:
                     break
+
+            # Terminal update at end of episode
+            if last_decision_state is not None and last_decision_action is not None:
+                r_val = reward_fn.calculate_reward()
+                ep_reward += r_val
+                final_state = controller.get_state()
+                controller.update_q(last_decision_state, last_decision_action, r_val, final_state)
+                reward_fn.reset_interval()
 
         finally:
             runner.close()

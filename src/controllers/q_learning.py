@@ -126,6 +126,7 @@ class QLearningController:
 
         # Q-table: Dict[Tuple[int, ...], List[float]]
         self.q_table: Dict[Tuple[int, ...], List[float]] = {}
+        self.action_counts: Dict[Tuple[Tuple[int, ...], int], int] = {}
         self.explore_mode: bool = False
 
         # Internal execution state
@@ -136,6 +137,7 @@ class QLearningController:
         self._total_time: float = 0.0
         self._step_count: int = 0
         self._time_since_last_decision: float = 0.0
+        self.last_decision: Optional[Tuple[Tuple[int, ...], int]] = None
 
     @property
     def num_phases(self) -> int:
@@ -210,38 +212,60 @@ class QLearningController:
             return val
 
     def choose_action(self, state: Tuple[int, ...], explore: bool = False) -> int:
-        """Selects next action according to epsilon-greedy policy.
+        """Selects next action according to epsilon-greedy policy with action masking.
 
         In greedy mode (explore=False):
-        - If Q-values have a strict maximum, chooses that action.
-        - If tied including current phase, prioritizes keeping current phase to avoid yellow lost time.
-        - If state is unvisited (all values equal), serves queues rationally: stays on current phase
-          if current phase has queued vehicles, otherwise serves the phase with highest queue.
+        - Action masking: prevents switching to phases with zero queue when current phase has queue > 0.
+        - Unvisited penalty: unvisited switch actions (default 0.0) are never favored over visited
+          phases with negative rewards when current phase has active traffic.
+        - Tie-breaking: prioritizes keeping current phase to minimize yellow clearance lost time.
         """
+        queues = self.calculate_phase_queues()
+        curr_q = queues.get(self._current_phase_idx, 0.0)
+
+        # Exploration (epsilon-greedy)
         if explore and random.random() < self.epsilon:
-            return random.randint(0, self.num_phases - 1)
+            eligible = [p for p in range(self.num_phases) if p == self._current_phase_idx or queues.get(p, 0.0) > 0]
+            if not eligible:
+                eligible = list(range(self.num_phases))
+            return random.choice(eligible)
 
         q_vals = self._get_q_entry(state)
-        max_q = max(q_vals)
-        min_q = min(q_vals)
 
-        # Unvisited state fallback
-        if max_q == min_q:
-            if not explore:
-                queues = self.calculate_phase_queues()
-                curr_q = queues.get(self._current_phase_idx, 0.0)
-                if curr_q > 0:
-                    return self._current_phase_idx
-                # If current phase is empty, switch to phase with highest queue
-                if queues:
-                    return max(range(self.num_phases), key=lambda p: queues.get(p, 0.0))
-                return self._current_phase_idx
-            return random.randint(0, self.num_phases - 1)
+        # In greedy mode: determine eligible actions via action masking
+        eligible_actions: List[int] = []
+        for a in range(self.num_phases):
+            if a == self._current_phase_idx:
+                eligible_actions.append(a)
+            elif queues.get(a, 0.0) > 0 or curr_q == 0:
+                eligible_actions.append(a)
 
-        candidates = [a for a, q in enumerate(q_vals) if q == max_q]
-        if self._current_phase_idx in candidates:
+        if not eligible_actions:
+            eligible_actions = [self._current_phase_idx]
+
+        best_score = -float("inf")
+        best_actions: List[int] = []
+
+        for a in eligible_actions:
+            q = q_vals[a]
+            count = self.action_counts.get((state, a), 0)
+            adjusted_q = q
+            if count == 0 and q == 0.0:
+                if a != self._current_phase_idx:
+                    adjusted_q = -float("inf") if curr_q > 0 else -1e-3
+
+            if adjusted_q > best_score:
+                best_score = adjusted_q
+                best_actions = [a]
+            elif adjusted_q == best_score:
+                best_actions.append(a)
+
+        # Tie-breaker: prioritize keeping current phase to minimize yellow clearance delay
+        if self._current_phase_idx in best_actions:
             return self._current_phase_idx
-        return candidates[0]
+
+        # If still tied, pick action with highest queue
+        return max(best_actions, key=lambda a: queues.get(a, 0.0))
 
     def update_q(
         self,
@@ -256,6 +280,7 @@ class QLearningController:
         target = float(reward) + self.gamma * max(next_q_vals)
         td_error = target - q_vals[action]
         q_vals[action] += self.lr * td_error
+        self.action_counts[(state, action)] = self.action_counts.get((state, action), 0) + 1
         return td_error
 
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool]:
@@ -265,6 +290,7 @@ class QLearningController:
             Tuple[str, bool]: (active_signal_state, is_phase_switched)
         """
         step_duration = float(step_duration)
+        self.last_decision = None
 
         if self._is_yellow:
             self._time_in_phase += step_duration
@@ -295,6 +321,8 @@ class QLearningController:
             else:
                 chosen = self._current_phase_idx
 
+            self.last_decision = (state, chosen)
+
             if chosen != self._current_phase_idx:
                 self._is_yellow = True
                 self._next_phase_idx = chosen
@@ -309,6 +337,7 @@ class QLearningController:
             state = self.get_state()
             chosen = self.choose_action(state, explore=self.explore_mode)
             self._time_since_last_decision = 0.0
+            self.last_decision = (state, chosen)
 
             if chosen != self._current_phase_idx:
                 self._is_yellow = True
@@ -327,6 +356,7 @@ class QLearningController:
         self._total_time = 0.0
         self._step_count = 0
         self._time_since_last_decision = 0.0
+        self.last_decision = None
 
     def save(self, filepath: str) -> None:
         """Serializes learned Q-table and hyperparameters to a JSON file."""
