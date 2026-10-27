@@ -1,149 +1,176 @@
-"""Command-line interface for the Traffic Signal Control simulation platform.
+"""Command-Line Interface for SUMO Fixed-Time Traffic Signal Control Evaluation.
 
-Giao diện dòng lệnh (CLI):
-- Mặc định đọc toàn bộ cấu hình từ file YAML (mặc định: configs/config.yaml).
-- Cho phép chạy trực tiếp không cần truyền cờ: `python main.py`.
-- Các cờ lệnh (nếu truyền) sẽ ghi đè cấu hình trong YAML:
-  --config (-c), --algorithm (-a), --dataset (-d), --gui, --steps (-s), --model (-m).
+Usage examples:
+  python main.py --scenario cologne1
+  python main.py --scenario ingolstadt1 --gui
+  python main.py --all
+  python main.py --all --max-steps 3600
 """
 
 import argparse
-import json
 import os
 import sys
+from typing import List, Optional
 
-# Ensure UTF-8 output and error encoding across Windows consoles
-for stream in (sys.stdout, sys.stderr):
-    if hasattr(stream, "reconfigure"):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except (OSError, ValueError):
-            pass
+# Ensure UTF-8 output on Windows console
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
-from src.config import load_yaml_config, resolve_config_path
-from src.evaluation.experiment_runner import ExperimentConfig, run_single_experiment
-
-
-# Cấu hình mặc định môi trường CLI
-DEFAULT_CONFIG_PATH = "configs/config.yaml"
-DEFAULT_DATASET = "cologne1"
-DEFAULT_GUI_DELAY = 50.0
-RANDOM_SEED = 42
-OUTPUT_DIR = "results"
+from src.evaluate import (
+    DEFAULT_SCENARIOS,
+    evaluate_multiple,
+    evaluate_scenario,
+    export_evaluation_json,
+    generate_comparison_markdown,
+    plot_comparison_chart,
+)
 
 
-def parse_args():
-    """Phân tích các đối số dòng lệnh CLI."""
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parses command line arguments.
+
+    Args:
+        argv: Command line argument list (defaults to sys.argv[1:] if None).
+
+    Returns:
+        Parsed arguments Namespace.
+    """
     parser = argparse.ArgumentParser(
-        description="SUMO Traffic Signal Control Platform (CLI)",
-        epilog="Example: python main.py (reads configs/config.yaml) or python main.py -a max-pressure --gui",
+        description="Đánh giá thuật toán điều khiển đèn tín hiệu Fixed Time (30s) trên SUMO",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+
     parser.add_argument(
-        "--config", "-c",
+        "--scenario",
         type=str,
-        default=DEFAULT_CONFIG_PATH,
-        help=f"Path to YAML configuration file (default: {DEFAULT_CONFIG_PATH})",
+        default=None,
+        help="Chỉ định tên kịch bản SUMO cần đánh giá (ví dụ: cologne1, ingolstadt1)",
     )
     parser.add_argument(
-        "--algorithm", "-a",
-        default=None,
-        choices=["fixed-time", "max-pressure", "q-learning", "none"],
-        help="Traffic control algorithm (override YAML config)",
-    )
-    parser.add_argument(
-        "--dataset", "-d",
-        default=None,
-        choices=["cologne1", "ingolstadt1", "cologne3"],
-        help="Scenario dataset name (override YAML config)",
+        "--all",
+        action="store_true",
+        help="Đánh giá toàn diện trên cả 2 bản đồ (cologne1 và ingolstadt1) và xuất báo cáo so sánh",
     )
     parser.add_argument(
         "--gui",
         action="store_true",
-        default=None,
-        help="Enable SUMO-GUI visual simulation (override YAML config)",
+        help="Khởi chạy giao diện trực quan sumo-gui thay vì chế độ dòng lệnh",
     )
     parser.add_argument(
-        "--steps", "-s",
+        "--max-steps",
         type=int,
-        default=None,
-        help="Max simulation steps (override YAML config)",
+        default=3600,
+        help="Số bước mô phỏng tối đa (giây)",
     )
     parser.add_argument(
-        "--model", "-m",
+        "--output-dir",
         type=str,
-        default=None,
-        help="Path to Q-Learning model checkpoint (override YAML config)",
+        default="results",
+        help="Thư mục lưu trữ kết quả JSON, XML và biểu đồ báo cáo",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data",
+        help="Thư mục gốc chứa các kịch bản SUMO",
     )
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main():
-    args = parse_args()
+def main(argv: Optional[List[str]] = None) -> int:
+    """Main CLI entry point for evaluation execution.
 
-    # Bắt buộc phải có file cấu hình YAML để chạy
-    config_path = resolve_config_path(args.config)
+    Args:
+        argv: Command-line arguments.
 
-    yaml_data = load_yaml_config(config_path)
-    sim_cfg = yaml_data.get("simulation", {})
-    safety_cfg = yaml_data.get("safety", {})
-    ql_cfg = yaml_data.get("q_learning", {})
+    Returns:
+        Exit code (0 for success, non-zero for error).
+    """
+    args = parse_args(argv)
 
-    # Ánh xạ tên cờ CLI sang tên thuộc tính của ExperimentConfig
-    cli_key_map = {"dataset": "scenario_name", "model": "model_path"}
-    cli_overrides = {
-        cli_key_map.get(k, k): v
-        for k, v in vars(args).items()
-        if v is not None and k != "config"
-    }
+    if not args.all and not args.scenario:
+        print("\n[!] Lỗi cú pháp: Vui lòng chỉ định kịch bản bằng:")
+        print("    python main.py --scenario <tên_bản_đồ>  (ví dụ: python main.py --scenario cologne1)")
+        print("  hoặc:")
+        print("    python main.py --all                    (chạy cả 2 bản đồ cologne1 và ingolstadt1)")
+        print("\nSử dụng `python main.py --help` để xem trợ giúp chi tiết.\n")
+        return 1
 
-    base_cfg = {
-        "scenario_name": sim_cfg.get("dataset", DEFAULT_DATASET),
-        "algorithm": sim_cfg.get("algorithm"),
-        "gui": sim_cfg.get("gui", False),
-        "steps": sim_cfg.get("steps", None),
-        "model_path": sim_cfg.get("model_path", ql_cfg.get("model_path", None)),
-        "seed": int(sim_cfg.get("seed", RANDOM_SEED)),
-        "output_dir": str(sim_cfg.get("output_dir", OUTPUT_DIR)),
-        "step_length": float(sim_cfg.get("step_length", 1.0)),
-        "use_tripinfo": bool(sim_cfg.get("use_tripinfo", True)),
-    }
-    final_cfg = {**base_cfg, **cli_overrides}
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    if not final_cfg.get("algorithm"):
-        raise ValueError(
-            f"Chưa xác định thuật toán điều khiển (algorithm). "
-            f"Vui lòng cấu hình 'simulation.algorithm' trong {config_path} hoặc truyền qua cờ -a."
+    if args.all:
+        print("=================================================================")
+        print(" BẮT ĐẦU ĐÁNH GIÁ ĐA BẢN ĐỒ VỚI THUẬT TOÁN FIXED TIME (30S GREEN)")
+        print(f" Danh sách bản đồ: {', '.join(DEFAULT_SCENARIOS)}")
+        print(f" Max steps: {args.max_steps}s | Chế độ GUI: {args.gui}")
+        print("=================================================================\n")
+
+        results = evaluate_multiple(
+            scenarios=DEFAULT_SCENARIOS,
+            max_steps=args.max_steps,
+            gui=args.gui,
+            output_dir=args.output_dir,
+            data_dir=args.data_dir,
         )
 
-    gui = final_cfg["gui"]
-    gui_delay = float(sim_cfg.get("gui_delay", DEFAULT_GUI_DELAY)) if gui else 0.0
+        # Print Markdown table to stdout
+        table_md = generate_comparison_markdown(results)
+        print("\n" + table_md + "\n")
 
-    timing_overrides = {
-        key: safety_cfg[key]
-        for key in ("yellow_duration", "all_red_duration", "min_green", "max_green", "max_red")
-        if key in safety_cfg
-    }
+        json_file = os.path.join(args.output_dir, "fixed_time_evaluation.json")
+        chart_file = os.path.join(args.output_dir, "fixed_time_metrics.png")
+        report_file = os.path.join(args.output_dir, "REPORT.md")
 
-    exp_config = ExperimentConfig(
-        **final_cfg,
-        gui_delay=gui_delay,
-        timing_overrides=timing_overrides,
-    )
+        print("-----------------------------------------------------------------")
+        print(f"[✓] Đã xuất tệp kết quả JSON:  {json_file}")
+        print(f"[✓] Đã xuất biểu đồ trực quan: {chart_file}")
+        print(f"[✓] Đã xuất báo cáo Markdown:  {report_file}")
+        print("=================================================================\n")
+        return 0
 
-    record, summary = run_single_experiment(exp_config, include_summary=True)
-    if record["status"] == "FAILED":
-        err = record["error_message"]
-        if "Model file not found" in err:
-            err += (
-                f"\nGợi ý: Kịch bản '{exp_config.scenario_name}' chưa có checkpoint sẵn. "
-                f"Hãy chạy huấn luyện trước bằng lệnh:\n"
-                f"  python -m src.training.train_q_learning --dataset {exp_config.scenario_name}\n"
-                f"hoặc chỉ định đường dẫn model qua cờ '--model' / '-m'."
+    if args.scenario:
+        print("=================================================================")
+        print(f" BẮT ĐẦU ĐÁNH GIÁ KỊCH BẢN: {args.scenario}")
+        print(f" Max steps: {args.max_steps}s | Chế độ GUI: {args.gui}")
+        print("=================================================================\n")
+
+        try:
+            res = evaluate_scenario(
+                scenario_name=args.scenario,
+                max_steps=args.max_steps,
+                gui=args.gui,
+                output_dir=args.output_dir,
+                data_dir=args.data_dir,
             )
-        raise RuntimeError(err)
-    print(json.dumps(summary, indent=2))
+        except Exception as err:
+            print(f"[X] Lỗi trong quá trình mô phỏng {args.scenario}: {err}", file=sys.stderr)
+            return 2
+
+        # Wrap in dictionary for reporting
+        results = {args.scenario: res}
+        table_md = generate_comparison_markdown(results)
+        print("\n" + table_md + "\n")
+
+        # Save single or update json
+        json_file = os.path.join(args.output_dir, "fixed_time_evaluation.json")
+        export_evaluation_json(results, output_path=json_file)
+
+        chart_file = os.path.join(args.output_dir, f"{args.scenario}_metrics.png")
+        plot_comparison_chart(results, output_path=chart_file)
+
+        print("-----------------------------------------------------------------")
+        print(f"[✓] Đã xuất tệp kết quả JSON:  {json_file}")
+        print(f"[✓] Đã xuất biểu đồ trực quan: {chart_file}")
+        print("=================================================================\n")
+        return 0
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

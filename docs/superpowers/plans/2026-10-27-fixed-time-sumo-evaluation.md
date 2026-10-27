@@ -173,21 +173,21 @@
   - File JSON kết quả: `results/fixed_time_evaluation.json`.
   - Biểu đồ so sánh cột trực quan hóa: `results/fixed_time_metrics.png`.
 
-- [ ] **Step 1: Viết test kiểm tra luồng tổng hợp và vẽ biểu đồ so sánh**
+- [x] **Step 1: Viết test kiểm tra luồng tổng hợp và vẽ biểu đồ so sánh**
   Kiểm tra hàm tạo bảng và xuất file kết quả.
 
-- [ ] **Step 2: Chạy test để xác nhận FAIL**
+- [x] **Step 2: Chạy test để xác nhận FAIL**
   Run: `pytest tests/test_evaluation_flow.py -v`
   Expected: FAIL.
 
-- [ ] **Step 3: Cài đặt `src/evaluate.py` và `main.py`**
+- [x] **Step 3: Cài đặt `src/evaluate.py` và `main.py`**
   Hỗ trợ chạy tự động 2 map với cờ `--gui` (xem trực quan) hoặc headless, xuất bảng tổng hợp và biểu đồ.
 
-- [ ] **Step 4: Chạy test để xác nhận PASS**
+- [x] **Step 4: Chạy test để xác nhận PASS**
   Run: `pytest tests/test_evaluation_flow.py -v`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add src/evaluate.py main.py tests/test_evaluation_flow.py`
   `git commit -m "feat: implement multi-map evaluation runner and report generator"`
 
