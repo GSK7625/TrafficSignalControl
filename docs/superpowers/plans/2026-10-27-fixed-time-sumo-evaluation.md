@@ -71,21 +71,21 @@
   - `FixedTimeController.get_current_phase() -> int`
   - `FixedTimeController.is_in_yellow() -> bool`
 
-- [ ] **Step 1: Viết test cho FixedTimeController**
+- [x] **Step 1: Viết test cho FixedTimeController**
   Kiểm tra: Duy trì pha xanh đúng 30 bước (với `step_duration=1.0s`), sau đó chuyển sang pha vàng 3 bước, rồi chuyển sang pha xanh tiếp theo đúng 30 bước theo chu kỳ tuần hoàn.
 
-- [ ] **Step 2: Chạy test để xác nhận FAIL**
+- [x] **Step 2: Chạy test để xác nhận FAIL**
   Run: `pytest tests/test_fixed_time.py -v`
   Expected: FAIL.
 
-- [ ] **Step 3: Cài đặt `FixedTimeController` trong `src/controllers/fixed_time.py`**
+- [x] **Step 3: Cài đặt `FixedTimeController` trong `src/controllers/fixed_time.py`**
   Quản lý trạng thái: `current_phase_index`, `time_in_phase`, `is_yellow`, logic sinh pha vàng trung gian giữa 2 pha xanh đối xung.
 
-- [ ] **Step 4: Chạy test để xác nhận PASS**
+- [x] **Step 4: Chạy test để xác nhận PASS**
   Run: `pytest tests/test_fixed_time.py -v`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add src/controllers/fixed_time.py tests/test_fixed_time.py`
   `git commit -m "feat: implement FixedTimeController with 30s green and 3s yellow phases"`
 
