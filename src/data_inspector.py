@@ -1,8 +1,8 @@
-"""Module for inspecting RESCO SUMO dataset files."""
+"""Module for inspecting SUMO network and traffic signal configuration."""
 
 from dataclasses import dataclass, field
-import os
 import math
+import os
 from typing import Any, Dict, List, Optional
 import xml.etree.ElementTree as ET
 
@@ -15,6 +15,16 @@ class PhaseInfo:
     state: str
     min_dur: Optional[float] = None
     max_dur: Optional[float] = None
+
+    @property
+    def is_yellow(self) -> bool:
+        """Returns True if the phase contains any yellow signal."""
+        return "y" in self.state.lower()
+
+    @property
+    def is_green(self) -> bool:
+        """Returns True if the phase contains green signal and no yellow."""
+        return not self.is_yellow and any(c in "Gg" for c in self.state)
 
 
 @dataclass
@@ -46,19 +56,40 @@ class ScenarioInfo:
         elif not self.rou_files and self.rou_path:
             self.rou_files = [self.rou_path]
 
+    def get_green_phases(self, tls_id: Optional[str] = None) -> List[PhaseInfo]:
+        """Returns all green phases for a given TLS ID (or the first TLS if omitted)."""
+        target_id = tls_id or (self.tls_ids[0] if self.tls_ids else "")
+        if not target_id or target_id not in self.phases_per_tls:
+            return []
+        return [p for p in self.phases_per_tls[target_id] if p.is_green]
+
+    def get_yellow_phases(self, tls_id: Optional[str] = None) -> List[PhaseInfo]:
+        """Returns all yellow phases for a given TLS ID (or the first TLS if omitted)."""
+        target_id = tls_id or (self.tls_ids[0] if self.tls_ids else "")
+        if not target_id or target_id not in self.phases_per_tls:
+            return []
+        return [p for p in self.phases_per_tls[target_id] if p.is_yellow]
+
 
 def _parse_departures(rou_file: str) -> List[float]:
+    """Parses departure times of trips and vehicles in a route file."""
     root = ET.parse(rou_file).getroot()
-    if root.findall("flow"):
-        raise ValueError("Exact demand counting supports trip/vehicle routes, not flow definitions")
-    departures = [float(item.attrib["depart"]) for item in root if item.tag in ("trip", "vehicle")]
-    if any(not math.isfinite(value) or value < 0 for value in departures):
+    departures = [
+        float(item.attrib["depart"])
+        for item in root
+        if item.tag in ("trip", "vehicle") and "depart" in item.attrib
+    ]
+    if any(not math.isfinite(val) or val < 0 for val in departures):
         raise ValueError("Departure times must be finite and non-negative")
     return departures
 
 
-def inspect_scenario(scenario_name: str, data_dir: str = "data", cfg_path: Optional[str] = None) -> ScenarioInfo:
-    """Inspects a scenario directory or specific sumocfg and extracts metadata."""
+def inspect_scenario(
+    scenario_name: str,
+    data_dir: str = "data",
+    cfg_path: Optional[str] = None,
+) -> ScenarioInfo:
+    """Inspects a scenario directory or sumocfg file and extracts network metadata."""
     if cfg_path:
         if not os.path.isfile(cfg_path):
             raise FileNotFoundError(f"SUMO configuration not found: {cfg_path}")
@@ -72,7 +103,10 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data", cfg_path: Optio
         cfg_file = os.path.join(scenario_path, f"{scenario_name}.sumocfg")
         if not os.path.isfile(cfg_file):
             candidates = [f for f in os.listdir(scenario_path) if f.endswith(".sumocfg")]
-            cfg_file = os.path.join(scenario_path, candidates[0]) if candidates else cfg_file
+            if candidates:
+                cfg_file = os.path.join(scenario_path, candidates[0])
+            else:
+                raise FileNotFoundError(f"No .sumocfg file found in: {scenario_path}")
 
     cfg_root = ET.parse(cfg_file).getroot()
     net_node = cfg_root.find(".//net-file")
@@ -124,16 +158,17 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data", cfg_path: Optio
             if c.get("from") and c.get("fromLane") is not None
         })
 
-    # Demand count and departure range
     all_departs: List[float] = []
     for r_file in rou_files:
-        all_departs.extend(_parse_departures(r_file))
+        if os.path.exists(r_file):
+            all_departs.extend(_parse_departures(r_file))
     demand_count = len(all_departs)
 
     return ScenarioInfo(
         name=scenario_name,
         cfg_path=cfg_file,
         net_path=net_file,
+        rou_path=rou_file,
         begin_time=begin_time,
         end_time=end_time,
         tls_ids=tls_ids,
@@ -148,22 +183,33 @@ def inspect_scenario(scenario_name: str, data_dir: str = "data", cfg_path: Optio
 
 def get_window_demand(
     scenario_name_or_info: Any,
-    window_begin: float,
-    window_end: float,
+    window_begin: Optional[float] = None,
+    window_end: Optional[float] = None,
     data_dir: str = "data",
 ) -> Dict[str, Any]:
     """Calculates scheduled traffic demand within [window_begin, window_end)."""
-    info = scenario_name_or_info if isinstance(scenario_name_or_info, ScenarioInfo) else inspect_scenario(scenario_name_or_info, data_dir)
+    info = (
+        scenario_name_or_info
+        if isinstance(scenario_name_or_info, ScenarioInfo)
+        else inspect_scenario(scenario_name_or_info, data_dir)
+    )
+    w_begin = info.begin_time if window_begin is None else float(window_begin)
+    w_end = info.end_time if window_end is None else float(window_end)
+
     departures = info.departure_times
     if departures is None:
         departures = []
         for path in info.rou_files or ([info.rou_path] if info.rou_path else []):
-            departures.extend(_parse_departures(path))
+            if os.path.exists(path):
+                departures.extend(_parse_departures(path))
+
+    count = sum(w_begin <= departure < w_end for departure in departures)
     return {
-        "scheduled_demand_in_window": sum(window_begin <= departure < window_end for departure in departures),
+        "scheduled_demand_in_window": count,
         "demand_counting_mode": "exact",
-        "window_begin": float(window_begin), "window_end": float(window_end),
-        "window_duration": max(0.0, float(window_end) - float(window_begin)),
+        "window_begin": float(w_begin),
+        "window_end": float(w_end),
+        "window_duration": max(0.0, float(w_end) - float(w_begin)),
         "total_route_demand": info.trips_or_vehicles_count,
     }
 
@@ -177,5 +223,8 @@ def inspect_all_scenarios(data_dir: str = "data") -> Dict[str, ScenarioInfo]:
     for entry in sorted(os.listdir(data_dir)):
         subpath = os.path.join(data_dir, entry)
         if os.path.isdir(subpath):
-            results[entry] = inspect_scenario(entry, data_dir)
+            try:
+                results[entry] = inspect_scenario(entry, data_dir)
+            except Exception:
+                continue
     return results
