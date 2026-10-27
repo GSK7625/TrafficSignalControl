@@ -200,17 +200,17 @@
 - Output: `results/fixed_time_metrics.png`
 - Output: `results/REPORT.md`
 
-- [ ] **Step 1: Chạy mô phỏng thực tế kịch bản `cologne1`**
+- [x] **Step 1: Chạy mô phỏng thực tế kịch bản `cologne1`**
   Run: `python main.py --scenario cologne1`
   Thu thập kết quả 5 metrics.
 
-- [ ] **Step 2: Chạy mô phỏng thực tế kịch bản `ingolstadt1`**
+- [x] **Step 2: Chạy mô phỏng thực tế kịch bản `ingolstadt1`**
   Run: `python main.py --scenario ingolstadt1`
   Thu thập kết quả 5 metrics.
 
-- [ ] **Step 3: Chạy kịch bản so sánh toàn diện và sinh biểu đồ**
+- [x] **Step 3: Chạy kịch bản so sánh toàn diện và sinh biểu đồ**
   Run: `python main.py --all`
   Tạo biểu đồ `results/fixed_time_metrics.png` và file tổng hợp `results/REPORT.md`.
 
-- [ ] **Step 4: Phân tích số liệu thực nghiệm**
+- [x] **Step 4: Phân tích số liệu thực nghiệm**
   Đánh giá hiệu quả của chu kỳ cố định 30 giây đối với lưu lượng thực tế của Cologne 1 (đối xứng/bất đối xứng) và Ingolstadt 1 (nguy cơ tràn hàng đợi hoặc thời gian chết pha).

@@ -41,6 +41,9 @@ models/*
 
 results/*
 !results/.gitkeep
+!results/fixed_time_evaluation.json
+!results/fixed_time_metrics.png
+!results/REPORT.md
 !results/**/.gitkeep
 !results/experiments/
 !results/experiments/**
