@@ -21,6 +21,7 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 from src.evaluate import (
+    DEFAULT_CONTROLLERS,
     DEFAULT_SCENARIOS,
     evaluate_comparison,
     evaluate_multiple,
@@ -67,13 +68,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--compare",
         action="store_true",
-        help="Chạy so sánh đối đầu đa thuật toán (Fixed-Time vs Max-Pressure vs Q-Learning)",
+        help="Chạy so sánh đối đầu đa thuật toán (Fixed-Time vs Max-Pressure) và xuất báo cáo đối sánh",
     )
     parser.add_argument(
         "--controllers",
         nargs="+",
-        default=["fixed_time", "max_pressure", "q_learning"],
-        help="Danh sách thuật toán cần so sánh khi dùng cờ --compare",
+        default=DEFAULT_CONTROLLERS,
+        help="Danh sách thuật toán cần so sánh khi dùng cờ --compare (mặc định: fixed_time max_pressure)",
     )
     parser.add_argument(
         "--gui",
