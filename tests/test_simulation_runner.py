@@ -4,6 +4,7 @@ import os
 import tempfile
 import pytest
 import traci
+from unittest.mock import patch
 
 from src.controllers.fixed_time import FixedTimeController
 from src.controllers.max_pressure import MaxPressureController
@@ -299,18 +300,10 @@ def test_simulation_runner_libsumo_fallback_on_gui():
     cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
     runner = SimulationRunner(cfg_path=cfg_path, use_libsumo=True)
 
-    # When gui=True, libsumo must not be used (fallback to traci)
-    # We test the command/backend resolution before launching GUI process
-    runner._backend = "pending"
-    if runner.use_libsumo and False:  # headless
-        pass
-    # Emulate start logic with gui=True:
-    if runner.use_libsumo and not True:  # not gui
-        runner._backend = "libsumo"
-    else:
-        runner._backend = "traci"
-
-    assert runner._backend == "traci"
+    with patch("traci.start"), patch("sumolib.checkBinary", return_value="sumo-gui"):
+        runner.start(gui=True)
+        assert runner.backend == "traci"
+        runner.close()
 
 
 

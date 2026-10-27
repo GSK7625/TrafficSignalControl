@@ -8,7 +8,7 @@ Theo dõi 5 chỉ số giao thông tiêu chuẩn:
   5. Thông lượng (Throughput - số xe hoàn thành) [qua đầu ra SUMO tripinfo]
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import os
 from typing import Any, Dict, List, Optional, Sequence
 import xml.etree.ElementTree as ET
@@ -98,53 +98,6 @@ class MetricsCollector:
             running_vehicles=running_vehicles,
         )
         self.step_records.append(record)
-
-    def collect_step_from_traci(
-        self,
-        traci_module: Any,
-        incoming_lanes: Optional[Sequence[str]] = None,
-    ) -> int:
-        """Truy vấn trực tiếp TraCI để ghi nhận độ dài hàng đợi và số lượng xe đang chạy.
-
-        Tham số:
-            traci_module: Module TraCI hoặc mock đang hoạt động.
-            incoming_lanes: Các làn đường cần kiểm tra số xe dừng. Mặc định là self.monitored_lanes.
-
-        Trả về:
-            Tổng số xe dừng chờ (độ dài hàng đợi) tại bước này.
-        """
-        lanes = list(incoming_lanes) if incoming_lanes is not None else self.monitored_lanes
-
-        step_time = 0.0
-        try:
-            step_time = float(traci_module.simulation.getTime())
-        except Exception:
-            pass
-
-        total_halted = 0
-        for lane_id in lanes:
-            try:
-                total_halted += int(traci_module.lane.getLastStepHaltingNumber(lane_id))
-            except Exception:
-                # Bỏ qua an toàn các lỗi truy vấn làn (ví dụ: làn không tồn tại)
-                pass
-
-        running_count: Optional[int] = None
-        try:
-            running_count = len(traci_module.vehicle.getIDList())
-        except Exception:
-            try:
-                running_count = int(traci_module.simulation.getMinExpectedNumber())
-            except Exception:
-                running_count = None
-
-        self.record_step(
-            step_time=step_time,
-            queue_length=total_halted,
-            halted_vehicles=total_halted,
-            running_vehicles=running_count,
-        )
-        return total_halted
 
     def parse_tripinfo(self, xml_path: str) -> Dict[str, Any]:
         """Phân tích file XML --tripinfo-output của SUMO và tính toán các chỉ số hành trình.
@@ -270,40 +223,3 @@ class MetricsCollector:
         self.trip_records.clear()
         self.tripinfo_metrics.clear()
 
-    def to_markdown_table(self, title: str = "Traffic Evaluation Summary") -> str:
-        """Định dạng 5 chỉ số chính thành bảng Markdown chuẩn.
-
-        Tham số:
-            title: Tiêu đề bảng hoặc tên kịch bản.
-
-        Trả về:
-            Chuỗi biểu diễn bảng định dạng Markdown.
-        """
-        summary = self.get_summary()
-        lines = [
-            f"### {title}",
-            "",
-            "| Metric | Value | Unit | Description |",
-            "| :--- | :--- | :--- | :--- |",
-            f"| **Average Waiting Time** | `{summary['average_waiting_time']:.2f}` | s | Mean time halting (speed < 0.1 m/s) |",
-            f"| **Average Travel Time** | `{summary['average_travel_time']:.2f}` | s | Mean duration from depart to arrival |",
-            f"| **Mean Queue Length** | `{summary['mean_queue_length']:.2f}` | veh | Time-averaged queue across incoming lanes |",
-            f"| **Peak Queue Length** | `{summary['max_queue_length']}` | veh | Maximum instantaneous queue observed |",
-            f"| **Average Time Loss** | `{summary['average_time_loss']:.2f}` | s | Mean delay compared to ideal free-flow |",
-            f"| **Throughput** | `{summary['throughput']}` | veh | Total completed trips |",
-        ]
-        return "\n".join(lines)
-        summary = self.get_summary()
-        lines = [
-            f"### {title}",
-            "",
-            "| Metric | Value | Unit | Description |",
-            "| :--- | :--- | :--- | :--- |",
-            f"| **Average Waiting Time** | `{summary['average_waiting_time']:.2f}` | s | Mean time halting (speed < 0.1 m/s) |",
-            f"| **Average Travel Time** | `{summary['average_travel_time']:.2f}` | s | Mean duration from depart to arrival |",
-            f"| **Mean Queue Length** | `{summary['mean_queue_length']:.2f}` | veh | Time-averaged queue across incoming lanes |",
-            f"| **Peak Queue Length** | `{summary['max_queue_length']}` | veh | Maximum instantaneous queue observed |",
-            f"| **Average Time Loss** | `{summary['average_time_loss']:.2f}` | s | Mean delay compared to ideal free-flow |",
-            f"| **Throughput** | `{summary['throughput']}` | veh | Total completed trips |",
-        ]
-        return "\n".join(lines)

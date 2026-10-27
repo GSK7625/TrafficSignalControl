@@ -1,7 +1,5 @@
 """Unit tests for QLearningController and CompactStateDiscretizer."""
 
-import json
-import math
 import os
 import tempfile
 import pytest
@@ -164,7 +162,7 @@ def test_safety_min_green_enforcement(sample_setup):
     ctrl.q_table[s] = [-100.0, 100.0]
 
     # For steps 1 to 9 (time_in_phase < 10.0), controller must stay on phase 0
-    for step_num in range(1, 10):
+    for _ in range(1, 10):
         state, changed = ctrl.step(1.0)
         assert ctrl.current_phase == 0
         assert not ctrl.is_yellow
@@ -233,7 +231,7 @@ def test_safety_all_red_clearance_transition(sample_setup):
     ctrl.q_table = defaultdict(lambda: [-100.0, 100.0])
 
     # t=5: yellow starts
-    s5, c5 = ctrl.step(1.0)
+    _, c5 = ctrl.step(1.0)
     assert ctrl.is_yellow and not ctrl.is_all_red and c5
 
     # t=6, 7: yellow continues

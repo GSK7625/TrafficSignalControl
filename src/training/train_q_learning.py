@@ -13,8 +13,7 @@ import argparse
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-import traci
-from src.controllers.q_learning import CompactStateDiscretizer, QLearningController
+from src.controllers.q_learning import QLearningController
 from src.data_inspector import inspect_scenario
 from src.rl.rewards import MetricsAlignedReward
 from src.simulation_runner import SimulationRunner

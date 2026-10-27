@@ -103,47 +103,6 @@ def test_collector_mean_and_max_queue_length():
     assert collector.total_steps == 4
 
 
-def test_collector_collect_step_from_traci_mock():
-    """Test querying instantaneous queue length from TraCI mock."""
-    collector = MetricsCollector()
-
-    mock_traci = MagicMock()
-    mock_traci.simulation.getTime.return_value = 15.0
-    # Lane 1 has 3 halting vehicles, Lane 2 has 2 halting vehicles
-    mock_traci.lane.getLastStepHaltingNumber.side_effect = lambda lane_id: 3 if lane_id == "lane_1" else 2
-    mock_traci.vehicle.getIDList.return_value = ["v1", "v2", "v3", "v4", "v5"]
-
-    lanes = ["lane_1", "lane_2"]
-    queue = collector.collect_step_from_traci(mock_traci, incoming_lanes=lanes)
-
-    assert queue == 5
-    assert collector.total_steps == 1
-    assert collector.queue_history == [5]
-    assert collector.step_records[0].step_time == 15.0
-    assert collector.step_records[0].queue_length == 5.0
-    assert collector.step_records[0].running_vehicles == 5
-
-
-def test_collector_collect_step_from_traci_handles_lane_error():
-    """TraCI lane query errors are swallowed safely and count 0 for the failing lane."""
-    collector = MetricsCollector()
-
-    mock_traci = MagicMock()
-    mock_traci.simulation.getTime.return_value = 5.0
-
-    def mock_halting(lane_id):
-        if lane_id == "lane_good":
-            return 4
-        raise RuntimeError("Lane not found in TraCI")
-
-    mock_traci.lane.getLastStepHaltingNumber.side_effect = mock_halting
-    mock_traci.vehicle.getIDList.return_value = []
-
-    queue = collector.collect_step_from_traci(mock_traci, incoming_lanes=["lane_good", "lane_bad"])
-    assert queue == 4
-    assert collector.mean_queue_length == 4.0
-
-
 # ---------------------------------------------------------------------------
 # Test Parsing Tripinfo XML
 # ---------------------------------------------------------------------------
@@ -280,21 +239,6 @@ def test_collector_reset(sample_tripinfo_file):
     assert collector.mean_queue_length == 0.0
     assert collector.max_queue_length == 0
     assert collector.tripinfo_metrics == {}
-
-
-def test_to_markdown_table(sample_tripinfo_file):
-    """Test generating a markdown table of the 5 metrics."""
-    collector = MetricsCollector()
-    collector.record_step(step_time=0.0, queue_length=5)
-    collector.parse_tripinfo(sample_tripinfo_file)
-
-    table_md = collector.to_markdown_table("Cologne 1 Test")
-    assert "### Cologne 1 Test" in table_md
-    assert "| **Average Waiting Time** | `20.00` | s |" in table_md
-    assert "| **Average Travel Time** | `70.00` | s |" in table_md
-    assert "| **Mean Queue Length** | `5.00` | veh |" in table_md
-    assert "| **Average Time Loss** | `25.00` | s |" in table_md
-    assert "| **Throughput** | `3` | veh |" in table_md
 
 
 def test_metrics_integration_with_real_sumo_simulation():

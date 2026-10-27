@@ -102,11 +102,6 @@ def build_default_controller(
 
 
 class BaseController(ABC):
-    """Lớp cơ sở trừu tượng cho tất cả các bộ điều khiển tín hiệu đèn giao thông.
-
-    Đóng gói vòng đời chu kỳ đèn, bộ đếm thời gian, chuyển pha đèn vàng/đỏ toàn phần,
-    và các tiện ích đếm phương tiện giao thông.
-    """
 
     build_yellow_state = staticmethod(build_yellow_state)
     build_all_red_state = staticmethod(build_all_red_state)
@@ -172,16 +167,6 @@ class BaseController(ABC):
     @property
     def step_count(self) -> int:
         return self._step_count
-
-    # Các hàm getter hỗ trợ (Helper getters)
-    def get_current_phase(self) -> int:
-        return self._current_phase_idx
-
-    def is_in_yellow(self) -> bool:
-        return self._is_yellow
-
-    def is_in_all_red(self) -> bool:
-        return self._is_all_red
 
     def get_phase_red_time(self, phase_idx: int) -> float:
         if 0 <= phase_idx < len(self._phase_red_timers):

@@ -2,18 +2,13 @@
 
 import os
 import tempfile
-import pytest
 
 from src.controllers.q_learning import QLearningController
-from src.data_inspector import inspect_scenario
 from src.training.train_q_learning import train_q_learning_agent
 
 
 def test_train_q_learning_single_episode_short():
     """Verify train_q_learning_agent executes short episode and learns non-empty Q-table."""
-    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
-    info = inspect_scenario("cologne1", data_dir="data")
-
     with tempfile.TemporaryDirectory() as tmpdir:
         model_path = os.path.join(tmpdir, "test_q_model.json")
         controller, stats = train_q_learning_agent(
@@ -44,7 +39,7 @@ def test_train_q_learning_with_and_without_libsumo():
     with tempfile.TemporaryDirectory() as tmpdir:
         # 1. Test with TraCI (use_libsumo=False)
         model_traci = os.path.join(tmpdir, "model_traci.json")
-        ctrl_traci, stats_traci = train_q_learning_agent(
+        _, stats_traci = train_q_learning_agent(
             scenario_name="cologne1",
             data_dir="data",
             episodes=1,
@@ -58,7 +53,7 @@ def test_train_q_learning_with_and_without_libsumo():
 
         # 2. Test with libsumo (use_libsumo=True)
         model_libsumo = os.path.join(tmpdir, "model_libsumo.json")
-        ctrl_libsumo, stats_libsumo = train_q_learning_agent(
+        _, stats_libsumo = train_q_learning_agent(
             scenario_name="cologne1",
             data_dir="data",
             episodes=1,
@@ -78,7 +73,7 @@ def test_train_q_learning_resume_from_model():
         stage2_path = os.path.join(tmpdir, "stage2.json")
 
         # Stage 1: train 1 episode
-        ctrl1, stats1 = train_q_learning_agent(
+        ctrl1, _ = train_q_learning_agent(
             scenario_name="cologne1",
             data_dir="data",
             episodes=1,

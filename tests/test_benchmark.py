@@ -55,10 +55,10 @@ def test_generate_benchmark_report_markdown():
     report = generate_benchmark_report_markdown(mock_data)
     assert "# BÁO CÁO SO SÁNH HIỆU NĂNG" in report
     assert "cologne1" in report
-    assert "Fixed-Time (Cố định)" in report
-    assert "Max-Pressure (Áp suất cực đại)" in report
+    assert "Fixed-Time" in report
+    assert "Max-Pressure" in report
     assert "25.00 ± 2.00" in report
-    assert "+40.00%" in report
+    assert "Mức độ cải thiện" not in report
 
 
 def test_run_single_simulation_short():

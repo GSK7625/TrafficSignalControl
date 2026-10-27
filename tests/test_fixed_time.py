@@ -1,7 +1,7 @@
 """Unit tests for FixedTimeController and yellow state generation."""
 
 import pytest
-from src.data_inspector import inspect_scenario, PhaseInfo
+from src.data_inspector import inspect_scenario
 
 
 def test_build_yellow_state_standalone():
@@ -47,9 +47,9 @@ def test_fixed_time_initialization():
     assert controller.all_red_time == 1.0
     assert controller.max_red == 90.0
     assert controller.tls_id == "tls_1"
-    assert controller.get_current_phase() == 0
-    assert controller.is_in_yellow() is False
-    assert controller.is_in_all_red() is False
+    assert controller.current_phase == 0
+    assert controller.is_yellow is False
+    assert controller.is_all_red is False
     assert controller.get_current_state() == "GGGrrr"
 
     # Validation errors
@@ -84,8 +84,8 @@ def test_fixed_time_step_cycle_with_all_red_1s():
     for _ in range(64):
         state, _ = controller.step(step_duration=1.0)
         states.append(state)
-        yellow_flags.append(controller.is_in_yellow())
-        all_red_flags.append(controller.is_in_all_red())
+        yellow_flags.append(controller.is_yellow)
+        all_red_flags.append(controller.is_all_red)
 
     # 1. First 30 steps: Green phase 0
     assert all(s == p0 for s in states[:30])
@@ -132,8 +132,8 @@ def test_fixed_time_step_cycle_30_3_30():
         state, changed = controller.step(step_duration=1.0)
         states.append(state)
         change_flags.append(changed)
-        yellow_flags.append(controller.is_in_yellow())
-        phase_indices.append(controller.get_current_phase())
+        yellow_flags.append(controller.is_yellow)
+        phase_indices.append(controller.current_phase)
 
     # 1. First 30 steps: Green phase 0
     assert len(states[:30]) == 30
@@ -173,35 +173,34 @@ def test_infinite_cycle_loop():
         all_red_time=0.0,
     )
 
-    cycle_length = 30 + 3 + 30 + 3  # 66 steps per full 2-phase cycle
     num_cycles = 5
 
-    for cycle in range(num_cycles):
+    for _ in range(num_cycles):
         # Phase 0 green (30 steps)
         for _ in range(30):
             state, _ = controller.step(1.0)
             assert state == p0
-            assert controller.is_in_yellow() is False
-            assert controller.get_current_phase() == 0
+            assert controller.is_yellow is False
+            assert controller.current_phase == 0
 
         # Phase 0 yellow (3 steps)
         for _ in range(3):
             state, _ = controller.step(1.0)
             assert state == "yyyrrr"
-            assert controller.is_in_yellow() is True
+            assert controller.is_yellow is True
 
         # Phase 1 green (30 steps)
         for _ in range(30):
             state, _ = controller.step(1.0)
             assert state == p1
-            assert controller.is_in_yellow() is False
-            assert controller.get_current_phase() == 1
+            assert controller.is_yellow is False
+            assert controller.current_phase == 1
 
         # Phase 1 yellow (3 steps)
         for _ in range(3):
             state, _ = controller.step(1.0)
             assert state == "rrryyy"
-            assert controller.is_in_yellow() is True
+            assert controller.is_yellow is True
 
 
 def test_controller_reset():
@@ -221,13 +220,13 @@ def test_controller_reset():
     for _ in range(45):
         controller.step(1.0)
 
-    assert controller.get_current_phase() == 1
-    assert controller.is_in_yellow() is False
+    assert controller.current_phase == 1
+    assert controller.is_yellow is False
 
     # Reset
     controller.reset()
-    assert controller.get_current_phase() == 0
-    assert controller.is_in_yellow() is False
+    assert controller.current_phase == 0
+    assert controller.is_yellow is False
     assert controller.get_current_state() == p0
 
     # Step again from beginning
@@ -247,16 +246,16 @@ def test_custom_step_duration():
     )
 
     # 10s green with dt=0.5s -> 20 steps
-    for step_i in range(20):
+    for _ in range(20):
         state, _ = controller.step(step_duration=0.5)
         assert state == "GG"
-        assert controller.is_in_yellow() is False
+        assert controller.is_yellow is False
 
     # 2s yellow with dt=0.5s -> 4 steps
-    for step_i in range(4):
+    for _ in range(4):
         state, _ = controller.step(step_duration=0.5)
         assert state == "yy"
-        assert controller.is_in_yellow() is True
+        assert controller.is_yellow is True
 
 
 def test_integration_with_scenario_info_cologne1():
@@ -277,5 +276,5 @@ def test_integration_with_scenario_info_cologne1():
     state, changed = controller.step(1.0)
     assert len(state) == 20
     assert changed is True
-    assert controller.get_current_phase() == 0
-    assert controller.is_in_yellow() is False
+    assert controller.current_phase == 0
+    assert controller.is_yellow is False

@@ -1,11 +1,7 @@
-"""Module bộ điều khiển tín hiệu đèn giao thông chu kỳ cố định (Fixed-Time)."""
-
 from typing import Any, Optional, Sequence, Tuple
-
 from src.controllers.base import BaseController, build_yellow_state, register_controller
 
 __all__ = ["FixedTimeController", "build_yellow_state"]
-
 
 @register_controller("fixed_time")
 class FixedTimeController(BaseController):

@@ -122,14 +122,3 @@ class MetricsAlignedReward:
         )
         return float(reward * self.scale)
 
-    def get_config(self) -> Dict[str, Any]:
-        """Trả về các tham số cấu hình của hàm phần thưởng."""
-        return {
-            "name": "MetricsAlignedReward",
-            "scale": self.scale,
-            "w_completed": self.w_completed,
-            "w_queue": self.w_queue,
-            "w_waiting": self.w_waiting,
-            "w_time_loss": self.w_time_loss,
-            "w_switch": self.w_switch,
-        }

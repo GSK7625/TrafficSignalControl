@@ -20,7 +20,7 @@ import math
 import os
 import shutil
 import tempfile
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from src.controllers import build_default_controller
 from src.data_inspector import inspect_scenario
@@ -284,15 +284,14 @@ def generate_benchmark_report_markdown(data: Dict[str, Any]) -> str:
     seeds = data["seeds"]
     algos = data["algorithms"]
     stats = data["aggregated_stats"]
-    improvements = data.get("improvements_vs_fixed_time", {})
 
     lines = [
-        f"# BÁO CÁO SO SÁNH HIỆU NĂNG ĐIỀU KHIỂN TÍN HIỆU GIAO THÔNG",
+        "# BÁO CÁO SO SÁNH HIỆU NĂNG ĐIỀU KHIỂN TÍN HIỆU GIAO THÔNG",
         "",
         f"- **Kịch bản:** `{scen}`",
         f"- **Số lượng hạt giống (Seeds):** `{len(seeds)}` hạt giống ({seeds})",
         f"- **Thời gian xanh tối thiểu (min_green):** `{data.get('min_green', 20.0)}s`",
-        f"- **Mô hình Q-Learning:** `{data.get('model_path') or 'N/A'}` (Chế độ Greedy Evaluation)",
+        f"- **Mô hình Q-Learning:** `{data.get('model_path') or 'N/A'}`",
         f"- **Thời gian mô phỏng:** `{data.get('max_steps')}s` mỗi lượt",
         "",
         "## Bảng tổng hợp các chỉ số hiệu năng (Mean ± Std)",
@@ -302,9 +301,9 @@ def generate_benchmark_report_markdown(data: Dict[str, Any]) -> str:
     ]
 
     algo_labels = {
-        "fixed_time": "Fixed-Time (Cố định)",
-        "max_pressure": "Max-Pressure (Áp suất cực đại)",
-        "q_learning": "Q-Learning (Đã hội tụ)",
+        "fixed_time": "Fixed-Time",
+        "max_pressure": "Max-Pressure",
+        "q_learning": "Q-Learning",
     }
 
     for algo in algos:
@@ -317,28 +316,6 @@ def generate_benchmark_report_markdown(data: Dict[str, Any]) -> str:
         tp = f"{a_stats.get('throughput', {}).get('mean', 0.0):.1f} ± {a_stats.get('throughput', {}).get('std', 0.0):.1f}"
 
         lines.append(f"| **{label}** | {wt} | {tt} | {ql} | {tl} | {tp} |")
-
-    if improvements:
-        lines.append("")
-        lines.append("## Mức độ cải thiện so với Fixed-Time Baseline (%)")
-        lines.append("")
-        lines.append("*(Giá trị dương % thể hiện thuật toán hoạt động tốt hơn Fixed-Time)*")
-        lines.append("")
-        lines.append("| Thuật toán | Giảm TG Chờ (%) | Giảm TG Di chuyển (%) | Giảm Hàng đợi (%) | Giảm Tổn thất TG (%) | Tăng Thông lượng (%) |")
-        lines.append("| :--- | :---: | :---: | :---: | :---: | :---: |")
-
-        for algo in algos:
-            if algo == "fixed_time":
-                continue
-            label = algo_labels.get(algo, algo)
-            imp = improvements.get(algo, {})
-            wt_imp = f"{imp.get('average_waiting_time', 0.0):+.2f}%"
-            tt_imp = f"{imp.get('average_travel_time', 0.0):+.2f}%"
-            ql_imp = f"{imp.get('mean_queue_length', 0.0):+.2f}%"
-            tl_imp = f"{imp.get('average_time_loss', 0.0):+.2f}%"
-            tp_imp = f"{imp.get('throughput', 0.0):+.2f}%"
-
-            lines.append(f"| **{label}** | {wt_imp} | {tt_imp} | {ql_imp} | {tl_imp} | {tp_imp} |")
 
     lines.append("")
     return "\n".join(lines)

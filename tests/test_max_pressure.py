@@ -47,11 +47,8 @@ def test_max_pressure_initialization():
     assert controller.max_red == 90.0
     assert controller.num_phases == 2
     assert controller.current_phase == 0
-    assert controller.get_current_phase() == 0
     assert controller.is_yellow is False
-    assert controller.is_in_yellow() is False
     assert controller.is_all_red is False
-    assert controller.is_in_all_red() is False
     assert controller.time_in_phase == 0.0
     assert controller.total_time == 0.0
     assert controller.step_count == 0
@@ -84,24 +81,6 @@ def test_calculate_phase_pressures():
     from src.controllers.max_pressure import MaxPressureController
 
     phases = ["GGGrrr", "rrrGGG"]
-    movements = _make_dummy_movements()
-
-    # Movement 0: N_0 -> S_0 (10 - 2 = 8)
-    # Movement 1: N_1 -> S_1 (5 - 1 = 4)
-    # Movement 2: S_0 -> N_0 (6 - 3 = 3)
-    # Phase 0 pressure = 8 + 4 + 3 = 15.0
-    #
-    # Movement 3: E_0 -> W_0 (12 - 1 = 11)
-    # Movement 4: E_1 -> W_1 (8 - 2 = 6)
-    # Movement 5: W_0 -> E_0 (4 - 4 = 0)
-    # Phase 1 pressure = 11 + 6 + 0 = 17.0
-    counts = {
-        "N_0": 10, "S_0": 2,
-        "N_1": 5, "S_1": 1,
-        # note S_0 is also used as from_lane for movement 2, and N_0 as to_lane
-        # for movement 2: from S_0 (2) to N_0 (10) -> diff is 2 - 10 = -8
-        # Let's use separate lane names to make test math unambiguous:
-    }
 
     clean_movements = [
         MovementInfo(link_index=0, from_lane="n0_in", to_lane="s0_out", direction="s"),
@@ -413,9 +392,7 @@ def test_max_pressure_max_red_starvation_watchdog():
     # Reset
     controller.reset()
     assert controller.current_phase == 0
-    assert controller.get_current_phase() == 0
     assert controller.is_yellow is False
-    assert controller.is_in_yellow() is False
     assert controller.time_in_phase == 0.0
     assert controller.total_time == 0.0
     assert controller.step_count == 0

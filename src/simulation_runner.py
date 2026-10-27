@@ -1,8 +1,8 @@
 """Module thực thi mô phỏng SUMO thông qua TraCI/libsumo với điều khiển tín hiệu đèn giao thông."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import os
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 import sumolib
 import traci
 
@@ -37,25 +37,6 @@ class SimulationResult:
     tls_id: Optional[str] = None
     controller_type: Optional[str] = None
     backend: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Chuyển đổi các chỉ số kết quả sang định dạng dictionary."""
-        d = {
-            "total_steps": self.total_steps,
-            "sim_time_start": self.sim_time_start,
-            "sim_time_end": self.sim_time_end,
-            "mean_queue_length": self.mean_queue_length,
-            "max_queue_length": self.max_queue_length,
-            "controller_step_count": self.controller_step_count,
-            "tripinfo_path": self.tripinfo_path,
-            "completed": self.completed,
-            "tls_id": self.tls_id,
-        }
-        if self.controller_type is not None:
-            d["controller_type"] = self.controller_type
-        if self.backend is not None:
-            d["backend"] = self.backend
-        return d
 
 
 class SimulationRunner:
@@ -93,7 +74,6 @@ class SimulationRunner:
         self.use_libsumo = bool(use_libsumo)
         self._conn: Optional[Any] = None
         self._backend: str = "traci"
-        self._is_running = False
 
         # Tải siêu dữ liệu kịch bản nếu thiếu controller, tls_id hoặc incoming_lanes
         scenario_info: Optional[ScenarioInfo] = None
@@ -220,7 +200,6 @@ class SimulationRunner:
 
         cmd = self.build_sumo_cmd(gui=gui)
         self.conn.start(cmd)
-        self._is_running = True
 
         # Nếu chưa biết các làn đi vào trước đó, truy vấn động từ mạng lưới
         if not self.incoming_lanes and self.tls_id:
@@ -279,7 +258,6 @@ class SimulationRunner:
                         conn.close()
                 except Exception:
                     pass
-        self._is_running = False
         self._conn = None
 
     def __enter__(self) -> "SimulationRunner":

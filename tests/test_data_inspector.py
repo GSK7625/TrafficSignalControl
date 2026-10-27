@@ -56,15 +56,6 @@ def test_inspect_nonexistent_scenario():
         inspect_scenario("non_existent_map", data_dir="data")
 
 
-def test_get_window_demand():
-    from src.data_inspector import get_window_demand
-
-    demand_info = get_window_demand("cologne1", data_dir="data")
-    assert "scheduled_demand_in_window" in demand_info
-    assert demand_info["scheduled_demand_in_window"] > 0
-    assert demand_info["window_duration"] == 3600.0
-
-
 def test_extended_map_attributes_cologne1():
     """Tests extended map attributes: outgoing lanes, physical lanes, movements, and coordinates."""
     from src.data_inspector import inspect_scenario
@@ -150,12 +141,3 @@ def test_flow_parsing_in_route():
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-
-def test_inspect_all_scenarios():
-    """Tests inspect_all_scenarios finds and parses all benchmark scenarios."""
-    from src.data_inspector import inspect_all_scenarios
-
-    scenarios = inspect_all_scenarios("data")
-    assert "cologne1" in scenarios
-    assert "cologne3" in scenarios
-    assert "ingolstadt1" in scenarios

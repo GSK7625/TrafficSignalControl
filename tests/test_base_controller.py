@@ -5,7 +5,6 @@ from typing import Tuple
 from src.controllers.base import (
     BaseController,
     build_all_red_state,
-    build_yellow_state,
     register_controller,
     create_controller,
     get_controller_class,
@@ -43,8 +42,6 @@ def test_concrete_controller_properties_and_lifecycle():
     assert ctrl.time_in_phase == 0.0
     assert ctrl.total_time == 0.0
     assert ctrl.step_count == 0
-    assert ctrl.get_current_phase() == 0
-    assert ctrl.is_in_yellow() is False
     assert ctrl.get_current_state() == "GGGrrr"
 
     state, changed = ctrl.step(1.5)
@@ -130,7 +127,6 @@ def test_base_controller_all_red_and_max_red_defaults():
     assert ctrl.all_red_time == 1.0
     assert ctrl.max_red == 90.0
     assert ctrl.is_all_red is False
-    assert ctrl.is_in_all_red() is False
     assert len(ctrl.phase_red_timers) == 2
     assert ctrl.phase_red_timers == [0.0, 0.0]
 

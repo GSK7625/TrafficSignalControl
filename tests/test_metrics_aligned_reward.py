@@ -1,6 +1,5 @@
 """Unit tests for MetricsAlignedReward module."""
 
-import math
 import pytest
 from src.rl.rewards import MetricsAlignedReward
 
@@ -8,14 +7,13 @@ from src.rl.rewards import MetricsAlignedReward
 def test_metrics_aligned_reward_initialization_defaults():
     """Verify default initialization values."""
     reward_fn = MetricsAlignedReward()
-    config = reward_fn.get_config()
 
-    assert config["scale"] == 1.0
-    assert config["w_completed"] == 2.0
-    assert config["w_queue"] == 0.05
-    assert config["w_waiting"] == 0.02
-    assert config["w_time_loss"] == 0.01
-    assert config["w_switch"] == 0.5
+    assert reward_fn.scale == 1.0
+    assert reward_fn.w_completed == 2.0
+    assert reward_fn.w_queue == 0.05
+    assert reward_fn.w_waiting == 0.02
+    assert reward_fn.w_time_loss == 0.01
+    assert reward_fn.w_switch == 0.5
 
 
 def test_metrics_aligned_reward_invalid_weights():

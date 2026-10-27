@@ -14,7 +14,7 @@ Tests:
 """
 
 import pytest
-from src.controllers.q_learning import CompactStateDiscretizer, QLearningController
+from src.controllers.q_learning import QLearningController
 
 
 class MockMovement:
