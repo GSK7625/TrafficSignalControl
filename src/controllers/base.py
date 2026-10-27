@@ -1,4 +1,4 @@
-"""Abstract Base Controller and Registry for Traffic Signal Control Algorithms."""
+"""Lớp cơ sở trừu tượng (Base Controller) và Registry quản lý các thuật toán điều khiển tín hiệu giao thông."""
 
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
@@ -7,12 +7,19 @@ T = TypeVar("T", bound="BaseController")
 CONTROLLER_REGISTRY: Dict[str, Type["BaseController"]] = {}
 
 
+def get_movement_attr(movement: Any, attr: str, default: Any = None) -> Any:
+    """Hàm tiện ích lấy an toàn thuộc tính từ đối tượng luồng chuyển động (movement) hoặc dictionary."""
+    if isinstance(movement, dict):
+        return movement.get(attr, default)
+    return getattr(movement, attr, default)
+
+
 def build_yellow_state(
     curr_state: str,
     next_state: Optional[str] = None,
     only_changing: bool = False,
 ) -> str:
-    """Builds a safe yellow transition state for clearance before the next green phase."""
+    """Tạo trạng thái chuyển tiếp đèn vàng an toàn để giải phóng nút giao trước pha xanh tiếp theo."""
     def _to_yellow(i: int, char: str) -> str:
         if char in ("G", "g"):
             if only_changing and next_state and i < len(next_state) and next_state[i] in ("G", "g"):
@@ -24,12 +31,12 @@ def build_yellow_state(
 
 
 def build_all_red_state(curr_state: str) -> str:
-    """Builds an all-red clearance state where all signal heads display red."""
+    """Tạo trạng thái đỏ toàn phần (all-red) để giải phóng nút giao, mọi hướng đều hiển thị đèn đỏ."""
     return "r" * len(curr_state)
 
 
 def register_controller(name: str) -> Callable[[Type[T]], Type[T]]:
-    """Decorator to register a controller class in the global controller registry."""
+    """Decorator đăng ký một lớp controller vào registry chung."""
     def decorator(cls: Type[T]) -> Type[T]:
         CONTROLLER_REGISTRY[name] = cls
         return cls
@@ -37,7 +44,7 @@ def register_controller(name: str) -> Callable[[Type[T]], Type[T]]:
 
 
 def get_controller_class(name: str) -> Type["BaseController"]:
-    """Retrieves a registered controller class by its string name."""
+    """Lấy lớp controller đã đăng ký theo tên chuỗi định danh."""
     if name not in CONTROLLER_REGISTRY:
         raise KeyError(
             f"Unknown controller type '{name}'. Registered: {list(CONTROLLER_REGISTRY.keys())}"
@@ -46,16 +53,59 @@ def get_controller_class(name: str) -> Type["BaseController"]:
 
 
 def create_controller(name: str, **kwargs: Any) -> "BaseController":
-    """Factory helper to instantiate a controller by its registered name."""
+    """Hàm factory khởi tạo đối tượng controller theo tên định danh đã đăng ký."""
     cls = get_controller_class(name)
     return cls(**kwargs)
 
 
-class BaseController(ABC):
-    """Abstract Base Class for all traffic signal controllers.
+def build_default_controller(
+    controller_type: str,
+    green_phases: Sequence[Any],
+    movements: Optional[Sequence[Any]] = None,
+    tls_id: Optional[str] = None,
+    min_green: float = 20.0,
+    max_green: float = 45.0,
+    green_time: float = 30.0,
+    yellow_time: float = 3.0,
+    all_red_time: float = 1.0,
+    max_red: float = 90.0,
+    decision_interval: float = 5.0,
+    **kwargs: Any,
+) -> "BaseController":
+    """Factory khởi tạo các controller tiêu chuẩn với các tham số mặc định nhất quán."""
+    if controller_type not in CONTROLLER_REGISTRY:
+        raise ValueError(
+            f"Unsupported controller_type: {controller_type}. Must be one of {list(CONTROLLER_REGISTRY.keys())}."
+        )
+    cls = CONTROLLER_REGISTRY[controller_type]
+    common = {
+        "green_phases": green_phases,
+        "yellow_time": yellow_time,
+        "all_red_time": all_red_time,
+        "max_red": max_red,
+        "tls_id": tls_id,
+        **kwargs,
+    }
+    if controller_type == "fixed_time":
+        return cls(green_time=green_time, **common)
+    if controller_type == "max_pressure":
+        return cls(movements=movements or [], min_green=min_green, max_green=max_green, **common)
+    if controller_type == "q_learning":
+        return cls(
+            movements=movements or [],
+            min_green=min_green,
+            max_green=max_green,
+            decision_interval=decision_interval,
+            **common,
+        )
+    return cls(**common)
 
-    Encapsulates core cycle lifecycle, timing counters, yellow state transitions,
-    and vehicle counting utilities.
+
+class BaseController(ABC):
+    """Lớp cơ sở trừu tượng cho tất cả các bộ điều khiển tín hiệu đèn giao thông.
+
+    Đóng gói vòng đời chu kỳ đèn, bộ đếm thời gian, chuyển pha đèn vàng/đỏ toàn phần,
+    và các tiện ích đếm phương tiện giao thông.
     """
 
     build_yellow_state = staticmethod(build_yellow_state)
@@ -90,7 +140,7 @@ class BaseController(ABC):
 
         self.reset()
 
-    # Read-only properties
+    # Các thuộc tính chỉ đọc (Read-only properties)
     @property
     def num_phases(self) -> int:
         return len(self.green_phases)
@@ -123,7 +173,7 @@ class BaseController(ABC):
     def step_count(self) -> int:
         return self._step_count
 
-    # Helper getters
+    # Các hàm getter hỗ trợ (Helper getters)
     def get_current_phase(self) -> int:
         return self._current_phase_idx
 
@@ -139,7 +189,7 @@ class BaseController(ABC):
         return 0.0
 
     def get_current_state(self) -> str:
-        """Returns the active signal state string for the current step."""
+        """Trả về chuỗi trạng thái tín hiệu đèn hoạt động tại bước hiện tại."""
         curr = self.green_phases[self._current_phase_idx]
         if self._is_yellow:
             next_idx = self._next_phase_idx if hasattr(self, "_next_phase_idx") else (self._current_phase_idx + 1) % len(self.green_phases)
@@ -149,7 +199,7 @@ class BaseController(ABC):
         return curr
 
     def _update_red_timers(self, step_duration: float) -> None:
-        """Updates continuous red wait timers for inactive phases."""
+        """Cập nhật bộ đếm thời gian chờ đèn đỏ liên tục cho các pha không hoạt động."""
         for p in range(len(self._phase_red_timers)):
             if p == self._current_phase_idx:
                 self._phase_red_timers[p] = 0.0
@@ -157,7 +207,7 @@ class BaseController(ABC):
                 self._phase_red_timers[p] += step_duration
 
     def _get_vehicle_count(self, lane_id: str) -> int:
-        """Retrieves vehicle count on a given lane with libsumo/TraCI fallback."""
+        """Lấy số lượng xe trên một làn đường qua hàm tùy biến hoặc libsumo/TraCI fallback."""
         if not lane_id:
             return 0
         if self._lane_vehicle_fn is not None:
@@ -180,8 +230,56 @@ class BaseController(ABC):
             pass
         return 0
 
+    def _handle_clearance(self) -> bool:
+        """Xử lý các khoảng thời gian dọn nút giao khi đang ở pha vàng hoặc đỏ toàn phần.
+
+        Returns:
+            True nếu đang trong pha dọn nút giao (vàng/đỏ toàn phần), False nếu đang trong pha xanh bình thường.
+        """
+        tolerance = 1e-6
+        if self._is_yellow:
+            if self._time_in_phase >= self.yellow_time - tolerance:
+                self._is_yellow = False
+                self._time_in_phase = 0.0
+                if self.all_red_time > 0:
+                    self._is_all_red = True
+                else:
+                    self._current_phase_idx = self._next_phase_idx
+            return True
+        if self._is_all_red:
+            if self._time_in_phase >= self.all_red_time - tolerance:
+                self._is_all_red = False
+                self._time_in_phase = 0.0
+                self._current_phase_idx = self._next_phase_idx
+            return True
+        return False
+
+    def _trigger_switch(self, target_phase: int) -> None:
+        """Chuyển pha an toàn sang target_phase có kèm giải phóng pha vàng và đỏ toàn phần."""
+        if target_phase == self._current_phase_idx:
+            return
+        self._next_phase_idx = target_phase
+        self._time_in_phase = 0.0
+        if self.yellow_time > 0:
+            self._is_yellow = True
+        elif self.all_red_time > 0:
+            self._is_all_red = True
+        else:
+            self._current_phase_idx = target_phase
+
+    def _advance_timers(self, step_duration: float) -> Tuple[str, bool]:
+        """Cập nhật bộ đếm thời gian đỏ, kiểm tra thay đổi trạng thái và tăng thời gian tích lũy."""
+        self._update_red_timers(step_duration)
+        state = self.get_current_state()
+        changed = (self._last_state != state)
+        self._last_state = state
+        self._time_in_phase += step_duration
+        self._total_time += step_duration
+        self._step_count += 1
+        return state, changed
+
     def reset(self) -> None:
-        """Resets controller to initial state (phase 0, green, 0 elapsed time)."""
+        """Đặt lại bộ điều khiển về trạng thái ban đầu (pha 0, đèn xanh, thời gian trôi qua = 0)."""
         self._current_phase_idx: int = 0
         self._next_phase_idx: int = 0
         self._is_yellow: bool = False
@@ -194,5 +292,5 @@ class BaseController(ABC):
 
     @abstractmethod
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool]:
-        """Advances controller by step_duration seconds and returns (state, changed)."""
+        """Tiến bộ điều khiển thêm step_duration giây và trả về (trạng_thái_đèn, cờ_đổi_pha)."""
         raise NotImplementedError

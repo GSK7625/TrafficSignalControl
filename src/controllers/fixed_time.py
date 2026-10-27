@@ -1,4 +1,4 @@
-"""Fixed-time traffic signal controller module."""
+"""Module bộ điều khiển tín hiệu đèn giao thông chu kỳ cố định (Fixed-Time)."""
 
 from typing import Any, Optional, Sequence, Tuple
 
@@ -9,7 +9,7 @@ __all__ = ["FixedTimeController", "build_yellow_state"]
 
 @register_controller("fixed_time")
 class FixedTimeController(BaseController):
-    """Fixed-time traffic signal controller with configurable cycle and yellow clearance."""
+    """Bộ điều khiển tín hiệu giao thông chu kỳ cố định với thời gian đèn vàng và đỏ toàn phần cấu hình được."""
 
     def __init__(
         self,
@@ -33,46 +33,13 @@ class FixedTimeController(BaseController):
         )
 
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool]:
-        """Advances controller by step_duration seconds and returns (state, changed)."""
+        """Tiến bộ điều khiển thêm step_duration giây và trả về (trạng_thái_đèn, cờ_đổi_pha)."""
         if step_duration <= 0:
             raise ValueError(f"step_duration must be positive, got {step_duration}.")
 
-        # Advance phase when interval duration expires
-        if self._is_yellow:
-            limit = self.yellow_time
-        elif self._is_all_red:
-            limit = self.all_red_time
-        else:
-            limit = self.green_time
+        if not self._handle_clearance():
+            if self._time_in_phase >= self.green_time - 1e-6:
+                next_p = (self._current_phase_idx + 1) % len(self.green_phases)
+                self._trigger_switch(next_p)
 
-        if self._time_in_phase >= limit - 1e-6:
-            self._time_in_phase = 0.0
-            if self._is_yellow:
-                self._is_yellow = False
-                if self.all_red_time > 0:
-                    self._is_all_red = True
-                else:
-                    self._is_all_red = False
-                    self._current_phase_idx = (self._current_phase_idx + 1) % len(self.green_phases)
-            elif self._is_all_red:
-                self._is_all_red = False
-                self._current_phase_idx = (self._current_phase_idx + 1) % len(self.green_phases)
-            else:
-                self._next_phase_idx = (self._current_phase_idx + 1) % len(self.green_phases)
-                if self.yellow_time > 0:
-                    self._is_yellow = True
-                elif self.all_red_time > 0:
-                    self._is_all_red = True
-                else:
-                    self._current_phase_idx = self._next_phase_idx
-
-        self._update_red_timers(step_duration)
-
-        state = self.get_current_state()
-        changed = (self._last_state != state)
-        self._last_state = state
-
-        self._time_in_phase += step_duration
-        self._total_time += step_duration
-        self._step_count += 1
-        return state, changed
+        return self._advance_timers(step_duration)

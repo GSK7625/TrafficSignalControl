@@ -1,11 +1,11 @@
-"""Metrics Collection and Calculation module for SUMO Traffic Signal Evaluation.
+"""Module thu thập và tính toán các chỉ số đánh giá điều khiển tín hiệu đèn giao thông SUMO.
 
-Tracks 5 standard traffic metrics:
-  1. Average Waiting Time (s) [via SUMO tripinfo output]
-  2. Average Travel Time (s) [via SUMO tripinfo output]
-  3. Mean Queue Length & Max Queue Length (veh) [via TraCI step sampling]
-  4. Average Time Loss (s) [via SUMO tripinfo output]
-  5. Throughput (completed vehicles) [via SUMO tripinfo output]
+Theo dõi 5 chỉ số giao thông tiêu chuẩn:
+  1. Thời gian chờ trung bình (Average Waiting Time - s) [qua đầu ra SUMO tripinfo]
+  2. Thời gian di chuyển trung bình (Average Travel Time - s) [qua đầu ra SUMO tripinfo]
+  3. Độ dài hàng đợi trung bình & cực đại (Mean & Max Queue Length - xe) [qua mẫu đo từng bước TraCI]
+  4. Tổn thất thời gian trung bình (Average Time Loss - s) [qua đầu ra SUMO tripinfo]
+  5. Thông lượng (Throughput - số xe hoàn thành) [qua đầu ra SUMO tripinfo]
 """
 
 from dataclasses import dataclass, field
@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 @dataclass
 class StepRecord:
-    """Snapshot of traffic conditions at an individual simulation step."""
+    """Ảnh chụp nhanh (snapshot) điều kiện giao thông tại một bước mô phỏng đơn lẻ."""
     step_time: float
     queue_length: float
     halted_vehicles: Optional[int] = None
@@ -25,7 +25,7 @@ class StepRecord:
 
 @dataclass
 class TripRecord:
-    """Detailed trip data for an individual completed vehicle."""
+    """Dữ liệu hành trình chi tiết của một phương tiện đã hoàn thành lộ trình."""
     vehicle_id: str
     depart: float
     arrival: float
@@ -36,16 +36,16 @@ class TripRecord:
 
 
 class MetricsCollector:
-    """Collects real-time TraCI step metrics and parses post-simulation TripInfo XML.
+    """Thu thập các chỉ số thời gian thực từ TraCI và phân tích file XML TripInfo sau mô phỏng.
 
-    Provides combined summary of the 5 key traffic performance metrics.
+    Cung cấp bản tổng hợp hợp nhất của 5 chỉ số hiệu năng giao thông cốt lõi.
     """
 
     def __init__(self, monitored_lanes: Optional[Sequence[str]] = None) -> None:
-        """Initializes MetricsCollector.
+        """Khởi tạo MetricsCollector.
 
-        Args:
-            monitored_lanes: Optional list of lane IDs to monitor during simulation.
+        Tham số:
+            monitored_lanes: Danh sách tùy chọn các mã làn đường cần theo dõi trong mô phỏng.
         """
         self.monitored_lanes: List[str] = list(monitored_lanes) if monitored_lanes else []
         self.step_records: List[StepRecord] = []
@@ -54,27 +54,27 @@ class MetricsCollector:
 
     @property
     def total_steps(self) -> int:
-        """Returns the total number of simulation steps recorded."""
+        """Trả về tổng số bước mô phỏng đã ghi nhận."""
         return len(self.step_records)
 
     @property
     def queue_history(self) -> List[float]:
-        """Returns the instantaneous queue length recorded at each step."""
+        """Trả về lịch sử độ dài hàng đợi tức thời được ghi nhận tại mỗi bước."""
         return [record.queue_length for record in self.step_records]
 
     @property
     def mean_queue_length(self) -> float:
-        """Calculates average queue length across all recorded simulation steps."""
+        """Tính toán độ dài hàng đợi trung bình trên tất cả các bước mô phỏng đã ghi."""
         if not self.step_records:
             return 0.0
-        return float(sum(self.queue_history) / len(self.step_records))
+        return float(sum(r.queue_length for r in self.step_records) / len(self.step_records))
 
     @property
     def max_queue_length(self) -> int:
-        """Returns the peak (maximum) queue length observed across all steps."""
+        """Trả về độ dài hàng đợi đỉnh (cực đại) quan sát được qua tất cả các bước."""
         if not self.step_records:
             return 0
-        return int(max(self.queue_history))
+        return int(max(r.queue_length for r in self.step_records))
 
     def record_step(
         self,
@@ -83,13 +83,13 @@ class MetricsCollector:
         halted_vehicles: Optional[int] = None,
         running_vehicles: Optional[int] = None,
     ) -> None:
-        """Records traffic metrics for an individual simulation step.
+        """Ghi nhận các chỉ số giao thông cho một bước mô phỏng đơn lẻ.
 
-        Args:
-            step_time: Simulation timestamp in seconds.
-            queue_length: Queue length / number of halted vehicles at this step.
-            halted_vehicles: Optional explicit halted vehicles count.
-            running_vehicles: Optional count of actively running vehicles.
+        Tham số:
+            step_time: Dấu thời gian mô phỏng tính bằng giây.
+            queue_length: Độ dài hàng đợi / số lượng xe dừng tại bước này.
+            halted_vehicles: Số lượng xe dừng chờ cụ thể (tùy chọn).
+            running_vehicles: Số lượng xe đang di chuyển trên mạng lưới (tùy chọn).
         """
         record = StepRecord(
             step_time=float(step_time),
@@ -104,14 +104,14 @@ class MetricsCollector:
         traci_module: Any,
         incoming_lanes: Optional[Sequence[str]] = None,
     ) -> int:
-        """Queries TraCI directly to record queue length and running vehicles.
+        """Truy vấn trực tiếp TraCI để ghi nhận độ dài hàng đợi và số lượng xe đang chạy.
 
-        Args:
-            traci_module: Active TraCI module or mock.
-            incoming_lanes: Lanes to inspect for halted vehicles. Defaults to self.monitored_lanes.
+        Tham số:
+            traci_module: Module TraCI hoặc mock đang hoạt động.
+            incoming_lanes: Các làn đường cần kiểm tra số xe dừng. Mặc định là self.monitored_lanes.
 
-        Returns:
-            Total halted vehicles (queue length) at this step.
+        Trả về:
+            Tổng số xe dừng chờ (độ dài hàng đợi) tại bước này.
         """
         lanes = list(incoming_lanes) if incoming_lanes is not None else self.monitored_lanes
 
@@ -126,7 +126,7 @@ class MetricsCollector:
             try:
                 total_halted += int(traci_module.lane.getLastStepHaltingNumber(lane_id))
             except Exception:
-                # Safely ignore lane query errors (e.g. unknown lane)
+                # Bỏ qua an toàn các lỗi truy vấn làn (ví dụ: làn không tồn tại)
                 pass
 
         running_count: Optional[int] = None
@@ -147,24 +147,24 @@ class MetricsCollector:
         return total_halted
 
     def parse_tripinfo(self, xml_path: str) -> Dict[str, Any]:
-        """Parses SUMO --tripinfo-output XML file and calculates trip metrics.
+        """Phân tích file XML --tripinfo-output của SUMO và tính toán các chỉ số hành trình.
 
-        Computes:
-          - throughput: number of arrived/completed vehicles
-          - average_travel_time: mean trip duration (s)
-          - average_waiting_time: mean waiting time with speed < 0.1 m/s (s)
-          - average_time_loss: mean time loss due to traffic/signals (s)
+        Tính toán:
+          - throughput: số lượng phương tiện đã đến đích/hoàn thành hành trình
+          - average_travel_time: thời gian hành trình trung bình (s)
+          - average_waiting_time: thời gian chờ trung bình với tốc độ < 0.1 m/s (s)
+          - average_time_loss: tổn thất thời gian trung bình do đèn/ùn tắc (s)
           - total_travel_time, total_waiting_time, total_time_loss (s)
 
-        Args:
-            xml_path: Absolute or relative path to SUMO tripinfo XML file.
+        Tham số:
+            xml_path: Đường dẫn tuyệt đối hoặc tương đối tới file XML tripinfo của SUMO.
 
-        Returns:
-            Dictionary containing calculated trip metrics.
+        Trả về:
+            Dictionary chứa các chỉ số hành trình đã tính toán.
 
-        Raises:
-            FileNotFoundError: If the specified XML file does not exist.
-            ValueError: If the file is not valid XML.
+        Ngoại lệ:
+            FileNotFoundError: Nếu file XML không tồn tại.
+            ValueError: Nếu file không đúng định dạng XML.
         """
         if not os.path.isfile(xml_path):
             raise FileNotFoundError(f"Tripinfo file not found: {xml_path}")
@@ -183,7 +183,7 @@ class MetricsCollector:
         throughput = 0
         self.trip_records.clear()
 
-        # Iterate over all tripinfo elements
+        # Duyệt qua tất cả các phần tử tripinfo trong file XML
         for elem in root.findall(".//tripinfo"):
             try:
                 veh_id = elem.get("id", f"veh_{throughput}")
@@ -230,19 +230,19 @@ class MetricsCollector:
         return metrics
 
     def get_summary(self, tripinfo_path: Optional[str] = None) -> Dict[str, Any]:
-        """Returns consolidated summary of the 5 standard traffic metrics.
+        """Trả về tổng hợp hợp nhất của 5 chỉ số hiệu năng giao thông tiêu chuẩn:
 
         1. average_waiting_time (s)
         2. average_travel_time (s)
-        3. mean_queue_length (veh) & max_queue_length (veh)
+        3. mean_queue_length (xe) & max_queue_length (xe)
         4. average_time_loss (s)
-        5. throughput (completed vehicles)
+        5. throughput (số lượng xe hoàn thành)
 
-        Args:
-            tripinfo_path: Optional path to tripinfo XML to parse before summarizing.
+        Tham số:
+            tripinfo_path: Đường dẫn tùy chọn tới file XML tripinfo để phân tích trước khi tổng hợp.
 
-        Returns:
-            Dictionary containing 5 core metrics plus simulation tracking metadata.
+        Trả về:
+            Dictionary chứa 5 chỉ số cốt lõi kèm siêu dữ liệu giám sát mô phỏng.
         """
         if tripinfo_path is not None:
             self.parse_tripinfo(tripinfo_path)
@@ -265,20 +265,34 @@ class MetricsCollector:
         }
 
     def reset(self) -> None:
-        """Resets all collected step and tripinfo metrics to empty state."""
+        """Đặt lại tất cả các chỉ số bước và chỉ số tripinfo đã thu thập về trạng thái rỗng."""
         self.step_records.clear()
         self.trip_records.clear()
         self.tripinfo_metrics.clear()
 
     def to_markdown_table(self, title: str = "Traffic Evaluation Summary") -> str:
-        """Formats the 5 primary metrics as a clean Markdown table.
+        """Định dạng 5 chỉ số chính thành bảng Markdown chuẩn.
 
-        Args:
-            title: Table header title or scenario name.
+        Tham số:
+            title: Tiêu đề bảng hoặc tên kịch bản.
 
-        Returns:
-            Markdown formatted string representation.
+        Trả về:
+            Chuỗi biểu diễn bảng định dạng Markdown.
         """
+        summary = self.get_summary()
+        lines = [
+            f"### {title}",
+            "",
+            "| Metric | Value | Unit | Description |",
+            "| :--- | :--- | :--- | :--- |",
+            f"| **Average Waiting Time** | `{summary['average_waiting_time']:.2f}` | s | Mean time halting (speed < 0.1 m/s) |",
+            f"| **Average Travel Time** | `{summary['average_travel_time']:.2f}` | s | Mean duration from depart to arrival |",
+            f"| **Mean Queue Length** | `{summary['mean_queue_length']:.2f}` | veh | Time-averaged queue across incoming lanes |",
+            f"| **Peak Queue Length** | `{summary['max_queue_length']}` | veh | Maximum instantaneous queue observed |",
+            f"| **Average Time Loss** | `{summary['average_time_loss']:.2f}` | s | Mean delay compared to ideal free-flow |",
+            f"| **Throughput** | `{summary['throughput']}` | veh | Total completed trips |",
+        ]
+        return "\n".join(lines)
         summary = self.get_summary()
         lines = [
             f"### {title}",

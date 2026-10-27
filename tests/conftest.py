@@ -1,4 +1,4 @@
-"""Pytest configuration ensuring project root is in sys.path."""
+"""Cấu hình Pytest đảm bảo thư mục gốc của dự án có trong sys.path."""
 
 import sys
 import os

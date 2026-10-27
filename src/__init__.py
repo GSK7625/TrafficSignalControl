@@ -1,4 +1,4 @@
-"""Traffic Signal Control Package."""
+"""Gói điều khiển tín hiệu đèn giao thông (Traffic Signal Control)."""
 
 from typing import Any
 
@@ -7,6 +7,7 @@ from src.controllers import (
     FixedTimeController,
     MaxPressureController,
     QLearningController,
+    build_default_controller,
     create_controller,
     register_controller,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "FixedTimeController",
     "MaxPressureController",
     "QLearningController",
+    "build_default_controller",
     "create_controller",
     "register_controller",
     "inspect_scenario",
@@ -34,14 +36,9 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """Lazy-load benchmark functions to avoid premature import warnings when running CLI."""
+    """Lazy-load các hàm benchmark để tránh cảnh báo import sớm khi chạy CLI."""
     if name in ("run_benchmark_matrix", "run_single_simulation"):
-        from src.benchmark import run_benchmark_matrix, run_single_simulation
-
-        mapping = {
-            "run_benchmark_matrix": run_benchmark_matrix,
-            "run_single_simulation": run_single_simulation,
-        }
-        return mapping[name]
+        import src.benchmark as bm
+        return getattr(bm, name)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

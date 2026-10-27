@@ -1,27 +1,29 @@
-"""Max Pressure traffic signal controller module (Varaiya 2013).
+"""Module bộ điều khiển tín hiệu đèn giao thông Max Pressure (Varaiya 2013).
 
-Calculates network movement pressure W(p) = sum_{(u,d) in M(p)} (x_u - x_d)
-and actuates traffic lights dynamically while respecting safety constraints.
+Tính toán áp suất mạng lưới W(p) = sum_{(u,d) in M(p)} (x_u - x_d)
+và điều khiển đèn giao thông thích ứng linh hoạt theo thời gian thực kết hợp các ràng buộc an toàn.
 """
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from src.controllers.base import BaseController, register_controller
+from src.controllers.base import BaseController, get_movement_attr, register_controller
 
 __all__ = ["MaxPressureController"]
 
 
 @register_controller("max_pressure")
 class MaxPressureController(BaseController):
-    """Max Pressure traffic signal controller with theoretical formulation and safety bounds.
+    """Bộ điều khiển tín hiệu giao thông Max Pressure theo lý thuyết và ràng buộc an toàn.
 
-    Attributes:
-        green_phases: List of green phase signal state strings.
-        movements: Sequence of controlled movement link objects or dicts.
-        min_green: Minimum green phase duration in seconds (default: 20.0s).
-        max_green: Maximum green phase duration before forced switch in seconds (default: 45.0s).
-        yellow_time: Clearance yellow duration in seconds (default: 3.0s).
-        tls_id: Traffic light identifier.
+    Thuộc tính:
+        green_phases: Danh sách chuỗi trạng thái các pha đèn xanh.
+        movements: Danh sách các luồng chuyển động (link/movement).
+        min_green: Thời gian xanh tối thiểu tính bằng giây (mặc định: 20.0s).
+        max_green: Thời gian xanh tối đa trước khi ép chuyển pha (mặc định: 45.0s).
+        yellow_time: Thời gian đèn vàng giải phóng nút giao (mặc định: 3.0s).
+        all_red_time: Thời gian đỏ toàn phần giải phóng nút giao (mặc định: 1.0s).
+        max_red: Thời gian chờ đèn đỏ tối đa để chống nghẽn đói pha (mặc định: 90.0s).
+        tls_id: Mã định danh cụm đèn tín hiệu.
     """
 
     def __init__(
@@ -56,19 +58,18 @@ class MaxPressureController(BaseController):
             lane_vehicle_fn=lane_vehicle_fn,
         )
 
-        # Precompute active movements per phase for performance
+        # Tính toán trước các luồng chuyển động hoạt động trong từng pha xanh để tối ưu tốc độ
         self._phase_movements: List[List[Any]] = []
         for p_state in self.green_phases:
             active_m: List[Any] = []
             for m in self.movements:
-                idx = getattr(m, "link_index", None) if not isinstance(m, dict) else m.get("link_index")
-                if idx is not None and 0 <= idx < len(p_state):
-                    if p_state[idx] in ("G", "g"):
-                        active_m.append(m)
+                idx = get_movement_attr(m, "link_index")
+                if idx is not None and 0 <= idx < len(p_state) and p_state[idx] in ("G", "g"):
+                    active_m.append(m)
             self._phase_movements.append(active_m)
 
     def calculate_phase_pressures(self) -> Dict[int, float]:
-        """Calculates pressure W(p) = sum_{(u,d) in M(p)} (x_u - x_d) for each green phase."""
+        """Tính toán áp suất W(p) = sum_{(u,d) in M(p)} (x_u - x_d) cho từng pha đèn xanh."""
         pressures: Dict[int, float] = {}
         lane_counts: Dict[str, int] = {}
 
@@ -82,15 +83,15 @@ class MaxPressureController(BaseController):
         for p_idx, moves in enumerate(self._phase_movements):
             pressure = 0.0
             for m in moves:
-                u_lane = getattr(m, "from_lane", "") if not isinstance(m, dict) else m.get("from_lane", "")
-                d_lane = getattr(m, "to_lane", "") if not isinstance(m, dict) else m.get("to_lane", "")
+                u_lane = get_movement_attr(m, "from_lane", "")
+                d_lane = get_movement_attr(m, "to_lane", "")
                 pressure += float(get_count(u_lane) - get_count(d_lane))
             pressures[p_idx] = pressure
 
         return pressures
 
     def select_next_phase(self, force_switch: Optional[bool] = None) -> int:
-        """Selects the next green phase according to Max Pressure rules and Starvation Watchdog."""
+        """Lựa chọn pha xanh kế tiếp theo thuật toán Max Pressure và cơ chế giám sát nghẽn đói pha (Starvation Watchdog)."""
         if force_switch is None:
             force_switch = (self._time_in_phase >= self.max_green - 1e-6)
 
@@ -103,7 +104,7 @@ class MaxPressureController(BaseController):
 
         alt_phases = [(curr_p + i) % num_phases for i in range(1, num_phases)]
 
-        # Starvation Watchdog: Check if any competing phase reached max_red
+        # Giám sát nghẽn đói pha: Kiểm tra nếu có pha đối thủ nào đã vượt ngưỡng max_red
         starved = [
             p for p in alt_phases
             if self.get_phase_red_time(p) >= self.max_red - 1e-6
@@ -124,53 +125,19 @@ class MaxPressureController(BaseController):
         return max(alt_phases, key=lambda p: pressures.get(p, 0.0))
 
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool]:
-        """Advances controller by step_duration seconds."""
+        """Tiến bộ điều khiển thêm step_duration giây và trả về (trạng_thái_đèn, cờ_đổi_pha)."""
         if step_duration <= 0:
             raise ValueError(f"step_duration must be positive, got {step_duration}.")
 
-        tolerance = 1e-6
-
-        if self._is_yellow:
-            if self._time_in_phase >= self.yellow_time - tolerance:
-                self._is_yellow = False
-                self._time_in_phase = 0.0
-                if self.all_red_time > 0:
-                    self._is_all_red = True
-                else:
-                    self._is_all_red = False
-                    self._current_phase_idx = self._next_phase_idx
-        elif self._is_all_red:
-            if self._time_in_phase >= self.all_red_time - tolerance:
-                self._is_all_red = False
-                self._current_phase_idx = self._next_phase_idx
-                self._time_in_phase = 0.0
-        else:
-            if self._time_in_phase >= self.min_green - tolerance:
+        if not self._handle_clearance():
+            if self._time_in_phase >= self.min_green - 1e-6:
                 has_starvation = any(
-                    self.get_phase_red_time(p) >= self.max_red - tolerance
+                    self.get_phase_red_time(p) >= self.max_red - 1e-6
                     for p in range(len(self.green_phases))
                     if p != self._current_phase_idx
                 )
-                force_switch = (self._time_in_phase >= self.max_green - tolerance) or has_starvation
+                force_switch = (self._time_in_phase >= self.max_green - 1e-6) or has_starvation
                 next_p = self.select_next_phase(force_switch=force_switch)
-                if next_p != self._current_phase_idx:
-                    self._next_phase_idx = next_p
-                    self._time_in_phase = 0.0
-                    if self.yellow_time > 0:
-                        self._is_yellow = True
-                    elif self.all_red_time > 0:
-                        self._is_all_red = True
-                    else:
-                        self._current_phase_idx = next_p
+                self._trigger_switch(next_p)
 
-        self._update_red_timers(step_duration)
-
-        current_state = self.get_current_state()
-        phase_changed = (self._last_state != current_state)
-        self._last_state = current_state
-
-        self._time_in_phase += step_duration
-        self._total_time += step_duration
-        self._step_count += 1
-
-        return current_state, phase_changed
+        return self._advance_timers(step_duration)

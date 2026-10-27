@@ -1,11 +1,11 @@
-"""Reward functions for reinforcement learning traffic signal control.
+"""Các hàm phần thưởng (Reward) cho điều khiển tín hiệu đèn giao thông bằng học tăng cường.
 
-Directly aligns multi-objective reward signals with 5 core traffic metrics:
-  1. Average Waiting Time: delay penalty
-  2. Average Travel Time / Time Loss: speed loss penalty
-  3. Mean & Max Queue Length: quadratic queue penalty to resolve bottlenecks
-  4. Throughput: positive reward for completed vehicles
-  5. Lost Time / Switching: clearance interval penalty to avoid excessive phase flickering
+Căn chỉnh trực tiếp tín hiệu phần thưởng đa mục tiêu với 5 chỉ số giao thông cốt lõi:
+  1. Thời gian chờ trung bình (Average Waiting Time): phạt trễ
+  2. Thời gian di chuyển trung bình / Tổn thất thời gian: phạt tổn thất vận tốc
+  3. Độ dài hàng đợi trung bình & cực đại: phạt bậc hai hàng đợi để xử lý nút thắt cổ chai
+  4. Thông lượng (Throughput): thưởng dương cho xe đã hoàn thành lộ trình
+  5. Thời gian tổn thất do đổi pha: phạt chuyển pha quá nhiều để tránh nhấp nháy đèn liên tục
 """
 
 import math
@@ -13,9 +13,9 @@ from typing import Any, Dict, Optional
 
 
 class MetricsAlignedReward:
-    """Multi-objective reward function aligned directly with 5 core traffic metrics.
+    """Hàm phần thưởng đa mục tiêu căn chỉnh trực tiếp với 5 chỉ số giao thông cốt lõi.
 
-    Calculates reward for a decision interval:
+    Tính toán phần thưởng cho một khoảng quyết định (decision interval):
         R = scale * (
             w_completed * completed_vehicles
             - w_queue * mean(sum(queue^2))
@@ -34,7 +34,7 @@ class MetricsAlignedReward:
         w_time_loss: float = 0.01,
         w_switch: float = 0.5,
     ) -> None:
-        """Initializes MetricsAlignedReward with metric weightings."""
+        """Khởi tạo MetricsAlignedReward với trọng số các chỉ số."""
         for name, val in (
             ("scale", scale),
             ("w_completed", w_completed),
@@ -61,7 +61,7 @@ class MetricsAlignedReward:
         self._step_count = 0
 
     def reset_interval(self) -> None:
-        """Resets transient metrics accumulated during decision interval."""
+        """Đặt lại các chỉ số tạm thời tích lũy trong khoảng quyết định."""
         self._completed_sum = 0.0
         self._queue_sq_sum = 0.0
         self._waiting_sum = 0.0
@@ -70,7 +70,7 @@ class MetricsAlignedReward:
         self._step_count = 0
 
     def reset(self) -> None:
-        """Resets the reward function state for a new episode."""
+        """Đặt lại trạng thái của hàm phần thưởng cho episode mới."""
         self.reset_interval()
 
     def record_step(
@@ -82,14 +82,14 @@ class MetricsAlignedReward:
         is_switch: bool = False,
         **kwargs: Any,
     ) -> None:
-        """Records traffic measurements for a single simulation step.
+        """Ghi nhận các số liệu đo lường giao thông cho một bước mô phỏng đơn lẻ.
 
-        Args:
-            in_lane_queues: Dict mapping lane ID to queue length / halted count.
-            waiting_time: Sum of waiting time of active vehicles at this step.
-            completed_vehicles: Number of vehicles that completed trips at this step.
-            time_loss: Sum of time loss of active vehicles at this step.
-            is_switch: True if a phase switch occurred during this step.
+        Tham số:
+            in_lane_queues: Dict ánh xạ mã làn đường tới độ dài hàng đợi / số xe dừng.
+            waiting_time: Tổng thời gian chờ của các phương tiện đang hoạt động ở bước này.
+            completed_vehicles: Số lượng phương tiện đã hoàn thành hành trình tại bước này.
+            time_loss: Tổng tổn thất thời gian của các xe đang hoạt động ở bước này.
+            is_switch: True nếu có sự kiện đổi pha đèn diễn ra trong bước này.
         """
         if in_lane_queues:
             self._queue_sq_sum += sum(float(q) ** 2 for q in in_lane_queues.values())
@@ -101,10 +101,10 @@ class MetricsAlignedReward:
         self._step_count += 1
 
     def calculate_reward(self) -> float:
-        """Calculates normalized reward for the decision interval.
+        """Tính toán giá trị phần thưởng chuẩn hóa cho khoảng quyết định.
 
-        Returns:
-            Computed scalar reward value.
+        Trả về:
+            Giá trị phần thưởng vô hướng đã tính toán.
         """
         if self._step_count == 0:
             return 0.0
@@ -123,7 +123,7 @@ class MetricsAlignedReward:
         return float(reward * self.scale)
 
     def get_config(self) -> Dict[str, Any]:
-        """Returns reward function configuration parameters."""
+        """Trả về các tham số cấu hình của hàm phần thưởng."""
         return {
             "name": "MetricsAlignedReward",
             "scale": self.scale,

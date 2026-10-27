@@ -1,4 +1,4 @@
-"""Module for inspecting SUMO network and traffic signal configuration."""
+"""Module phân tích và trích xuất cấu hình mạng lưới giao thông và đèn tín hiệu SUMO."""
 
 from dataclasses import dataclass, field
 import math
@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 
 @dataclass
 class PhaseInfo:
-    """Information about a traffic light phase."""
+    """Thông tin về một pha tín hiệu đèn giao thông."""
     index: int
     duration: float
     state: str
@@ -18,31 +18,31 @@ class PhaseInfo:
 
     @property
     def is_yellow(self) -> bool:
-        """Returns True if the phase contains any yellow signal."""
+        """Trả về True nếu pha có chứa bất kỳ tín hiệu đèn vàng nào."""
         return "y" in self.state.lower()
 
     @property
     def is_green(self) -> bool:
-        """Returns True if the phase contains green signal and no yellow."""
+        """Trả về True nếu pha chứa tín hiệu đèn xanh và không có đèn vàng."""
         return not self.is_yellow and any(c in "Gg" for c in self.state)
 
 
 @dataclass
 class LaneInfo:
-    """Physical properties of a network lane."""
+    """Thuộc tính vật lý của một làn đường trong mạng lưới."""
     id: str
-    speed: float  # Maximum speed in m/s
-    length: float  # Lane length in meters
+    speed: float  # Tốc độ tối đa cho phép tính bằng m/s
+    length: float  # Chiều dài làn đường tính bằng mét
     edge_id: str = ""
 
 
 @dataclass
 class MovementInfo:
-    """Information regarding a controlled link/movement at a traffic light."""
+    """Thông tin về luồng chuyển động / liên kết được điều khiển tại nút giao."""
     link_index: int
     from_lane: str
     to_lane: str
-    direction: str  # 's' (straight), 'l' (left), 'r' (right), 't' (turn), etc.
+    direction: str  # 's' (đi thẳng), 'l' (rẽ trái), 'r' (rẽ phải), 't' (quay đầu), v.v.
     from_edge: str = ""
     to_edge: str = ""
     state: str = ""
@@ -50,7 +50,7 @@ class MovementInfo:
 
 @dataclass
 class ScenarioInfo:
-    """Information regarding a SUMO scenario."""
+    """Thông tin toàn diện về một kịch bản mô phỏng SUMO."""
     name: str
     cfg_path: str
     net_path: str
@@ -67,7 +67,7 @@ class ScenarioInfo:
     rou_files: List[str] = field(default_factory=list)
     departure_times: Optional[List[float]] = None
 
-    # Extended network attributes for Max-Pressure, RL, and spatial coordination
+    # Các thuộc tính mạng lưới mở rộng cho Max-Pressure, RL và tọa độ không gian
     incoming_lanes_per_tls: Dict[str, List[str]] = field(default_factory=dict)
     outgoing_lanes_per_tls: Dict[str, List[str]] = field(default_factory=dict)
     movements_per_tls: Dict[str, List[MovementInfo]] = field(default_factory=dict)
@@ -87,58 +87,58 @@ class ScenarioInfo:
         elif not self.rou_files and self.rou_path:
             self.rou_files = [self.rou_path]
 
-        # Sync controlled_lanes_per_tls with incoming_lanes_per_tls for backward compatibility
+        # Đồng bộ controlled_lanes_per_tls với incoming_lanes_per_tls để tương thích ngược
         if not self.controlled_lanes_per_tls and self.incoming_lanes_per_tls:
             self.controlled_lanes_per_tls = self.incoming_lanes_per_tls
         elif not self.incoming_lanes_per_tls and self.controlled_lanes_per_tls:
             self.incoming_lanes_per_tls = self.controlled_lanes_per_tls
 
     def _resolve_tls_id(self, tls_id: Optional[str] = None) -> str:
-        """Resolves target TLS ID, defaulting to the first TLS if omitted."""
+        """Xác định target TLS ID, mặc định chọn TLS đầu tiên nếu bỏ qua."""
         return tls_id or (self.tls_ids[0] if self.tls_ids else "")
 
     def get_green_phases(self, tls_id: Optional[str] = None) -> List[PhaseInfo]:
-        """Returns all green phases for a given TLS ID (or the first TLS if omitted)."""
+        """Trả về tất cả các pha đèn xanh của TLS ID đã cho (hoặc TLS đầu tiên nếu bỏ qua)."""
         target_id = self._resolve_tls_id(tls_id)
         if not target_id or target_id not in self.phases_per_tls:
             return []
         return [p for p in self.phases_per_tls[target_id] if p.is_green]
 
     def get_yellow_phases(self, tls_id: Optional[str] = None) -> List[PhaseInfo]:
-        """Returns all yellow phases for a given TLS ID (or the first TLS if omitted)."""
+        """Trả về tất cả các pha đèn vàng của TLS ID đã cho (hoặc TLS đầu tiên nếu bỏ qua)."""
         target_id = self._resolve_tls_id(tls_id)
         if not target_id or target_id not in self.phases_per_tls:
             return []
         return [p for p in self.phases_per_tls[target_id] if p.is_yellow]
 
     def get_incoming_lanes(self, tls_id: Optional[str] = None) -> List[str]:
-        """Returns incoming lanes for a given TLS ID (or the first TLS if omitted)."""
+        """Trả về danh sách các làn đi vào của TLS ID đã cho (hoặc TLS đầu tiên nếu bỏ qua)."""
         target_id = self._resolve_tls_id(tls_id)
         return self.incoming_lanes_per_tls.get(target_id, [])
 
     def get_outgoing_lanes(self, tls_id: Optional[str] = None) -> List[str]:
-        """Returns outgoing (exit) lanes for a given TLS ID (or the first TLS if omitted)."""
+        """Trả về danh sách các làn thoát ra của TLS ID đã cho (hoặc TLS đầu tiên nếu bỏ qua)."""
         target_id = self._resolve_tls_id(tls_id)
         return self.outgoing_lanes_per_tls.get(target_id, [])
 
     def get_movements(self, tls_id: Optional[str] = None) -> List[MovementInfo]:
-        """Returns movement/link details for a given TLS ID (or the first TLS if omitted)."""
+        """Trả về chi tiết các luồng chuyển động của TLS ID đã cho (hoặc TLS đầu tiên nếu bỏ qua)."""
         target_id = self._resolve_tls_id(tls_id)
         return self.movements_per_tls.get(target_id, [])
 
     def get_lane_length(self, lane_id: str) -> float:
-        """Returns the length of a lane in meters (0.0 if not found)."""
+        """Trả về chiều dài làn đường tính bằng mét (0.0 nếu không tìm thấy)."""
         lane = self.lanes.get(lane_id)
         return lane.length if lane else 0.0
 
     def get_lane_speed(self, lane_id: str) -> float:
-        """Returns maximum speed limit of a lane in m/s (0.0 if not found)."""
+        """Trả về tốc độ tối đa cho phép trên làn tính bằng m/s (0.0 nếu không tìm thấy)."""
         lane = self.lanes.get(lane_id)
         return lane.speed if lane else 0.0
 
 
 def _parse_departures(rou_file: str) -> List[float]:
-    """Parses departure times of trips, vehicles, and flows in a route file."""
+    """Phân tích thời điểm xuất phát của trips, vehicles, và flows trong file lộ trình routes."""
     root = ET.parse(rou_file).getroot()
     departures: List[float] = []
 
@@ -153,17 +153,13 @@ def _parse_departures(rou_file: str) -> List[float]:
                 if num > 0:
                     step = (end - begin) / num if end > begin else 0.0
                     departures.extend(begin + i * step for i in range(num))
-            elif "period" in item.attrib:
-                period = float(item.attrib["period"])
+            elif "period" in item.attrib or "vehsPerHour" in item.attrib:
+                period = (
+                    float(item.attrib["period"])
+                    if "period" in item.attrib
+                    else (3600.0 / float(item.attrib["vehsPerHour"]) if float(item.attrib["vehsPerHour"]) > 0 else 0.0)
+                )
                 if period > 0:
-                    t = begin
-                    while t < end:
-                        departures.append(t)
-                        t += period
-            elif "vehsPerHour" in item.attrib:
-                vph = float(item.attrib["vehsPerHour"])
-                if vph > 0:
-                    period = 3600.0 / vph
                     t = begin
                     while t < end:
                         departures.append(t)
@@ -184,7 +180,7 @@ def inspect_scenario(
     data_dir: str = "data",
     cfg_path: Optional[str] = None,
 ) -> ScenarioInfo:
-    """Inspects a scenario directory or sumocfg file and extracts full network metadata."""
+    """Phân tích thư mục kịch bản hoặc file .sumocfg và trích xuất đầy đủ metadata mạng lưới."""
     if cfg_path:
         if not os.path.isfile(cfg_path):
             raise FileNotFoundError(f"SUMO configuration not found: {cfg_path}")
@@ -224,7 +220,7 @@ def inspect_scenario(
 
     net_root = ET.parse(net_file).getroot()
 
-    # 1. Network Boundary
+    # 1. Ranh giới mạng lưới (Boundary)
     boundary: Optional[Tuple[float, float, float, float]] = None
     loc_node = net_root.find("location")
     if loc_node is not None and "convBoundary" in loc_node.attrib:
@@ -235,11 +231,11 @@ def inspect_scenario(
         except (ValueError, IndexError):
             boundary = None
 
-    # 2. Lanes Physical Attributes (length, speed limit, edge_id)
+    # 2. Thuộc tính vật lý của các làn đường (chiều dài, giới hạn tốc độ, edge_id)
     lanes: Dict[str, LaneInfo] = {}
     for edge in net_root.findall("edge"):
         edge_id = edge.get("id", "")
-        # Skip internal edges starting with ':'
+        # Bỏ qua các đoạn nối nội bộ bắt đầu bằng dấu ':'
         if edge_id.startswith(":"):
             continue
         for lane in edge.findall("lane"):
@@ -252,7 +248,7 @@ def inspect_scenario(
                     edge_id=edge_id,
                 )
 
-    # 3. Junction Positions
+    # 3. Tọa độ các nút giao (Junction Positions)
     junction_positions: Dict[str, Tuple[float, float]] = {}
     for junc in net_root.findall("junction"):
         jid = junc.get("id")
@@ -262,7 +258,7 @@ def inspect_scenario(
             except ValueError:
                 pass
 
-    # 4. Traffic Light Systems (TLS)
+    # 4. Hệ thống đèn tín hiệu giao thông (TLS)
     tl_nodes = net_root.findall("tlLogic")
     tls_ids = list(dict.fromkeys(tl.get("id") for tl in tl_nodes if tl.get("id")))
 
@@ -285,7 +281,7 @@ def inspect_scenario(
                 for idx, p in enumerate(tl.findall("phase"))
             ]
 
-    # 5. Controlled Links, Inflow & Outflow Lanes, and Movement Mapping
+    # 5. Liên kết được điều khiển, làn vào & làn ra, và ánh xạ luồng chuyển động (Movements)
     incoming_lanes_per_tls: Dict[str, List[str]] = {}
     outgoing_lanes_per_tls: Dict[str, List[str]] = {}
     movements_per_tls: Dict[str, List[MovementInfo]] = {}
@@ -332,13 +328,13 @@ def inspect_scenario(
                 )
             )
 
-        # Sort movements by link_index for reliable positional alignment
+        # Sắp xếp movements theo link_index để đảm bảo thứ tự vị trí nhất quán
         movements.sort(key=lambda m: m.link_index)
         movements_per_tls[tl_id] = movements
         incoming_lanes_per_tls[tl_id] = sorted(in_lanes)
         outgoing_lanes_per_tls[tl_id] = sorted(out_lanes)
 
-    # 6. Demand Parsing
+    # 6. Phân tích nhu cầu lưu lượng phương tiện (Demand)
     all_departs: List[float] = []
     for r_file in rou_files:
         if os.path.exists(r_file):
@@ -376,7 +372,7 @@ def get_window_demand(
     window_end: Optional[float] = None,
     data_dir: str = "data",
 ) -> Dict[str, Any]:
-    """Calculates scheduled traffic demand within [window_begin, window_end)."""
+    """Tính toán nhu cầu lưu lượng phương tiện theo lịch trình trong khoảng [window_begin, window_end)."""
     info = (
         scenario_name_or_info
         if isinstance(scenario_name_or_info, ScenarioInfo)
@@ -404,7 +400,7 @@ def get_window_demand(
 
 
 def inspect_all_scenarios(data_dir: str = "data") -> Dict[str, ScenarioInfo]:
-    """Inspects all scenario subdirectories in data_dir."""
+    """Phân tích tất cả các thư mục con kịch bản trong data_dir."""
     if not os.path.isdir(data_dir):
         raise FileNotFoundError(f"Data directory not found: {data_dir}")
 
@@ -417,3 +413,4 @@ def inspect_all_scenarios(data_dir: str = "data") -> Dict[str, ScenarioInfo]:
             except Exception:
                 continue
     return results
+

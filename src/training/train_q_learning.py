@@ -1,12 +1,12 @@
-"""Training pipeline for Tabular Q-Learning Traffic Signal Controller.
+"""Quy trình huấn luyện cho bộ điều khiển tín hiệu đèn giao thông Tabular Q-Learning.
 
-Trains a Q-Learning agent on SUMO scenarios with multi-objective rewards aligned
-with the 5 core traffic performance metrics:
-  1. Average Waiting Time
-  2. Average Travel Time
-  3. Mean & Max Queue Length
-  4. Average Time Loss
-  5. Throughput
+Huấn luyện tác tử Q-Learning trên các kịch bản SUMO với phần thưởng đa mục tiêu
+căn chỉnh trực tiếp theo 5 chỉ số hiệu năng giao thông cốt lõi:
+  1. Thời gian chờ trung bình (Average Waiting Time)
+  2. Thời gian di chuyển trung bình (Average Travel Time)
+  3. Độ dài hàng đợi trung bình & cực đại (Mean & Max Queue Length)
+  4. Tổn thất thời gian trung bình (Average Time Loss)
+  5. Thông lượng (Throughput)
 """
 
 import argparse
@@ -42,28 +42,30 @@ def train_q_learning_agent(
     use_libsumo: bool = True,
     init_model: Optional[str] = None,
 ) -> Tuple[QLearningController, List[Dict[str, Any]]]:
-    """Trains a Q-Learning agent on a SUMO scenario.
+    """Huấn luyện tác tử Q-Learning trên một kịch bản giao thông SUMO.
 
-    Args:
-        scenario_name: Name of scenario directory (e.g. 'cologne1', 'ingolstadt1').
-        data_dir: Base directory containing scenario folders.
-        episodes: Number of training episodes to run.
-        max_steps_per_episode: Simulation duration in seconds per episode.
-        save_path: Output JSON file path for learned Q-table.
-        lr: Learning rate alpha.
-        gamma: Discount factor.
-        epsilon_start: Initial exploration rate.
-        epsilon_min: Minimum exploration rate floor.
-        epsilon_decay: Geometric decay rate per episode.
-        decision_interval: Interval in seconds between RL action evaluations.
-        min_green: Minimum green phase duration in seconds.
-        max_green: Maximum green phase duration before forced phase switch.
-        yellow_time: Clearance yellow duration in seconds.
-        reward_config: Optional keyword arguments for MetricsAlignedReward.
-        verbose: If True, prints per-episode training statistics.
+    Tham số:
+        scenario_name: Tên thư mục kịch bản (ví dụ: 'cologne1', 'ingolstadt1').
+        data_dir: Thư mục cơ sở chứa các thư mục kịch bản.
+        episodes: Số lượng tập (episodes) huấn luyện cần chạy.
+        max_steps_per_episode: Thời gian mô phỏng tối đa tính bằng giây cho mỗi episode.
+        save_path: Đường dẫn file JSON đầu ra lưu bảng Q-table đã học.
+        lr: Tốc độ học (learning rate alpha).
+        gamma: Hệ số chiết khấu tương lai (discount factor gamma).
+        epsilon_start: Tỷ lệ khám phá (exploration rate) ban đầu.
+        epsilon_min: Mức sàn tỷ lệ khám phá tối thiểu.
+        epsilon_decay: Tốc độ suy giảm epsilon theo từng episode (suy giảm hình học).
+        decision_interval: Khoảng thời gian (giây) giữa các lần ra quyết định của RL.
+        min_green: Thời gian xanh tối thiểu tính bằng giây.
+        max_green: Thời gian xanh tối đa trước khi ép buộc chuyển pha.
+        yellow_time: Thời gian đèn vàng giải phóng nút giao.
+        reward_config: Các tham số cấu hình tùy chọn cho MetricsAlignedReward.
+        verbose: Nếu True, in tiến trình chi tiết qua từng tập.
+        use_libsumo: Sử dụng backend libsumo để tăng tốc thực thi.
+        init_model: Đường dẫn file JSON Q-table có sẵn để huấn luyện tiếp (fine-tune).
 
-    Returns:
-        Tuple of (trained QLearningController, list of episode statistics).
+    Trả về:
+        Tuple gồm (QLearningController đã huấn luyện, danh sách thống kê qua các episode).
     """
     info = inspect_scenario(scenario_name, data_dir=data_dir)
     tls_id = info.tls_ids[0]
@@ -88,7 +90,7 @@ def train_q_learning_agent(
     if init_model:
         if os.path.isfile(init_model):
             controller.load(init_model)
-            # Re-apply caller overrides
+            # Áp dụng lại các tham số ghi đè từ caller
             controller.lr = lr
             controller.gamma = gamma
             controller.min_green = min_green
@@ -150,7 +152,7 @@ def train_q_learning_agent(
             last_decision_action: Optional[int] = None
 
             for step_idx in range(max_steps_per_episode):
-                # 1. Query lane conditions
+                # 1. Truy vấn điều kiện trên các làn đi vào
                 in_queues: Dict[str, float] = {}
                 step_halted = 0
                 for lane_id in runner.incoming_lanes:
@@ -169,11 +171,11 @@ def train_q_learning_agent(
                 except Exception:
                     pass
 
-                # 2. Advance controller
+                # 2. Tiến bộ điều khiển một bước
                 state_str, changed = controller.step(runner.step_duration)
                 conn.trafficlight.setRedYellowGreenState(tls_id, state_str)
 
-                # 3. Record step for reward
+                # 3. Ghi nhận bước đo lường cho hàm phần thưởng
                 reward_fn.record_step(
                     in_lane_queues=in_queues,
                     waiting_time=float(step_halted),
@@ -182,10 +184,10 @@ def train_q_learning_agent(
                     is_switch=changed,
                 )
 
-                # 4. Advance simulation step
+                # 4. Tiến một bước mô phỏng
                 conn.simulationStep()
 
-                # 5. Bellman Q-update on explicit decision points
+                # 5. Cập nhật Q-Learning Bellman tại các điểm quyết định rõ ràng
                 if controller.last_decision is not None:
                     dec_state, dec_action = controller.last_decision
                     if last_decision_state is not None and last_decision_action is not None:
@@ -196,11 +198,11 @@ def train_q_learning_agent(
                     last_decision_state = dec_state
                     last_decision_action = dec_action
 
-                # Early break if no more expected vehicles
+                # Dừng sớm nếu không còn phương tiện dự kiến
                 if step_idx > 300 and conn.simulation.getMinExpectedNumber() <= 0:
                     break
 
-            # Terminal update at end of episode
+            # Cập nhật trạng thái kết thúc (Terminal update) tại cuối episode
             if last_decision_state is not None and last_decision_action is not None:
                 r_val = reward_fn.calculate_reward()
                 ep_reward += r_val
@@ -237,7 +239,7 @@ def train_q_learning_agent(
             best_path = save_path.replace(".json", "_best.json")
             controller.save(best_path)
 
-    # Save final trained model
+    # Lưu mô hình đã huấn luyện hoàn tất
     controller.save(save_path)
     if verbose:
         print(f"[{scenario_name}] Training complete. Model saved to: {save_path}")
@@ -246,7 +248,7 @@ def train_q_learning_agent(
 
 
 def main() -> None:
-    """CLI entrypoint for training Q-Learning agents."""
+    """Điểm vào CLI để huấn luyện các tác tử Q-Learning."""
     parser = argparse.ArgumentParser(description="Train Q-Learning Traffic Signal Controller")
     parser.add_argument("--scenario", type=str, default="cologne1", help="Scenario name (e.g. cologne1, ingolstadt1)")
     parser.add_argument("--episodes", type=int, default=15, help="Number of training episodes")

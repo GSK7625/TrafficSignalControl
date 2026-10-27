@@ -1,4 +1,4 @@
-"""Unit tests for BaseController ABC and Controller Registry."""
+"""Kiểm thử đơn vị cho BaseController ABC và Controller Registry."""
 
 import pytest
 from typing import Tuple
@@ -14,13 +14,13 @@ from src.controllers.base import (
 
 
 def test_base_controller_cannot_be_instantiated():
-    """BaseController is abstract and cannot be directly instantiated."""
+    """BaseController là lớp trừu tượng và không thể khởi tạo trực tiếp."""
     with pytest.raises(TypeError):
         BaseController(green_phases=["Gr", "rG"])  # type: ignore[abstract]
 
 
 class DummyController(BaseController):
-    """Minimal concrete controller for testing BaseController."""
+    """Bộ điều khiển cụ thể tối thiểu để kiểm thử BaseController."""
 
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool]:
         self._time_in_phase += step_duration
@@ -30,7 +30,7 @@ class DummyController(BaseController):
 
 
 def test_concrete_controller_properties_and_lifecycle():
-    """Tests standard lifecycle, timing, properties, and reset."""
+    """Kiểm thử vòng đời chuẩn, bộ đếm thời gian, các thuộc tính và hàm reset."""
     ctrl = DummyController(
         green_phases=["GGGrrr", "rrrGGG"],
         yellow_time=3.0,
@@ -61,7 +61,7 @@ def test_concrete_controller_properties_and_lifecycle():
 
 
 def test_base_controller_validation():
-    """Tests input validation in BaseController."""
+    """Kiểm thử kiểm tra tính hợp lệ của tham số đầu vào trong BaseController."""
     with pytest.raises(ValueError, match="at least one phase"):
         DummyController(green_phases=[])
 
@@ -70,8 +70,8 @@ def test_base_controller_validation():
 
 
 def test_get_vehicle_count():
-    """Tests vehicle counting via custom lane_vehicle_fn and default fallback."""
-    # Custom vehicle counter
+    """Kiểm thử đếm số lượng xe qua lane_vehicle_fn tùy chỉnh và cơ chế dự phòng."""
+    # Bộ đếm xe tùy chỉnh
     ctrl = DummyController(
         green_phases=["GG"],
         lane_vehicle_fn=lambda lane_id: 5 if lane_id == "lane_1" else 0,
@@ -80,7 +80,7 @@ def test_get_vehicle_count():
     assert ctrl._get_vehicle_count("lane_2") == 0
     assert ctrl._get_vehicle_count("") == 0
 
-    # Failing vehicle counter defaults to 0
+    # Hàm đếm xe gặp lỗi sẽ mặc định trả về 0
     def failing_fn(lane_id: str) -> int:
         raise RuntimeError("Sensor offline")
 
@@ -89,7 +89,7 @@ def test_get_vehicle_count():
 
 
 def test_controller_registry():
-    """Tests registering and creating controllers dynamically."""
+    """Kiểm thử đăng ký và tạo động các bộ điều khiển."""
 
     @register_controller("dummy_registered")
     class RegisteredDummy(BaseController):
@@ -118,14 +118,14 @@ def test_controller_registry():
 
 
 def test_build_all_red_state():
-    """Verify build_all_red_state returns all-red clearance string."""
+    """Xác nhận build_all_red_state trả về chuỗi giải phóng toàn đỏ."""
     assert build_all_red_state("GGGrrr") == "rrrrrr"
     assert build_all_red_state("yyyrrr") == "rrrrrr"
     assert build_all_red_state("") == ""
 
 
 def test_base_controller_all_red_and_max_red_defaults():
-    """Verify default values and validation for all_red_time and max_red."""
+    """Xác nhận giá trị mặc định và xác thực cho all_red_time và max_red."""
     ctrl = DummyController(green_phases=["GG", "rr"])
     assert ctrl.all_red_time == 1.0
     assert ctrl.max_red == 90.0

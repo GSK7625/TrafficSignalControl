@@ -1,17 +1,17 @@
-"""Multi-Seed Benchmark Comparison for Traffic Signal Control Algorithms.
+"""So sánh đối chuẩn đa hạt giống (Multi-Seed Benchmark) cho các thuật toán điều khiển tín hiệu đèn giao thông.
 
-Compares 3 controllers:
-  1. Fixed-Time (Baseline)
-  2. Max-Pressure
-  3. Q-Learning (Trained policy in pure greedy evaluation mode)
+So sánh 3 bộ điều khiển:
+  1. Fixed-Time (Baseline - Chu kỳ cố định)
+  2. Max-Pressure (Áp suất cực đại)
+  3. Q-Learning (Chính sách đã huấn luyện ở chế độ đánh giá thuần khai thác Greedy)
 
-Evaluates performance across multiple random seeds on SUMO scenarios
-and aggregates statistics (mean ± std) for the 5 core traffic metrics:
-  1. Average Waiting Time (s)
-  2. Average Travel Time (s)
-  3. Mean Queue Length (veh)
-  4. Average Time Loss (s)
-  5. Throughput (veh)
+Đánh giá hiệu năng qua nhiều hạt giống ngẫu nhiên (random seeds) trên các kịch bản SUMO
+và tổng hợp thống kê (mean ± std) cho 5 chỉ số giao thông cốt lõi:
+  1. Thời gian chờ trung bình (Average Waiting Time - s)
+  2. Thời gian di chuyển trung bình (Average Travel Time - s)
+  3. Độ dài hàng đợi trung bình (Mean Queue Length - xe)
+  4. Tổn thất thời gian trung bình (Average Time Loss - s)
+  5. Thông lượng (Throughput - xe)
 """
 
 import argparse
@@ -22,14 +22,14 @@ import shutil
 import tempfile
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from src.controllers import FixedTimeController, MaxPressureController, QLearningController
+from src.controllers import build_default_controller
 from src.data_inspector import inspect_scenario
 from src.metrics import MetricsCollector
 from src.simulation_runner import SimulationRunner
 
 
 def calculate_mean_std(values: Sequence[float]) -> Tuple[float, float]:
-    """Calculates sample mean and standard deviation."""
+    """Tính giá trị trung bình mẫu và độ lệch chuẩn mẫu."""
     n = len(values)
     if n == 0:
         return 0.0, 0.0
@@ -51,22 +51,24 @@ def run_single_simulation(
     max_green: float = 45.0,
     use_libsumo: bool = True,
     temp_dir: Optional[str] = None,
+    scenario_info: Optional[Any] = None,
 ) -> Dict[str, float]:
-    """Runs a single simulation run with a given controller and seed.
+    """Chạy một lượt mô phỏng đơn lẻ với một bộ điều khiển và hạt giống ngẫu nhiên (seed) xác định.
 
-    Args:
-        cfg_path: Path to SUMO .sumocfg file.
-        controller_type: 'fixed_time', 'max_pressure', or 'q_learning'.
-        seed: Random seed passed to SUMO via --seed.
-        max_steps: Maximum simulation steps.
-        model_path: Path to trained Q-table JSON (required if controller_type is 'q_learning').
-        min_green: Minimum green phase duration in seconds (default: 20.0s).
-        max_green: Maximum green phase duration in seconds (default: 45.0s).
-        use_libsumo: True to use libsumo if available.
-        temp_dir: Directory to store temporary tripinfo XML files.
+    Tham số:
+        cfg_path: Đường dẫn tới file .sumocfg của SUMO.
+        controller_type: 'fixed_time', 'max_pressure', hoặc 'q_learning'.
+        seed: Hạt giống ngẫu nhiên truyền vào SUMO qua cờ --seed.
+        max_steps: Số bước mô phỏng tối đa.
+        model_path: Đường dẫn tới file JSON Q-table đã huấn luyện (bắt buộc nếu là 'q_learning').
+        min_green: Thời gian xanh tối thiểu tính bằng giây (mặc định: 20.0s).
+        max_green: Thời gian xanh tối đa tính bằng giây (mặc định: 45.0s).
+        use_libsumo: True nếu muốn dùng backend libsumo nếu có sẵn.
+        temp_dir: Thư mục tạm lưu các file XML tripinfo.
+        scenario_info: Đối tượng ScenarioInfo đọc sẵn để tránh đọc lại metadata mạng lưới.
 
-    Returns:
-        Dictionary of metrics for this single run.
+    Trả về:
+        Dictionary chứa các chỉ số đo được trong lượt chạy này.
     """
     clean_temp_dir = False
     if temp_dir is None:
@@ -77,52 +79,28 @@ def run_single_simulation(
     collector = MetricsCollector()
 
     try:
-        scenario_name = os.path.splitext(os.path.basename(cfg_path))[0]
-        data_dir = os.path.dirname(os.path.dirname(os.path.abspath(cfg_path)))
-        info = inspect_scenario(scenario_name, data_dir=data_dir)
+        info = scenario_info
+        if info is None:
+            scenario_name = os.path.splitext(os.path.basename(cfg_path))[0]
+            data_dir = os.path.dirname(os.path.dirname(os.path.abspath(cfg_path)))
+            info = inspect_scenario(scenario_name, data_dir=data_dir)
         tls_id = info.tls_ids[0]
         green_phases = info.get_green_phases(tls_id)
         movements = info.get_movements(tls_id)
 
-        controller = None
-        if controller_type == "fixed_time":
-            controller = FixedTimeController(
-                green_phases=green_phases,
-                green_time=30.0,
-                yellow_time=3.0,
-                all_red_time=1.0,
-                max_red=90.0,
-                tls_id=tls_id,
-            )
-        elif controller_type == "max_pressure":
-            controller = MaxPressureController(
-                green_phases=green_phases,
-                movements=movements,
-                min_green=min_green,
-                max_green=max_green,
-                yellow_time=3.0,
-                all_red_time=1.0,
-                max_red=90.0,
-                tls_id=tls_id,
-            )
-        elif controller_type == "q_learning":
-            controller = QLearningController(
-                green_phases=green_phases,
-                movements=movements,
-                min_green=min_green,
-                max_green=max_green,
-                yellow_time=3.0,
-                all_red_time=1.0,
-                max_red=90.0,
-                decision_interval=5.0,
-                tls_id=tls_id,
-            )
+        controller = build_default_controller(
+            controller_type=controller_type,
+            green_phases=green_phases,
+            movements=movements,
+            min_green=min_green,
+            max_green=max_green,
+            tls_id=tls_id,
+        )
+        if controller_type == "q_learning":
             if model_path and os.path.isfile(model_path):
                 controller.load(model_path)
-                # Ensure evaluation respects configured min_green / max_green
                 controller.min_green = min_green
                 controller.max_green = max_green
-            # Crucial: Disable exploration for evaluation
             controller.explore_mode = False
             controller.epsilon = 0.0
 
@@ -175,23 +153,23 @@ def run_benchmark_matrix(
     output_dir: str = "results",
     verbose: bool = True,
 ) -> Dict[str, Any]:
-    """Runs full benchmark matrix comparing algorithms across seeds.
+    """Chạy ma trận đối chuẩn so sánh các thuật toán qua nhiều hạt giống ngẫu nhiên (seeds).
 
-    Args:
-        scenario_name: Scenario directory name (e.g. 'cologne1').
-        data_dir: Base directory containing scenario folders.
-        algorithms: List of algorithms to run.
-        seeds: Sequence of random seeds to evaluate.
-        max_steps: Max simulation steps per run.
-        min_green: Minimum green phase duration in seconds (default: 20.0s).
-        max_green: Maximum green phase duration in seconds (default: 45.0s).
-        model_path: Path to trained Q-table JSON for Q-Learning.
-        use_libsumo: Whether to use libsumo backend.
-        output_dir: Directory where results will be saved.
-        verbose: Print progress to stdout.
+    Tham số:
+        scenario_name: Tên thư mục kịch bản (ví dụ: 'cologne1').
+        data_dir: Thư mục gốc chứa các thư mục kịch bản.
+        algorithms: Danh sách các thuật toán cần đánh giá.
+        seeds: Tập hợp các hạt giống ngẫu nhiên (seeds) để đánh giá.
+        max_steps: Số bước mô phỏng tối đa cho mỗi lượt chạy.
+        min_green: Thời gian xanh tối thiểu tính bằng giây (mặc định: 20.0s).
+        max_green: Thời gian xanh tối đa tính bằng giây (mặc định: 45.0s).
+        model_path: Đường dẫn tới file JSON Q-table đã huấn luyện cho Q-Learning.
+        use_libsumo: Có sử dụng backend libsumo hay không.
+        output_dir: Thư mục lưu kết quả đối chuẩn.
+        verbose: In tiến trình chi tiết ra stdout.
 
-    Returns:
-        Structured dictionary containing raw runs, aggregated stats, and comparisons.
+    Trả về:
+        Dictionary cấu trúc chứa kết quả từng lượt chạy, số liệu tổng hợp và mức độ cải thiện.
     """
     info = inspect_scenario(scenario_name, data_dir=data_dir)
     cfg_path = info.cfg_path
@@ -230,12 +208,13 @@ def run_benchmark_matrix(
                 min_green=min_green,
                 max_green=max_green,
                 use_libsumo=use_libsumo,
+                scenario_info=info,
             )
             raw_results[algo][seed] = metrics
             if verbose:
                 print(f"Wait: {metrics['average_waiting_time']:6.2f}s | Queue: {metrics['mean_queue_length']:5.2f} | TP: {int(metrics['throughput']):4d}")
 
-    # Aggregate stats across seeds
+    # Tổng hợp số liệu thống kê qua các hạt giống (seeds)
     aggregated_stats: Dict[str, Dict[str, Dict[str, float]]] = {}
     for algo in algorithms:
         aggregated_stats[algo] = {}
@@ -247,7 +226,7 @@ def run_benchmark_matrix(
                 "std": round(std_val, 3),
             }
 
-    # Compute improvements relative to Fixed-Time baseline (if present)
+    # Tính toán mức độ cải thiện so với baseline Fixed-Time (nếu có)
     improvements: Dict[str, Dict[str, float]] = {}
     if "fixed_time" in aggregated_stats:
         baseline = aggregated_stats["fixed_time"]
@@ -259,10 +238,10 @@ def run_benchmark_matrix(
                 b_mean = baseline[m_key]["mean"]
                 a_mean = aggregated_stats[algo][m_key]["mean"]
                 if m_key == "throughput":
-                    # For throughput, higher is better
+                    # Đối với thông lượng (throughput), giá trị càng cao càng tốt
                     imp = ((a_mean - b_mean) / max(b_mean, 1e-6)) * 100.0
                 else:
-                    # For delay/waiting/queue, lower is better
+                    # Đối với thời gian chờ/di chuyển/hàng đợi, giá trị càng thấp càng tốt
                     imp = ((b_mean - a_mean) / max(b_mean, 1e-6)) * 100.0
                 improvements[algo][m_key] = round(imp, 2)
 
@@ -279,10 +258,10 @@ def run_benchmark_matrix(
         "improvements_vs_fixed_time": improvements,
     }
 
-    # Format Markdown Report
+    # Định dạng báo cáo Markdown
     report_md = generate_benchmark_report_markdown(benchmark_data)
 
-    # Save to output_dir
+    # Lưu kết quả vào output_dir
     os.makedirs(output_dir, exist_ok=True)
     json_path = os.path.join(output_dir, f"benchmark_{scenario_name}.json")
     with open(json_path, "w", encoding="utf-8") as f:
@@ -300,7 +279,7 @@ def run_benchmark_matrix(
 
 
 def generate_benchmark_report_markdown(data: Dict[str, Any]) -> str:
-    """Generates a clean Markdown table comparing algorithms across seeds."""
+    """Tạo bảng báo cáo Markdown sạch đẹp so sánh các thuật toán qua các hạt giống ngẫu nhiên."""
     scen = data["scenario"]
     seeds = data["seeds"]
     algos = data["algorithms"]
@@ -366,7 +345,7 @@ def generate_benchmark_report_markdown(data: Dict[str, Any]) -> str:
 
 
 def main() -> None:
-    """CLI entrypoint for running multi-seed benchmarks."""
+    """Điểm vào CLI để chạy đối chuẩn ma trận đa hạt giống."""
     parser = argparse.ArgumentParser(description="Multi-Seed Traffic Signal Benchmark Runner")
     parser.add_argument("--scenario", type=str, default="cologne1", help="Scenario name (e.g. cologne1, ingolstadt1)")
     parser.add_argument("--seeds", type=int, nargs="+", default=[42, 101, 2024, 777, 999], help="List of random seeds")

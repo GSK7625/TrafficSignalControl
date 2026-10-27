@@ -1,4 +1,4 @@
-"""TraCI Simulation Runner module for SUMO with traffic signal control (Fixed Time & Max Pressure)."""
+"""Module thực thi mô phỏng SUMO thông qua TraCI/libsumo với điều khiển tín hiệu đèn giao thông."""
 
 from dataclasses import dataclass, field
 import os
@@ -13,13 +13,18 @@ except ImportError:
     libsumo = None
     HAS_LIBSUMO = False
 
-from src.controllers import FixedTimeController, MaxPressureController, QLearningController
+from src.controllers import (
+    FixedTimeController,
+    MaxPressureController,
+    QLearningController,
+    build_default_controller,
+)
 from src.data_inspector import inspect_scenario, ScenarioInfo
 
 
 @dataclass
 class SimulationResult:
-    """Result data container for a simulation run."""
+    """Container chứa dữ liệu kết quả của một lượt chạy mô phỏng."""
     total_steps: int
     sim_time_start: float
     sim_time_end: float
@@ -34,7 +39,7 @@ class SimulationResult:
     backend: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Converts result metrics to dictionary format."""
+        """Chuyển đổi các chỉ số kết quả sang định dạng dictionary."""
         d = {
             "total_steps": self.total_steps,
             "sim_time_start": self.sim_time_start,
@@ -54,13 +59,13 @@ class SimulationResult:
 
 
 class SimulationRunner:
-    """Orchestrates SUMO simulation via TraCI with traffic signal control (Fixed Time or Max Pressure).
+    """Điều phối mô phỏng SUMO thông qua TraCI/libsumo kết hợp điều khiển tín hiệu đèn giao thông.
 
-    Coordinates the simulation loop per second:
-      1. Updates traffic signal phase via controller
-      2. Measures queue length (halting vehicles v < 0.1 m/s) on incoming lanes
-      3. Advances simulation step (traci.simulationStep())
-    Safely handles TraCI connection closure in try...finally blocks.
+    Điều phối vòng lặp mô phỏng theo từng giây:
+      1. Cập nhật pha tín hiệu đèn thông qua bộ điều khiển (controller)
+      2. Đo độ dài hàng đợi (số xe dừng với v < 0.1 m/s) trên các làn đi vào
+      3. Tiến một bước mô phỏng (conn.simulationStep())
+    Xử lý an toàn việc giải phóng kết nối TraCI/libsumo trong khối try...finally.
     """
 
     def __init__(
@@ -90,7 +95,7 @@ class SimulationRunner:
         self._backend: str = "traci"
         self._is_running = False
 
-        # Load scenario metadata if controller or tls_id or lanes are omitted
+        # Tải siêu dữ liệu kịch bản nếu thiếu controller, tls_id hoặc incoming_lanes
         scenario_info: Optional[ScenarioInfo] = None
         if controller is None or tls_id is None or incoming_lanes is None:
             try:
@@ -101,7 +106,7 @@ class SimulationRunner:
             except Exception:
                 scenario_info = None
 
-        # Resolve TLS ID
+        # Xác định mã định danh TLS ID
         if tls_id:
             self.tls_id = tls_id
         elif controller and getattr(controller, "tls_id", None):
@@ -111,7 +116,7 @@ class SimulationRunner:
         else:
             self.tls_id = ""
 
-        # Resolve controller and controller_type
+        # Xác định bộ điều khiển (controller) và loại controller
         if controller is not None:
             self.controller = controller
             if isinstance(controller, MaxPressureController):
@@ -130,42 +135,15 @@ class SimulationRunner:
             if not green_phases:
                 raise ValueError(f"No green phases found for TLS '{self.tls_id}'.")
 
-            if self.controller_type == "max_pressure":
-                movements = scenario_info.get_movements(self.tls_id)
-                self.controller = MaxPressureController(
-                    green_phases=green_phases,
-                    movements=movements,
-                    min_green=20.0,
-                    max_green=45.0,
-                    yellow_time=3.0,
-                    all_red_time=1.0,
-                    max_red=90.0,
-                    tls_id=self.tls_id,
-                )
-            elif self.controller_type == "q_learning":
-                movements = scenario_info.get_movements(self.tls_id)
-                self.controller = QLearningController(
-                    green_phases=green_phases,
-                    movements=movements,
-                    min_green=20.0,
-                    max_green=45.0,
-                    yellow_time=3.0,
-                    all_red_time=1.0,
-                    max_red=90.0,
-                    decision_interval=5.0,
-                    tls_id=self.tls_id,
-                )
-            else:
-                self.controller = FixedTimeController(
-                    green_phases=green_phases,
-                    green_time=30.0,
-                    yellow_time=3.0,
-                    all_red_time=1.0,
-                    max_red=90.0,
-                    tls_id=self.tls_id,
-                )
+            movements = scenario_info.get_movements(self.tls_id) if self.controller_type != "fixed_time" else None
+            self.controller = build_default_controller(
+                controller_type=self.controller_type,
+                green_phases=green_phases,
+                movements=movements,
+                tls_id=self.tls_id,
+            )
 
-        # Resolve incoming lanes
+        # Xác định các làn đường đi vào nút giao (incoming lanes)
         if incoming_lanes is not None:
             self.incoming_lanes: List[str] = sorted(list(set(incoming_lanes)))
         elif scenario_info and self.tls_id in scenario_info.controlled_lanes_per_tls:
@@ -174,13 +152,13 @@ class SimulationRunner:
             self.incoming_lanes = []
 
     def build_sumo_cmd(self, gui: bool = False) -> List[str]:
-        """Constructs the SUMO startup command arguments.
+        """Xây dựng danh sách đối số dòng lệnh để khởi động SUMO.
 
-        Args:
-            gui: True to use 'sumo-gui' graphical interface, False for headless 'sumo'.
+        Tham số:
+            gui: True nếu muốn mở giao diện đồ họa 'sumo-gui', False để chạy ngầm 'sumo'.
 
-        Returns:
-            List of command line arguments for traci.start().
+        Trả về:
+            Danh sách đối số dòng lệnh cho traci.start().
         """
         binary_name = "sumo-gui" if gui else "sumo"
         try:
@@ -199,7 +177,7 @@ class SimulationRunner:
         if self.tripinfo_output:
             cmd.extend(["--tripinfo-output", self.tripinfo_output])
 
-        # Append additional arguments (avoiding exact duplicates of flags)
+        # Nối các tham số bổ sung (tránh trùng lặp cờ)
         if self.additional_args:
             cmd.extend(self.additional_args)
 
@@ -207,7 +185,7 @@ class SimulationRunner:
 
     @property
     def conn(self) -> Any:
-        """Returns the active simulation backend connection (libsumo or traci)."""
+        """Trả về đối tượng kết nối mô phỏng đang hoạt động (libsumo hoặc traci)."""
         if self._conn is not None:
             return self._conn
         if self.use_libsumo and HAS_LIBSUMO:
@@ -216,17 +194,17 @@ class SimulationRunner:
 
     @property
     def backend(self) -> str:
-        """Active backend name: 'libsumo' or 'traci'."""
+        """Tên backend đang hoạt động: 'libsumo' hoặc 'traci'."""
         return self._backend
 
     def start(self, gui: bool = False) -> None:
-        """Starts the SUMO process and connects libsumo or TraCI.
+        """Khởi động tiến trình SUMO và kết nối libsumo hoặc TraCI.
 
-        Args:
-            gui: If True, launches sumo-gui (forces traci since libsumo does not support GUI).
-                 Otherwise launches headless sumo with libsumo if requested and available.
+        Tham số:
+            gui: Nếu True, khởi chạy sumo-gui (buộc dùng traci do libsumo không hỗ trợ GUI).
+                 Nếu False, khởi chạy sumo ở chế độ headless với libsumo (nếu được yêu cầu và có sẵn).
         """
-        # Ensure any dangling connection is closed before starting new one
+        # Đảm bảo đóng mọi kết nối đang treo trước khi khởi động lượt mới
         self.close()
 
         if self.use_libsumo and not gui:
@@ -244,7 +222,7 @@ class SimulationRunner:
         self.conn.start(cmd)
         self._is_running = True
 
-        # If incoming lanes were not known ahead of time, query them dynamically
+        # Nếu chưa biết các làn đi vào trước đó, truy vấn động từ mạng lưới
         if not self.incoming_lanes and self.tls_id:
             try:
                 lanes = self.conn.trafficlight.getControlledLanes(self.tls_id)
@@ -253,10 +231,10 @@ class SimulationRunner:
                 pass
 
     def measure_queue(self) -> int:
-        """Measures total number of halting vehicles (speed < 0.1 m/s) on incoming lanes.
+        """Đo tổng số lượng xe dừng chờ (vận tốc < 0.1 m/s) trên các làn đường đi vào.
 
-        Returns:
-            Total queue count across all monitored incoming lanes.
+        Trả về:
+            Tổng số lượng xe trong hàng đợi trên tất cả các làn vào được theo dõi.
         """
         if not self.incoming_lanes:
             return 0
@@ -269,60 +247,47 @@ class SimulationRunner:
         return total_halted
 
     def step(self) -> Tuple[str, int]:
-        """Executes a single coordination step:
+        """Thực thi một bước điều phối mô phỏng đơn lẻ:
 
-        1. Updates traffic signal phase via controller
-        2. Measures queue length on incoming lanes
-        3. Advances simulation step (conn.simulationStep())
+        1. Cập nhật pha tín hiệu đèn thông qua bộ điều khiển
+        2. Đo độ dài hàng đợi trên các làn đi vào
+        3. Tiến một bước mô phỏng (conn.simulationStep())
 
-        Returns:
-            Tuple[str, int]: (signal_state, queue_length)
+        Trả về:
+            Tuple[str, int]: (trạng_thái_đèn, độ_dài_hàng_đợi)
         """
-        # 1. Update traffic signal state
+        # 1. Cập nhật trạng thái tín hiệu đèn
         state, _ = self.controller.step(self.step_duration)
         if self.tls_id:
             self.conn.trafficlight.setRedYellowGreenState(self.tls_id, state)
 
-        # 2. Measure queue length
+        # 2. Đo hàng đợi
         queue = self.measure_queue()
 
-        # 3. Next simulation step
+        # 3. Bước mô phỏng tiếp theo
         self.conn.simulationStep()
 
         return state, queue
 
     def close(self) -> None:
-        """Safely closes TraCI or libsumo connection if currently loaded."""
-        try:
-            if self._conn is not None:
+        """Đóng an toàn kết nối TraCI hoặc libsumo nếu đang tải."""
+        targets = [self._conn, libsumo if HAS_LIBSUMO else None, traci]
+        for conn in targets:
+            if conn is not None:
                 try:
-                    if self._conn.isLoaded():
-                        self._conn.close()
+                    if getattr(conn, "isLoaded", lambda: False)():
+                        conn.close()
                 except Exception:
                     pass
-            if HAS_LIBSUMO:
-                try:
-                    if libsumo.isLoaded():
-                        libsumo.close()
-                except Exception:
-                    pass
-            try:
-                if traci.isLoaded():
-                    traci.close()
-            except Exception:
-                pass
-        except Exception:
-            pass
-        finally:
-            self._is_running = False
-            self._conn = None
+        self._is_running = False
+        self._conn = None
 
     def __enter__(self) -> "SimulationRunner":
-        """Context manager entry."""
+        """Hỗ trợ context manager khi bắt đầu khối with."""
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Context manager exit ensures TraCI or libsumo is closed."""
+        """Hỗ trợ context manager tự động đóng TraCI hoặc libsumo khi thoát."""
         self.close()
 
     def run(
@@ -331,15 +296,15 @@ class SimulationRunner:
         max_steps: int = 3600,
         step_callback: Optional[Callable[[int, str, int], None]] = None,
     ) -> SimulationResult:
-        """Runs the simulation for up to max_steps with safe exception handling.
+        """Chạy mô phỏng tối đa max_steps bước với cơ chế xử lý ngoại lệ an toàn.
 
-        Args:
-            gui: True for GUI mode, False for headless.
-            max_steps: Maximum number of simulation seconds/steps to run.
-            step_callback: Optional callback invoked per step as (step_idx, state, queue).
+        Tham số:
+            gui: True để bật giao diện GUI, False để chạy ngầm (headless).
+            max_steps: Số giây/bước mô phỏng tối đa cần chạy.
+            step_callback: Callback tùy chọn được gọi tại mỗi bước với dạng (step_idx, state, queue).
 
-        Returns:
-            SimulationResult containing step counts and queue metrics.
+        Trả về:
+            SimulationResult chứa số bước thực hiện và các chỉ số hàng đợi.
         """
         if max_steps <= 0:
             raise ValueError(f"max_steps must be positive, got {max_steps}.")
@@ -356,22 +321,13 @@ class SimulationRunner:
             sim_time_start = float(self.conn.simulation.getTime())
 
             for step_idx in range(max_steps):
-                # 1. Cập nhật tín hiệu đèn Fixed Time / Max Pressure / Q-Learning
-                state, _ = self.controller.step(self.step_duration)
-                if self.tls_id:
-                    self.conn.trafficlight.setRedYellowGreenState(self.tls_id, state)
-
-                # 2. Đo hàng đợi
-                current_queue = self.measure_queue()
+                state, current_queue = self.step()
                 queue_history.append(current_queue)
 
                 if step_callback is not None:
                     step_callback(step_idx, state, current_queue)
 
-                # 3. Bước mô phỏng tiếp theo
-                self.conn.simulationStep()
-
-                # If no more vehicles exist and simulation can end early
+                # Nếu không còn phương tiện nào trên mạng lưới, kết thúc sớm
                 if self.conn.simulation.getMinExpectedNumber() <= 0 and step_idx > 10:
                     break
 
