@@ -88,7 +88,7 @@ def train_q_learning_agent(
         "w_queue": 0.05,
         "w_waiting": 0.02,
         "w_time_loss": 0.01,
-        "w_switch": 0.5,
+        "w_switch": 2.0,
     }
     reward_fn = MetricsAlignedReward(**r_cfg)
 

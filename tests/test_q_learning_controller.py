@@ -140,6 +140,8 @@ def test_safety_min_green_enforcement(sample_setup):
 
 def test_safety_yellow_clearance_transition(sample_setup):
     """Verify yellow clearance of yellow_time seconds occurs when switching."""
+    from collections import defaultdict
+
     phases, movements = sample_setup
     ctrl = QLearningController(
         green_phases=phases,
@@ -148,27 +150,33 @@ def test_safety_yellow_clearance_transition(sample_setup):
         decision_interval=5.0,
         yellow_time=3.0,
     )
-    # Step 5s to reach min_green
-    for _ in range(5):
+    # Step 4s in phase 0
+    for _ in range(4):
         ctrl.step(1.0)
 
-    # Force action = 1
-    ctrl.q_table[ctrl.get_state()] = [-100.0, 100.0]
+    # Force action = 1 on decision point
+    ctrl.q_table = defaultdict(lambda: [-100.0, 100.0])
 
-    # Step at t=5s -> triggers switch to phase 1
+    # Step at t=5s (min_green reached) -> triggers switch to phase 1
     state, changed = ctrl.step(1.0)
     assert ctrl.is_yellow
     assert "y" in state.lower()
+    assert changed
 
-    # Step at t=6s (yellow second 2)
+    # Step at t=6s (yellow second 1)
     state, _ = ctrl.step(1.0)
     assert ctrl.is_yellow
 
-    # Step at t=7s (yellow second 3 completes)
+    # Step at t=7s (yellow second 2)
     state, _ = ctrl.step(1.0)
+    assert ctrl.is_yellow
+
+    # Step at t=8s (yellow 3s completes, green phase 1 starts)
+    state, changed = ctrl.step(1.0)
     assert not ctrl.is_yellow
     assert ctrl.current_phase == 1
     assert state == phases[1]
+    assert changed
 
 
 def test_safety_max_green_forced_switch(sample_setup):

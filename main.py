@@ -1,10 +1,10 @@
-"""Command-Line Interface for SUMO Fixed-Time Traffic Signal Control Evaluation.
+"""Command-Line Interface for SUMO Traffic Signal Control Evaluation.
 
 Usage examples:
-  python main.py --scenario cologne1
-  python main.py --scenario ingolstadt1 --gui
-  python main.py --all
-  python main.py --all --max-steps 3600
+  python main.py --scenario cologne1 --controller q_learning
+  python main.py --all --controller max_pressure
+  python main.py --compare
+  python main.py --compare --scenarios cologne1 ingolstadt1
 """
 
 import argparse
@@ -22,9 +22,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from src.evaluate import (
     DEFAULT_SCENARIOS,
+    evaluate_comparison,
     evaluate_multiple,
     evaluate_scenario,
     export_evaluation_json,
+    generate_algorithm_comparison_markdown,
     generate_comparison_markdown,
     plot_comparison_chart,
 )
@@ -40,7 +42,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         Parsed arguments Namespace.
     """
     parser = argparse.ArgumentParser(
-        description="Đánh giá thuật toán điều khiển đèn tín hiệu Fixed Time (30s) trên SUMO",
+        description="Đánh giá và so sánh thuật toán điều khiển đèn tín hiệu trên SUMO",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -53,7 +55,25 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Đánh giá toàn diện trên cả 2 bản đồ (cologne1 và ingolstadt1) và xuất báo cáo so sánh",
+        help="Đánh giá toàn diện trên cả 2 bản đồ (cologne1 và ingolstadt1) và xuất báo cáo",
+    )
+    parser.add_argument(
+        "--controller",
+        type=str,
+        default="fixed_time",
+        choices=["fixed_time", "max_pressure", "q_learning"],
+        help="Thuật toán điều khiển đèn tín hiệu: fixed_time, max_pressure, hoặc q_learning",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Chạy so sánh đối đầu đa thuật toán (Fixed-Time vs Max-Pressure vs Q-Learning)",
+    )
+    parser.add_argument(
+        "--controllers",
+        nargs="+",
+        default=["fixed_time", "max_pressure", "q_learning"],
+        help="Danh sách thuật toán cần so sánh khi dùng cờ --compare",
     )
     parser.add_argument(
         "--gui",
@@ -93,19 +113,51 @@ def main(argv: Optional[List[str]] = None) -> int:
     """
     args = parse_args(argv)
 
-    if not args.all and not args.scenario:
+    if not args.all and not args.scenario and not args.compare:
         print("\n[!] Lỗi cú pháp: Vui lòng chỉ định kịch bản bằng:")
-        print("    python main.py --scenario <tên_bản_đồ>  (ví dụ: python main.py --scenario cologne1)")
-        print("  hoặc:")
-        print("    python main.py --all                    (chạy cả 2 bản đồ cologne1 và ingolstadt1)")
+        print("    python main.py --scenario <tên_bản_đồ> [--controller q_learning]")
+        print("    python main.py --all [--controller max_pressure]")
+        print("    python main.py --compare")
         print("\nSử dụng `python main.py --help` để xem trợ giúp chi tiết.\n")
         return 1
 
     os.makedirs(args.output_dir, exist_ok=True)
 
+    if args.compare:
+        print("=================================================================")
+        print(" BẮT ĐẦU BENCHMARK SO SÁNH ĐA THUẬT TOÁN ĐIỀU KHIỂN ĐÈN TÍN HIỆU")
+        print(f" Danh sách thuật toán: {', '.join(args.controllers)}")
+        target_scenarios = [args.scenario] if args.scenario else DEFAULT_SCENARIOS
+        print(f" Danh sách bản đồ:     {', '.join(target_scenarios)}")
+        print(f" Max steps: {args.max_steps}s | Chế độ GUI: {args.gui}")
+        print("=================================================================\n")
+
+        comp_results = evaluate_comparison(
+            scenarios=target_scenarios,
+            controllers=args.controllers,
+            max_steps=args.max_steps,
+            gui=args.gui,
+            output_dir=args.output_dir,
+            data_dir=args.data_dir,
+        )
+
+        table_md = generate_algorithm_comparison_markdown(comp_results)
+        print("\n" + table_md + "\n")
+
+        json_file = os.path.join(args.output_dir, "comparison_evaluation.json")
+        chart_file = os.path.join(args.output_dir, "algorithm_comparison.png")
+        report_file = os.path.join(args.output_dir, "COMPARISON_REPORT.md")
+
+        print("-----------------------------------------------------------------")
+        print(f"[✓] Đã xuất tệp kết quả JSON:  {json_file}")
+        print(f"[✓] Đã xuất biểu đồ trực quan: {chart_file}")
+        print(f"[✓] Đã xuất báo cáo Markdown:  {report_file}")
+        print("=================================================================\n")
+        return 0
+
     if args.all:
         print("=================================================================")
-        print(" BẮT ĐẦU ĐÁNH GIÁ ĐA BẢN ĐỒ VỚI THUẬT TOÁN FIXED TIME (30S GREEN)")
+        print(f" BẮT ĐẦU ĐÁNH GIÁ ĐA BẢN ĐỒ VỚI THUẬT TOÁN: {args.controller.upper()}")
         print(f" Danh sách bản đồ: {', '.join(DEFAULT_SCENARIOS)}")
         print(f" Max steps: {args.max_steps}s | Chế độ GUI: {args.gui}")
         print("=================================================================\n")
@@ -116,26 +168,24 @@ def main(argv: Optional[List[str]] = None) -> int:
             gui=args.gui,
             output_dir=args.output_dir,
             data_dir=args.data_dir,
+            controller_type=args.controller,
         )
 
         # Print Markdown table to stdout
         table_md = generate_comparison_markdown(results)
         print("\n" + table_md + "\n")
 
-        json_file = os.path.join(args.output_dir, "fixed_time_evaluation.json")
-        chart_file = os.path.join(args.output_dir, "fixed_time_metrics.png")
-        report_file = os.path.join(args.output_dir, "REPORT.md")
-
+        json_file = os.path.join(args.output_dir, f"{args.controller}_evaluation.json")
+        chart_file = os.path.join(args.output_dir, f"{args.controller}_metrics.png")
         print("-----------------------------------------------------------------")
         print(f"[✓] Đã xuất tệp kết quả JSON:  {json_file}")
         print(f"[✓] Đã xuất biểu đồ trực quan: {chart_file}")
-        print(f"[✓] Đã xuất báo cáo Markdown:  {report_file}")
         print("=================================================================\n")
         return 0
 
     if args.scenario:
         print("=================================================================")
-        print(f" BẮT ĐẦU ĐÁNH GIÁ KỊCH BẢN: {args.scenario}")
+        print(f" BẮT ĐẦU ĐÁNH GIÁ KỊCH BẢN: {args.scenario} (Thuật toán: {args.controller})")
         print(f" Max steps: {args.max_steps}s | Chế độ GUI: {args.gui}")
         print("=================================================================\n")
 
@@ -146,21 +196,20 @@ def main(argv: Optional[List[str]] = None) -> int:
                 gui=args.gui,
                 output_dir=args.output_dir,
                 data_dir=args.data_dir,
+                controller_type=args.controller,
             )
         except Exception as err:
             print(f"[X] Lỗi trong quá trình mô phỏng {args.scenario}: {err}", file=sys.stderr)
             return 2
 
-        # Wrap in dictionary for reporting
         results = {args.scenario: res}
         table_md = generate_comparison_markdown(results)
         print("\n" + table_md + "\n")
 
-        # Save single or update json
-        json_file = os.path.join(args.output_dir, "fixed_time_evaluation.json")
+        json_file = os.path.join(args.output_dir, f"{args.controller}_evaluation.json")
         export_evaluation_json(results, output_path=json_file)
 
-        chart_file = os.path.join(args.output_dir, f"{args.scenario}_metrics.png")
+        chart_file = os.path.join(args.output_dir, f"{args.scenario}_{args.controller}_metrics.png")
         plot_comparison_chart(results, output_path=chart_file)
 
         print("-----------------------------------------------------------------")

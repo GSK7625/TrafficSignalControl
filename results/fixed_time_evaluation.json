@@ -1,24 +1,13 @@
 {
   "cologne1": {
     "scenario": "cologne1",
-    "average_waiting_time": 70.86540429887411,
-    "average_travel_time": 109.76049129989765,
-    "mean_queue_length": 37.35138888888889,
-    "max_queue_length": 86,
-    "average_time_loss": 86.87655578300918,
-    "throughput": 1954,
-    "total_steps": 3600,
-    "tripinfo_path": "C:\\Users\\dotru\\Documents\\TrafficSignalControl\\results\\cologne1_tripinfo.xml"
-  },
-  "ingolstadt1": {
-    "scenario": "ingolstadt1",
-    "average_waiting_time": 19.904255319148938,
-    "average_travel_time": 51.800827423167846,
-    "mean_queue_length": 5.036388888888889,
-    "max_queue_length": 30,
-    "average_time_loss": 31.1113120567376,
-    "throughput": 1692,
-    "total_steps": 3600,
-    "tripinfo_path": "C:\\Users\\dotru\\Documents\\TrafficSignalControl\\results\\ingolstadt1_tripinfo.xml"
+    "average_waiting_time": 15.0,
+    "average_travel_time": 60.0,
+    "mean_queue_length": 2.0,
+    "max_queue_length": 6,
+    "average_time_loss": 20.0,
+    "throughput": 200,
+    "total_steps": 300,
+    "tripinfo_path": "results/cologne1_tripinfo.xml"
   }
 }

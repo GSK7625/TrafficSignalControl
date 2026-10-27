@@ -210,14 +210,38 @@ class QLearningController:
             return val
 
     def choose_action(self, state: Tuple[int, ...], explore: bool = False) -> int:
-        """Selects next action according to epsilon-greedy policy."""
+        """Selects next action according to epsilon-greedy policy.
+
+        In greedy mode (explore=False):
+        - If Q-values have a strict maximum, chooses that action.
+        - If tied including current phase, prioritizes keeping current phase to avoid yellow lost time.
+        - If state is unvisited (all values equal), serves queues rationally: stays on current phase
+          if current phase has queued vehicles, otherwise serves the phase with highest queue.
+        """
         if explore and random.random() < self.epsilon:
             return random.randint(0, self.num_phases - 1)
 
         q_vals = self._get_q_entry(state)
         max_q = max(q_vals)
+        min_q = min(q_vals)
+
+        # Unvisited state fallback
+        if max_q == min_q:
+            if not explore:
+                queues = self.calculate_phase_queues()
+                curr_q = queues.get(self._current_phase_idx, 0.0)
+                if curr_q > 0:
+                    return self._current_phase_idx
+                # If current phase is empty, switch to phase with highest queue
+                if queues:
+                    return max(range(self.num_phases), key=lambda p: queues.get(p, 0.0))
+                return self._current_phase_idx
+            return random.randint(0, self.num_phases - 1)
+
         candidates = [a for a, q in enumerate(q_vals) if q == max_q]
-        return candidates[0] if len(candidates) == 1 else random.choice(candidates)
+        if self._current_phase_idx in candidates:
+            return self._current_phase_idx
+        return candidates[0]
 
     def update_q(
         self,
