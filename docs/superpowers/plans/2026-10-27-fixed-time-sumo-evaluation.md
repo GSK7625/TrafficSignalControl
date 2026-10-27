@@ -38,21 +38,21 @@
 - Consumes: SUMO net files tại `data/cologne1/cologne1.net.xml` và `data/ingolstadt1/ingolstadt1.net.xml`.
 - Produces: `inspect_scenario(scenario_name: str) -> Dict[str, Any]` trả về thông tin TLS ID, danh sách các pha xanh (green phases), các pha vàng (yellow phases) và các làn vào (incoming lanes).
 
-- [ ] **Step 1: Viết test cho data_inspector**
+- [x] **Step 1: Viết test cho data_inspector**
   Kiểm tra hàm `inspect_scenario` đọc đúng TLS ID của `cologne1` (`cluster_357187_359543`) và `ingolstadt1` (`cluster_274083968_cluster_1200364014_1200364088`), trích xuất được danh sách pha xanh.
 
-- [ ] **Step 2: Chạy test để xác nhận FAIL**
+- [x] **Step 2: Chạy test để xác nhận FAIL**
   Run: `pytest tests/test_data_inspector.py -v`
   Expected: FAIL (ModuleNotFoundError / function not defined).
 
-- [ ] **Step 3: Cài đặt `src/data_inspector.py`**
+- [x] **Step 3: Cài đặt `src/data_inspector.py`**
   Sử dụng `sumolib` và XML parser trích xuất cấu trúc tín hiệu đèn và các làn vào của nút giao.
 
-- [ ] **Step 4: Chạy test để xác nhận PASS**
+- [x] **Step 4: Chạy test để xác nhận PASS**
   Run: `pytest tests/test_data_inspector.py -v`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add src/data_inspector.py tests/test_data_inspector.py`
   `git commit -m "feat: add data_inspector for SUMO network and TLS phase analysis"`
 
