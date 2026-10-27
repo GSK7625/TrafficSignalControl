@@ -109,21 +109,21 @@
     4. `average_time_loss` (s)
     5. `throughput` (completed vehicles)
 
-- [ ] **Step 1: Viết test cho MetricsCollector**
+- [x] **Step 1: Viết test cho MetricsCollector**
   Kiểm tra tính toán trung bình hàng đợi, đọc file TripInfo mẫu XML và trích xuất đúng `waitingTime`, `timeLoss`, `duration`, và số xe hoàn thành (`throughput`).
 
-- [ ] **Step 2: Chạy test để xác nhận FAIL**
+- [x] **Step 2: Chạy test để xác nhận FAIL**
   Run: `pytest tests/test_metrics.py -v`
   Expected: FAIL.
 
-- [ ] **Step 3: Cài đặt `MetricsCollector` trong `src/metrics.py`**
+- [x] **Step 3: Cài đặt `MetricsCollector` trong `src/metrics.py`**
   Triển khai các phương thức ghi nhận từng bước, phân tích tệp XML tripinfo, và tổng hợp thống kê.
 
-- [ ] **Step 4: Chạy test để xác nhận PASS**
+- [x] **Step 4: Chạy test để xác nhận PASS**
   Run: `pytest tests/test_metrics.py -v`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add src/metrics.py tests/test_metrics.py`
   `git commit -m "feat: implement MetricsCollector for 5 traffic performance metrics"`
 

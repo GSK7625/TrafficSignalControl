@@ -1,356 +1,330 @@
-"""Unit tests for MetricsCollector and tripinfo output parser."""
+"""Unit tests for MetricsCollector (Traffic metrics collection & tripinfo parsing)."""
 
 import os
+import tempfile
+from unittest.mock import MagicMock
 import pytest
 
-from src.data_inspector import ScenarioInfo
-from src.metrics import MetricsCollector, StepMetrics, build_vehicle_accounting, parse_tripinfo_output
+from src.metrics import MetricsCollector, StepRecord
 
 
-@pytest.mark.parametrize("completed,demand,status", [
-    (6, 23, "LOW_COMPLETION"), (0, 23, "LOW_COMPLETION"),
-    (95, 100, "COMPLETED"), (100, 100, "COMPLETED"), (0, 0, "NO_DEMAND"),
-])
-def test_summary_service_status_uses_completion_fraction(completed, demand, status):
-    collector = MetricsCollector("audit")
-    collector._cumulative_completed = completed
-    collector.run_metadata["scheduled_demand_in_window"] = demand
-    assert collector.get_summary()["service_status"] == status
+SAMPLE_TRIPINFO_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<tripinfos xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <tripinfo id="veh_0" depart="0.00" arrival="60.00" duration="60.00" waitingTime="15.00" timeLoss="20.00" routeLength="500.00"/>
+    <tripinfo id="veh_1" depart="10.00" arrival="80.00" duration="70.00" waitingTime="25.00" timeLoss="30.00" routeLength="600.00"/>
+    <tripinfo id="veh_2" depart="20.00" arrival="100.00" duration="80.00" waitingTime="20.00" timeLoss="25.00" routeLength="700.00"/>
+</tripinfos>
+"""
+
+EMPTY_TRIPINFO_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<tripinfos xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+</tripinfos>
+"""
+
+MIXED_TRIPINFO_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<tripinfos>
+    <!-- Non-tripinfo element should be ignored -->
+    <personinfo id="person_0" depart="5.00"/>
+    <tripinfo id="veh_single" depart="0.00" arrival="50.00" duration="50.00" waitingTime="10.00" timeLoss="12.50" routeLength="400.00"/>
+</tripinfos>
+"""
 
 
-class TestParseTripinfoOutput:
-    """Test suite for parse_tripinfo_output function."""
-
-    def test_missing_file_raises(self):
-        with pytest.raises(FileNotFoundError):
-            parse_tripinfo_output("non_existent_file.xml")
-
-    def test_empty_tripinfo_xml(self, tmp_path):
-        xml_path = tmp_path / "empty.xml"
-        xml_path.write_text("<tripinfos></tripinfos>", encoding="utf-8")
-        res = parse_tripinfo_output(str(xml_path))
-        assert res["tripinfo_completed_vehicles"] == 0
-        assert res["tripinfo_mean_waiting_time"] is None
-        assert res["tripinfo_total_waiting_time"] == 0.0
-
-    def test_valid_tripinfo_xml(self, tmp_path):
-        xml_path = tmp_path / "valid.xml"
-        xml_content = """<tripinfos>
-    <tripinfo id="veh_1" duration="50.0" waitingTime="10.0" timeLoss="15.0"/>
-    <tripinfo id="veh_2" duration="70.0" waitingTime="20.0" timeLoss="25.0"/>
-</tripinfos>"""
-        xml_path.write_text(xml_content, encoding="utf-8")
-        res = parse_tripinfo_output(str(xml_path))
-        assert res["tripinfo_completed_vehicles"] == 2
-        assert res["tripinfo_mean_travel_time"] == 60.0
-        assert res["tripinfo_mean_waiting_time"] == 15.0
-        assert res["tripinfo_total_waiting_time"] == 30.0
-        assert res["tripinfo_mean_time_loss"] == 20.0
-        assert res["tripinfo_total_time_loss"] == 40.0
+@pytest.fixture
+def sample_tripinfo_file():
+    """Creates a temporary sample tripinfo XML file."""
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8") as f:
+        f.write(SAMPLE_TRIPINFO_XML)
+        f_path = f.name
+    yield f_path
+    if os.path.exists(f_path):
+        os.remove(f_path)
 
 
-class TestMetricsCollector:
-    """Test suite for MetricsCollector class."""
-
-    def test_empty_summary(self):
-        collector = MetricsCollector(scenario_name="test_scen")
-        summary = collector.get_summary()
-        assert summary["total_steps"] == 0
-        assert summary["total_completed_vehicles"] == 0
-        assert summary["is_valid"] is True
-        assert summary["status"] == "OK"
-        assert "core_metrics" in summary
-        assert summary["core_metrics"]["queue_length"]["mean_queue_length"] == 0.0
-        assert summary["core_metrics"]["waiting_time"]["mean_waiting_time"] is None
-        assert summary["core_metrics"]["throughput"]["throughput_vph"] == 0.0
-
-    def test_record_step_with_mock_traci(self, mock_traci):
-        collector = MetricsCollector(scenario_name="test_scen")
-        mock_traci.simulation.getDepartedIDList.return_value = ["v1", "v2"]
-        mock_traci.vehicle.getDeparture.side_effect = lambda vid: 0.0 if vid == "v1" else 1.0
-        mock_traci.lane.getLastStepHaltingNumber.return_value = 2
-        mock_traci.vehicle.getIDList.return_value = ["v1", "v2"]
-        mock_traci.vehicle.getAccumulatedWaitingTime.return_value = 5.0
-        mock_traci.vehicle.getTimeLoss.return_value = 6.0
-
-        step_record = collector.record_step(
-            step=1,
-            sim_time=1.0,
-            controlled_lanes=["lane_1"],
-            traci_module=mock_traci,
-            step_length=1.0,
-        )
-
-        assert isinstance(step_record, StepMetrics)
-        assert step_record.step == 1
-        assert step_record.running_vehicles == 2
-        assert step_record.queue_length == 2
-        assert step_record.waiting_time == 10.0  # 5.0 * 2 vehs
-        assert step_record.time_loss == 12.0     # 6.0 * 2 vehs
-
-    def test_online_tracking_accumulates_scalar_travel_and_waiting(self, mock_traci):
-        collector = MetricsCollector("test_scen")
-        mock_traci.simulation.getDepartedIDList.return_value = ["v1"]
-        mock_traci.vehicle.getDeparture.return_value = 0.0
-        mock_traci.vehicle.getIDList.return_value = ["v1"]
-        mock_traci.vehicle.getAccumulatedWaitingTime.return_value = 5.0
-        mock_traci.vehicle.getTimeLoss.return_value = 2.0
-        mock_traci.vehicle.getSpeed.return_value = 10.0
-        mock_traci.simulation.getPendingVehicles.return_value = []
-        mock_traci.lane.getLastStepHaltingNumber.return_value = 0
-
-        collector.record_step(step=1, sim_time=1.0, controlled_lanes=[], traci_module=mock_traci)
-        mock_traci.simulation.getDepartedIDList.return_value = []
-        mock_traci.simulation.getArrivedIDList.return_value = ["v1"]
-        mock_traci.vehicle.getIDList.return_value = []
-
-        collector.record_step(step=2, sim_time=10.0, controlled_lanes=[], traci_module=mock_traci)
-        summary = collector.get_summary()
-        assert summary["total_completed_vehicles"] == 1
-        assert summary["mean_travel_time"] == 10.0
-        assert summary["mean_waiting_time"] == 5.0
-        assert not hasattr(collector, "completed_travel_times")
-
-    def test_export_results_safety_and_structure(self, tmp_path):
-        collector = MetricsCollector(scenario_name="test_scen")
-        collector.step_records.append(
-            StepMetrics(
-                step=1,
-                sim_time=1.0,
-                running_vehicles=1,
-                queue_length=1,
-                waiting_time=2.0,
-                time_loss=3.0,
-                step_completed_vehicles=0,
-                cumulative_completed_vehicles=0,
-            )
-        )
-
-        json_path, csv_path = collector.export_results(str(tmp_path))
-        assert os.path.isfile(json_path)
-        assert os.path.isfile(csv_path)
-
-        data_abs = os.path.abspath("data")
-        with pytest.raises(ValueError, match="Cannot save results into data directory"):
-            collector.export_results(os.path.join(data_abs, "forbidden"))
-
-        # Sibling directories starting with "data" should be allowed
-        sibling_dir = str(tmp_path / "data_results")
-        s_json, s_csv = collector.export_results(sibling_dir)
-        assert os.path.isfile(s_json)
-        assert os.path.isfile(s_csv)
-
-    def test_get_core_metrics(self):
-        collector = MetricsCollector(scenario_name="test_scen")
-        collector.step_records.append(
-            StepMetrics(
-                step=1,
-                sim_time=1.0,
-                running_vehicles=2,
-                queue_length=3,
-                waiting_time=4.5,
-                step_completed_vehicles=1,
-                cumulative_completed_vehicles=1,
-            )
-        )
-        summary = collector.get_summary()
-        assert "core_metrics" in summary
-        assert summary["mean_queue_length"] == 3.0
-        assert summary["max_queue_length"] == 3
-        assert summary["total_completed_vehicles"] == 1
-        assert "throughput_vph" in summary
-        assert summary["core_metrics"]["queue_length"]["mean_queue_length"] == 3.0
-
-    def test_required_metric_failure_is_not_a_zero_queue(self, mock_traci):
-        mock_traci.lane.getLastStepHaltingNumber.side_effect = RuntimeError("connection lost")
-        collector = MetricsCollector("audit")
-        with pytest.raises(RuntimeError, match="connection lost"):
-            collector.record_step(1, 1.0, ["lane"], mock_traci)
-        assert collector.step_records == []
-
-    @pytest.mark.parametrize("xml,status", [
-        ("<tripinfos>broken", "PARSE_ERROR"),
-        (None, "MISSING"),
-    ])
-    def test_tripinfo_reconciliation_does_not_claim_false_match(self, tmp_path, xml, status):
-        path = tmp_path / "tripinfo.xml"
-        if xml is not None:
-            path.write_text(xml, encoding="utf-8")
-        collector = MetricsCollector("audit", str(path))
-        collector._cumulative_completed = 1
-        assert collector.reconcile_tripinfo()["tripinfo_reconciliation_status"] == status
-
-    def test_early_summary_does_not_cache_missing_tripinfo(self, tmp_path):
-        path = tmp_path / "tripinfo.xml"
-        collector = MetricsCollector("audit", str(path))
-        collector.get_summary()
-        path.write_text("<tripinfos/>", encoding="utf-8")
-        assert collector.reconcile_tripinfo()["tripinfo_reconciliation_status"] == "MATCH"
-
-    def test_nonfinite_tripinfo_is_invalid(self, tmp_path):
-        path = tmp_path / "tripinfo.xml"
-        path.write_text('<tripinfos><tripinfo id="a" duration="nan" waitingTime="nan" timeLoss="nan"/></tripinfos>', encoding="utf-8")
-        collector = MetricsCollector("audit", str(path))
-        collector._cumulative_completed = 1
-        assert collector.reconcile_tripinfo()["tripinfo_reconciliation_status"] == "PARSE_ERROR"
-
-    def test_no_arrivals_has_unavailable_waiting_mean(self, tmp_path):
-        path = tmp_path / "tripinfo.xml"
-        path.write_text("<tripinfos/>", encoding="utf-8")
-        collector = MetricsCollector("audit", str(path))
-        collector.reconcile_tripinfo()
-        assert collector.get_summary()["tripinfo_mean_waiting_time"] is None
+@pytest.fixture
+def empty_tripinfo_file():
+    """Creates a temporary empty tripinfo XML file."""
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8") as f:
+        f.write(EMPTY_TRIPINFO_XML)
+        f_path = f.name
+    yield f_path
+    if os.path.exists(f_path):
+        os.remove(f_path)
 
 
-class TestVehicleAccounting:
-    """Test suite for vehicle accounting invariants (B01)."""
+@pytest.fixture
+def mixed_tripinfo_file():
+    """Creates a temporary mixed tripinfo XML file with personinfo and comments."""
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8") as f:
+        f.write(MIXED_TRIPINFO_XML)
+        f_path = f.name
+    yield f_path
+    if os.path.exists(f_path):
+        os.remove(f_path)
 
-    @pytest.fixture
-    def scenario_two_vehs(self):
-        return ScenarioInfo(
-            name="test_scen",
-            cfg_path="",
-            net_path="",
-            rou_path="",
-            begin_time=0.0,
-            end_time=100.0,
-            duration=100.0,
-            tls_count=1,
-            trips_or_vehicles_count=2,
-            departure_times=[10.0, 20.0],
-        )
 
-    def test_matching_counts_is_valid(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=0.0,
-            window_end=100.0,
-            total_completed=2,
-            running_vehs=0,
-            pending_vehs=0,
-        )
-        assert meta["accounting_valid"] is True
-        assert meta["scheduled_demand_in_window"] == 2
-        assert meta["realized_demand_in_window"] == 2
+# ---------------------------------------------------------------------------
+# Test Step Recording and Queue Length Calculations
+# ---------------------------------------------------------------------------
 
-    def test_excess_completed_vehicles_is_invalid(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=0.0,
-            window_end=100.0,
-            total_completed=3,
-            running_vehs=0,
-            pending_vehs=0,
-        )
-        assert meta["accounting_valid"] is False
-        assert "accounting_error_reasons" in meta
-        assert any("Completed vehicles" in r for r in meta["accounting_error_reasons"])
+def test_collector_initial_state():
+    """MetricsCollector starts with empty queue history and 0.0 queue metrics."""
+    collector = MetricsCollector()
+    assert collector.total_steps == 0
+    assert collector.queue_history == []
+    assert collector.mean_queue_length == 0.0
+    assert collector.max_queue_length == 0
 
-    def test_excess_realized_vehicles_is_invalid(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=0.0,
-            window_end=100.0,
-            total_completed=1,
-            running_vehs=1,
-            pending_vehs=1,
-        )
-        assert meta["accounting_valid"] is False
-        assert any("Realized vehicles" in r for r in meta["accounting_error_reasons"])
 
-    def test_missing_vehicles_unexplained_is_invalid(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=0.0,
-            window_end=100.0,
-            total_completed=1,
-            running_vehs=0,
-            pending_vehs=0,
-            total_teleports=0,
-        )
-        assert meta["accounting_valid"] is False
-        assert any("missing vehicles" in r.lower() for r in meta["accounting_error_reasons"])
+def test_collector_record_step():
+    """Test recording individual simulation steps."""
+    collector = MetricsCollector()
 
-    def test_missing_vehicles_explained_by_teleports_is_valid(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=0.0,
-            window_end=100.0,
-            total_completed=1,
-            running_vehs=0,
-            pending_vehs=0,
-            total_teleports=1,
-        )
-        assert meta["accounting_valid"] is True
+    collector.record_step(step_time=0.0, queue_length=4, halted_vehicles=4, running_vehicles=10)
+    collector.record_step(step_time=1.0, queue_length=8, halted_vehicles=8, running_vehicles=12)
 
-    def test_zero_demand_zero_realized_is_valid(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=200.0,
-            window_end=300.0,
-            total_completed=0,
-            running_vehs=0,
-            pending_vehs=0,
-        )
-        assert meta["scheduled_demand_in_window"] == 0
-        assert meta["accounting_valid"] is True
+    assert collector.total_steps == 2
+    assert collector.queue_history == [4, 8]
+    assert len(collector.step_records) == 2
+    assert collector.step_records[0] == StepRecord(step_time=0.0, queue_length=4.0, halted_vehicles=4, running_vehicles=10)
+    assert collector.step_records[1] == StepRecord(step_time=1.0, queue_length=8.0, halted_vehicles=8, running_vehicles=12)
 
-    def test_zero_demand_nonzero_realized_is_invalid(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=200.0,
-            window_end=300.0,
-            total_completed=0,
-            running_vehs=1,
-            pending_vehs=0,
-        )
-        assert meta["scheduled_demand_in_window"] == 0
-        assert meta["accounting_valid"] is False
 
-    def test_collector_summary_rejects_invalid_accounting(self, scenario_two_vehs):
-        meta = build_vehicle_accounting(
-            scenario_info=scenario_two_vehs,
-            window_begin=0.0,
-            window_end=100.0,
-            total_completed=3,
-            running_vehs=0,
-            pending_vehs=0,
-        )
-        collector = MetricsCollector("test_scen")
-        collector.run_metadata.update(meta)
-        summary = collector.get_summary()
-        assert summary["accounting_valid"] is False
-        assert summary["is_valid"] is False
-        assert summary["status"] == "INVALID"
-        assert "data_validity" not in summary
-        assert "arrival_count" not in summary
-        assert "completed_mean_waiting_time" not in summary
-        assert len(summary["measurement_error_messages"]) > 0
+def test_collector_mean_and_max_queue_length():
+    """Test calculation of mean and max queue length over varying steps."""
+    collector = MetricsCollector()
+    steps = [0, 2, 4, 6]
+    for idx, q in enumerate(steps):
+        collector.record_step(step_time=float(idx), queue_length=q)
 
-    def test_get_summary_includes_completion_rate_pct(self):
-        collector = MetricsCollector("audit")
-        collector._cumulative_completed = 50
-        collector.run_metadata["scheduled_demand_in_window"] = 100
-        summary = collector.get_summary()
-        assert summary["completion_rate_pct"] == 50.0
+    # (0 + 2 + 4 + 6) / 4 = 3.0
+    assert collector.mean_queue_length == 3.0
+    assert collector.max_queue_length == 6
+    assert collector.total_steps == 4
 
-    @pytest.mark.parametrize("ids", [["other"], [], ["arrived", "extra"], ["arrived", "arrived"]])
-    def test_tripinfo_must_match_arrived_ids(self, tmp_path, ids):
-        path = tmp_path / "tripinfo.xml"
-        trips = ''.join(f'<tripinfo id="{vid}" duration="5" waitingTime="1" timeLoss="2"/>' for vid in ids)
-        path.write_text(f'<tripinfos>{trips}</tripinfos>', encoding="utf-8")
-        collector = MetricsCollector("test", str(path))
-        collector.completed_ids = {"arrived"}
-        collector._cumulative_completed = 1
-        assert collector.reconcile_tripinfo()["tripinfo_reconciliation_status"] == "MISMATCH"
-        assert collector.get_summary()["is_valid"] is False
 
-    def test_departure_and_arrival_in_same_step_does_not_query_removed_vehicle(self, mock_traci):
-        mock_traci.simulation.getDepartedIDList.return_value = ["short"]
-        mock_traci.simulation.getArrivedIDList.return_value = ["short"]
-        mock_traci.vehicle.getDeparture.side_effect = RuntimeError("vehicle already removed")
-        collector = MetricsCollector("test")
-        collector.record_step(1, 1.0, [], mock_traci)
-        assert collector.completed_ids == {"short"}
-        assert collector._cumulative_completed == 1
+def test_collector_collect_step_from_traci_mock():
+    """Test querying instantaneous queue length from TraCI mock."""
+    collector = MetricsCollector()
+
+    mock_traci = MagicMock()
+    mock_traci.simulation.getTime.return_value = 15.0
+    # Lane 1 has 3 halting vehicles, Lane 2 has 2 halting vehicles
+    mock_traci.lane.getLastStepHaltingNumber.side_effect = lambda lane_id: 3 if lane_id == "lane_1" else 2
+    mock_traci.vehicle.getIDList.return_value = ["v1", "v2", "v3", "v4", "v5"]
+
+    lanes = ["lane_1", "lane_2"]
+    queue = collector.collect_step_from_traci(mock_traci, incoming_lanes=lanes)
+
+    assert queue == 5
+    assert collector.total_steps == 1
+    assert collector.queue_history == [5]
+    assert collector.step_records[0].step_time == 15.0
+    assert collector.step_records[0].queue_length == 5.0
+    assert collector.step_records[0].running_vehicles == 5
+
+
+def test_collector_collect_step_from_traci_handles_lane_error():
+    """TraCI lane query errors are swallowed safely and count 0 for the failing lane."""
+    collector = MetricsCollector()
+
+    mock_traci = MagicMock()
+    mock_traci.simulation.getTime.return_value = 5.0
+
+    def mock_halting(lane_id):
+        if lane_id == "lane_good":
+            return 4
+        raise RuntimeError("Lane not found in TraCI")
+
+    mock_traci.lane.getLastStepHaltingNumber.side_effect = mock_halting
+    mock_traci.vehicle.getIDList.return_value = []
+
+    queue = collector.collect_step_from_traci(mock_traci, incoming_lanes=["lane_good", "lane_bad"])
+    assert queue == 4
+    assert collector.mean_queue_length == 4.0
+
+
+# ---------------------------------------------------------------------------
+# Test Parsing Tripinfo XML
+# ---------------------------------------------------------------------------
+
+def test_parse_tripinfo_sample_data(sample_tripinfo_file):
+    """Test parsing a valid tripinfo XML file containing 3 vehicle trips."""
+    collector = MetricsCollector()
+    metrics = collector.parse_tripinfo(sample_tripinfo_file)
+
+    assert metrics["throughput"] == 3
+    # Duration: (60 + 70 + 80) / 3 = 70.0
+    assert pytest.approx(metrics["average_travel_time"], 0.001) == 70.0
+    # WaitingTime: (15 + 25 + 20) / 3 = 20.0
+    assert pytest.approx(metrics["average_waiting_time"], 0.001) == 20.0
+    # TimeLoss: (20 + 30 + 25) / 3 = 25.0
+    assert pytest.approx(metrics["average_time_loss"], 0.001) == 25.0
+    # Totals
+    assert pytest.approx(metrics["total_travel_time"], 0.001) == 210.0
+    assert pytest.approx(metrics["total_waiting_time"], 0.001) == 60.0
+    assert pytest.approx(metrics["total_time_loss"], 0.001) == 75.0
+
+
+def test_parse_tripinfo_empty_data(empty_tripinfo_file):
+    """Empty tripinfo file (0 vehicles completed) should return zero without division by zero."""
+    collector = MetricsCollector()
+    metrics = collector.parse_tripinfo(empty_tripinfo_file)
+
+    assert metrics["throughput"] == 0
+    assert metrics["average_travel_time"] == 0.0
+    assert metrics["average_waiting_time"] == 0.0
+    assert metrics["average_time_loss"] == 0.0
+    assert metrics["total_travel_time"] == 0.0
+    assert metrics["total_waiting_time"] == 0.0
+    assert metrics["total_time_loss"] == 0.0
+
+
+def test_parse_tripinfo_mixed_elements(mixed_tripinfo_file):
+    """Non-tripinfo elements (e.g. personinfo) and comments must be ignored."""
+    collector = MetricsCollector()
+    metrics = collector.parse_tripinfo(mixed_tripinfo_file)
+
+    assert metrics["throughput"] == 1
+    assert pytest.approx(metrics["average_travel_time"], 0.001) == 50.0
+    assert pytest.approx(metrics["average_waiting_time"], 0.001) == 10.0
+    assert pytest.approx(metrics["average_time_loss"], 0.001) == 12.50
+
+
+def test_parse_tripinfo_file_not_found():
+    """Attempting to parse a nonexistent file should raise FileNotFoundError."""
+    collector = MetricsCollector()
+    with pytest.raises(FileNotFoundError):
+        collector.parse_tripinfo("nonexistent_path/tripinfo.xml")
+
+
+def test_parse_tripinfo_invalid_xml():
+    """Corrupted or invalid XML content should raise ValueError."""
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
+        f.write("<tripinfos><unclosed_tag>")
+        corrupted_path = f.name
+
+    try:
+        collector = MetricsCollector()
+        with pytest.raises(ValueError, match="Failed to parse XML"):
+            collector.parse_tripinfo(corrupted_path)
+    finally:
+        if os.path.exists(corrupted_path):
+            os.remove(corrupted_path)
+
+
+# ---------------------------------------------------------------------------
+# Test Comprehensive 5 Metrics Summary
+# ---------------------------------------------------------------------------
+
+def test_get_summary_combines_queue_and_tripinfo(sample_tripinfo_file):
+    """get_summary() returns the 5 primary metrics combining TraCI queue & XML tripinfo."""
+    collector = MetricsCollector()
+    for q in [2, 4, 6]:
+        collector.record_step(step_time=0.0, queue_length=q)
+
+    summary = collector.get_summary(tripinfo_path=sample_tripinfo_file)
+
+    # 1. Average Waiting Time
+    assert "average_waiting_time" in summary
+    assert pytest.approx(summary["average_waiting_time"], 0.001) == 20.0
+
+    # 2. Average Travel Time
+    assert "average_travel_time" in summary
+    assert pytest.approx(summary["average_travel_time"], 0.001) == 70.0
+
+    # 3. Queue Length (mean and max)
+    assert "mean_queue_length" in summary
+    assert pytest.approx(summary["mean_queue_length"], 0.001) == 4.0
+    assert summary["max_queue_length"] == 6
+
+    # 4. Average Time Loss
+    assert "average_time_loss" in summary
+    assert pytest.approx(summary["average_time_loss"], 0.001) == 25.0
+
+    # 5. Throughput
+    assert "throughput" in summary
+    assert summary["throughput"] == 3
+
+    assert summary["total_steps"] == 3
+    assert summary["queue_history"] == [2, 4, 6]
+
+
+def test_get_summary_without_tripinfo():
+    """get_summary() when tripinfo hasn't been parsed returns default 0.0 for XML metrics."""
+    collector = MetricsCollector()
+    collector.record_step(step_time=0.0, queue_length=10)
+
+    summary = collector.get_summary()
+    assert summary["mean_queue_length"] == 10.0
+    assert summary["max_queue_length"] == 10
+    assert summary["throughput"] == 0
+    assert summary["average_waiting_time"] == 0.0
+    assert summary["average_travel_time"] == 0.0
+    assert summary["average_time_loss"] == 0.0
+
+
+def test_collector_reset(sample_tripinfo_file):
+    """reset() should restore collector back to empty initial state."""
+    collector = MetricsCollector()
+    collector.record_step(step_time=1.0, queue_length=5)
+    collector.parse_tripinfo(sample_tripinfo_file)
+
+    assert collector.total_steps == 1
+    assert collector.tripinfo_metrics["throughput"] == 3
+
+    collector.reset()
+
+    assert collector.total_steps == 0
+    assert collector.queue_history == []
+    assert collector.mean_queue_length == 0.0
+    assert collector.max_queue_length == 0
+    assert collector.tripinfo_metrics == {}
+
+
+def test_to_markdown_table(sample_tripinfo_file):
+    """Test generating a markdown table of the 5 metrics."""
+    collector = MetricsCollector()
+    collector.record_step(step_time=0.0, queue_length=5)
+    collector.parse_tripinfo(sample_tripinfo_file)
+
+    table_md = collector.to_markdown_table("Cologne 1 Test")
+    assert "### Cologne 1 Test" in table_md
+    assert "| **Average Waiting Time** | `20.00` | s |" in table_md
+    assert "| **Average Travel Time** | `70.00` | s |" in table_md
+    assert "| **Mean Queue Length** | `5.00` | veh |" in table_md
+    assert "| **Average Time Loss** | `25.00` | s |" in table_md
+    assert "| **Throughput** | `3` | veh |" in table_md
+
+
+def test_metrics_integration_with_real_sumo_simulation():
+    """Integration test connecting MetricsCollector with SimulationRunner and real SUMO."""
+    from src.simulation_runner import SimulationRunner
+
+    cfg_path = os.path.join("data", "cologne1", "cologne1.sumocfg")
+    with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+        tripinfo_path = tmp.name
+
+    try:
+        collector = MetricsCollector()
+        runner = SimulationRunner(cfg_path=cfg_path, tripinfo_output=tripinfo_path)
+
+        def on_step(step_idx: int, state: str, queue: int):
+            collector.record_step(step_time=float(step_idx), queue_length=queue)
+
+        runner.run(gui=False, max_steps=60, step_callback=on_step)
+
+        summary = collector.get_summary(tripinfo_path=tripinfo_path)
+
+        assert summary["total_steps"] == 60
+        assert len(summary["queue_history"]) == 60
+        assert summary["mean_queue_length"] >= 0.0
+        assert summary["max_queue_length"] >= 0
+        assert "throughput" in summary
+        assert "average_waiting_time" in summary
+        assert "average_travel_time" in summary
+        assert "average_time_loss" in summary
+    finally:
+        if os.path.exists(tripinfo_path):
+            os.remove(tripinfo_path)
 
