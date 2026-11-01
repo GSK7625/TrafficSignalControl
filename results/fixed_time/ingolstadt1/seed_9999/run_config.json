@@ -1,0 +1,21 @@
+{
+  "scenario": "ingolstadt1",
+  "controller": "FixedTimeController",
+  "seed": 9999,
+  "green_time": 30.0,
+  "yellow_time": 3.0,
+  "all_red_time": 1.0,
+  "cycle_time": 102.0,
+  "begin_time": 57600.0,
+  "end_time": 61200.0,
+  "total_demand": 1716,
+  "incoming_lanes": [
+    "104010354_1",
+    "104010354_2",
+    "164051413_1",
+    "164051413_2",
+    "201963537#1_1",
+    "201963537#1_2",
+    "201963537#1_3"
+  ]
+}

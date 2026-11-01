@@ -1,74 +1,128 @@
-# TrafficSignalControl: So Sánh 3 Thuật Toán Điều Khiển Đèn Giao Thông (SUMO)
+# TrafficSignalControl: Đối Chuẩn 4 Thuật Toán Điều Khiển Đèn Giao Thông (SUMO)
 
-Dự án đối chuẩn 3 thuật toán điều khiển tín hiệu đèn giao thông trên SUMO:
-1. **Fixed-Time** (Cố định - Baseline)
-2. **Max-Pressure** (Thích ứng theo áp suất hàng đợi)
-3. **Q-Learning** (Học tăng cường đa mục tiêu)
+Dự án nghiên cứu, triển khai và đối chuẩn thực nghiệm 4 thuật toán điều khiển tín hiệu đèn giao thông trên nền tảng mô phỏng **SUMO (Simulation of Urban MObility)**:
+1. **Fixed-Time (FT)**: Điều khiển thời gian cố định (Baseline chu kỳ 30s).
+2. **Max-Pressure (MP)**: Thuật toán thích ứng phân tán dựa trên chênh lệch áp lực hàng đợi các nhánh vào/ra.
+3. **Tabular Q-Learning (QL)**: Học tăng cường dạng bảng với không gian trạng thái rời rạc hóa.
+4. **Deep Q-Network (DQN)**: Học tăng cường sâu kết hợp mạng nơ-ron (PyTorch) xấp xỉ hàm giá trị Q liên tục.
+
+Mọi thuật toán đều được kiểm thử trên 2 bản đồ thực tế với cấu trúc khác biệt:
+- **Cologne1**: Nút giao 4 pha tại Cologne, lưu lượng cao (~1.970 xe/giờ).
+- **Ingolstadt1**: Nút giao 3 pha tại Ingolstadt, lưu lượng trung bình (~1.716 xe/giờ).
+
+Tất cả các thuật toán dùng chung cơ chế an toàn dọn nút giao: pha vàng ($Y=3$s) và pha đỏ toàn phần ($R_{\text{all}}=1$s).
 
 ---
 
-## 1. Kích hoạt môi trường
+## 1. Cài Đặt Môi Trường
+
+Yêu cầu máy tính đã cài đặt **SUMO** (đã thiết lập biến môi trường `SUMO_HOME`) và **Python 3.10+**.
 
 ```powershell
-# Kích hoạt virtualenv trên Windows PowerShell:
+# Kích hoạt môi trường ảo (Windows PowerShell)
 .\.venv\Scripts\Activate.ps1
 
-# Hoặc dùng trực tiếp qua đường dẫn:
-# .venv\Scripts\python ...
+# Cài đặt thư viện phụ thuộc
+pip install -r requirements.txt
 ```
 
 ---
 
-## 2. Bước 1: Huấn luyện Q-Learning đến khi ổn định
+## 2. Huấn Luyện Mô Hình RL (Q-Learning & DQN)
 
-Chạy huấn luyện tác tử Q-Learning với thời gian xanh tối thiểu `min_green = 20.0s` (khuyến nghị 35–45 episodes để Q-table hội tụ và epsilon giảm về sàn `0.05`):
+### 2.1. Huấn luyện Tabular Q-Learning (30 episodes)
+```powershell
+# Huấn luyện trên Cologne1
+python -m src.train_q_learning --scenario cologne1 --episodes 30
+
+# Huấn luyện trên Ingolstadt1
+python -m src.train_q_learning --scenario ingolstadt1 --episodes 30
+```
+Mô hình checkpoint tốt nhất được lưu tại: `models/q_learning/<scenario>_best.json`.
+
+### 2.2. Huấn luyện Deep Q-Network (DQN - 30 episodes)
+```powershell
+# Huấn luyện trên Cologne1
+python -m src.train_dqn --scenario cologne1 --episodes 30
+
+# Huấn luyện trên Ingolstadt1
+python -m src.train_dqn --scenario ingolstadt1 --episodes 30
+```
+Mô hình trọng số PyTorch được lưu tại: `models/dqn/<scenario>_best.pt`.
+
+---
+
+## 3. Chạy Đánh Giá Độc Lập (Evaluation qua 5 Seeds)
+
+Tập hạt giống đánh giá chuẩn: `[42, 101, 2024, 3407, 9999]`, mỗi lượt chạy trọn vẹn 3.600 giây (1 giờ mô phỏng).
 
 ```powershell
-python -m src.training.train_q_learning --scenario cologne1 --episodes 35 --min-green 20.0 --max-steps 3600
-```
+# 1. Đánh giá Fixed-Time
+python -m src.evaluate_fixed_time
 
-- Mô hình tốt nhất (Best checkpoint) sẽ được lưu tại:  
-  `models/q_learning/q_learning_cologne1_best.json`
+# 2. Đánh giá Max-Pressure
+python -m src.evaluate_max_pressure
+
+# 3. Đánh giá Tabular Q-Learning
+python -m src.evaluate_q_learning
+
+# 4. Đánh giá Deep Q-Network (DQN)
+python -m src.evaluate_dqn
+```
 
 ---
 
-## 3. Bước 2: Chạy so sánh 3 thuật toán trên nhiều Seed ngẫu nhiên
-
-Đánh giá cả 3 thuật toán trên cùng một tập seed ngẫu nhiên (`42 101 2024 777 999`):
+## 4. Tổng Hợp Kết Quả & Vẽ Biểu Đồ
 
 ```powershell
-python -m src.benchmark `
-  --scenario cologne1 `
-  --seeds 42 101 2024 777 999 `
-  --model models/q_learning/q_learning_cologne1_best.json `
-  --max-steps 3600 `
-  --output-dir results/benchmark
+# Tổng hợp bảng so sánh số liệu Mean ± Std và phần trăm cải thiện
+python -m src.consolidate_results
+
+# Vẽ biểu đồ trực quan hóa (lưu tại results/plots/)
+python -m src.plot_benchmark
 ```
 
-> **Ghi chú chạy thử nhanh (Quick test):**
-> ```powershell
-> python -m src.benchmark --scenario cologne1 --seeds 42 101 --max-steps 600
-> ```
+Báo cáo phân tích lý thuyết và thực nghiệm chi tiết xem tại: [`docs/benchmark_evaluation_report.md`](docs/benchmark_evaluation_report.md).
 
 ---
 
-## 4. Bước 3: Xem kết quả so sánh
-
-Kết quả được tự động tổng hợp thành báo cáo và bảng số liệu:
-- **Báo cáo Markdown:** `results/benchmark/benchmark_cologne1.md`
-- **File số liệu JSON:** `results/benchmark/benchmark_cologne1.json`
-
-Các chỉ số được tính toán $\text{Mean} \pm \text{Std}$ và $\%$ cải thiện so với Fixed-Time gồm:
-- Thời gian chờ trung bình (Average Waiting Time)
-- Thời gian di chuyển trung bình (Average Travel Time)
-- Độ dài hàng đợi trung bình (Mean Queue Length)
-- Tổn thất thời gian trung bình (Average Time Loss)
-- Thông lượng xe hoàn thành (Throughput)
-
----
-
-## 5. Chạy kiểm thử tự động (Unit Tests)
+## 5. Chạy Kiểm Thử Tự Động (Unit Tests)
 
 ```powershell
 pytest
+```
+Toàn bộ 22 bài kiểm thử (bao gồm đối chiếu tính tay, kiểm tra biên rỗng, kiểm thử an toàn chuyển pha và từng bộ điều khiển) sẽ được thực thi.
+
+---
+
+## 6. Cấu Trúc Thư Mục Dự Án
+
+```text
+TrafficSignalControl/
+├── AGENT.md                       # Nguyên tắc phát triển và chuẩn mực code
+├── docs/                          # Tài liệu đặc tả kỹ thuật và báo cáo benchmark
+│   ├── benchmark_evaluation_report.md
+│   ├── evaluation_specification.md
+│   ├── phase_specification.md
+│   └── q_learning_specification.md
+├── data/                          # Mạng lưới SUMO (cologne1, ingolstadt1)
+├── models/                        # Trọng số mô hình đã huấn luyện
+│   ├── dqn/                       # Trọng số PyTorch (.pt)
+│   └── q_learning/                # Bảng Q-table JSON (.json)
+├── results/                       # Kết quả thực nghiệm và biểu đồ
+│   ├── dqn/
+│   ├── fixed_time/
+│   ├── max_pressure/
+│   ├── plots/
+│   └── q_learning/
+├── src/                           # Mã nguồn chính
+│   ├── controllers/               # Các bộ điều khiển tín hiệu đèn
+│   ├── simulation_runner.py       # Vòng lặp mô phỏng tích hợp TraCI
+│   ├── metrics.py                 # Bộ thu thập và tính toán 5 chỉ số
+│   ├── train_q_learning.py        # Huấn luyện Q-Learning
+│   ├── train_dqn.py               # Huấn luyện DQN
+│   ├── evaluate_*.py              # Đánh giá 5 seeds độc lập
+│   ├── consolidate_results.py     # Bảng tổng hợp Mean ± Std
+│   └── plot_benchmark.py          # Vẽ biểu đồ kết quả
+└── tests/                         # Bộ kiểm thử tự động (pytest)
 ```

@@ -1,0 +1,3604 @@
+[
+  {
+    "step_time": 57600.0,
+    "event": "start_simulation",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57645.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 57648.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57649.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57669.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57672.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57673.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57693.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        1.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57696.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57697.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57717.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.4444,
+        0.1,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57720.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57721.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57741.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57744.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57745.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57765.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        1.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57768.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57769.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57814.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 57817.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57818.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57838.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57841.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57842.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57862.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.2333,
+        0.5333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57865.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57866.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57886.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.4444,
+        0.0667,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57889.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57890.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57910.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57913.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57914.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57934.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57937.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57938.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57983.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 57986.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57987.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58007.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58010.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58011.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58031.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0333,
+        0.1333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58034.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58035.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58080.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58083.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58084.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58104.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58107.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58108.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58128.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        0.2333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58131.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58132.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58177.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58180.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58181.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58201.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.4667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58204.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58205.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58225.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        0.2667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58228.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58229.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58264.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 58267.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58268.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58288.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58291.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58292.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58312.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.7
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58315.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58316.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58361.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58364.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58365.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58385.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58388.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58389.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58409.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1,
+        0.4
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58412.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58413.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58458.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58461.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58462.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58482.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58485.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58486.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58506.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0333,
+        0.3
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58509.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58510.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58555.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58558.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58559.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58579.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58582.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58583.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58603.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0333,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58606.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58607.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58652.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58655.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58656.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58681.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.5556,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 25.0
+    }
+  },
+  {
+    "step_time": 58684.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58685.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58705.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.3667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58708.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58709.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58754.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58757.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58758.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58778.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58781.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58782.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58802.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.1333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58805.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58806.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58851.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 58854.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58855.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58875.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58878.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58879.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58899.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.2,
+        0.4
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58902.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58903.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58938.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 58941.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58942.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58962.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58965.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58966.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58986.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.1333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58989.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58990.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59025.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 59028.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59029.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59049.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59052.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59053.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59073.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.3
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59076.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59077.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59112.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 59115.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59116.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59136.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59139.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59140.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59160.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1667,
+        0.3
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59163.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59164.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59199.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 59202.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59203.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59223.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59226.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59227.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59247.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1,
+        0.4667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59250.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59251.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59281.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.6667,
+        0.0333,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 30.0
+    }
+  },
+  {
+    "step_time": 59284.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59285.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59305.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59308.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59309.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59329.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59332.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59333.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59368.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 59371.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59372.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59392.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59395.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59396.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59416.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0333,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59419.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59420.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59465.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 59468.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59469.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59489.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59492.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59493.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59513.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        0.2667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59516.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59517.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59562.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 59565.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59566.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59586.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59589.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59590.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59610.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1667,
+        0.6
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59613.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59614.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59659.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 59662.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59663.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59683.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59686.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59687.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59707.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        0.4
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59710.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59711.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59731.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.4444,
+        0.1,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59734.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59735.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59755.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59758.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59759.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59779.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.3333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59782.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59783.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59828.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 59831.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59832.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59852.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59855.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59856.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59876.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1,
+        0.9
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59879.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59880.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59925.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0667,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 59928.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59929.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59949.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59952.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59953.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59973.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0333,
+        0.5333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59976.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59977.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60022.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60025.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60026.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60051.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.5556,
+        0.0,
+        0.1
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 25.0
+    }
+  },
+  {
+    "step_time": 60054.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60055.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60075.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0333,
+        0.9333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60078.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60079.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60124.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60127.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60128.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60148.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60151.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60152.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60172.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        0.9667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60175.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60176.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60221.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60224.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60225.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60245.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60248.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60249.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60269.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.8333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60272.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60273.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60318.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60321.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60322.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60342.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60345.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60346.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60366.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1,
+        0.3667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60369.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60370.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60415.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60418.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60419.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60439.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60442.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60443.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60463.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1333,
+        0.2333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60466.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60467.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60507.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.8889,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 40.0
+    }
+  },
+  {
+    "step_time": 60510.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60511.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60531.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60534.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60535.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60555.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1,
+        0.3333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60558.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60559.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60604.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60607.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60608.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60628.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.1333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60631.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60632.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60652.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1667,
+        0.6333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60655.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60656.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60691.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 60694.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60695.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60715.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60718.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60719.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60739.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.2333,
+        0.5
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60742.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60743.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60778.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 60781.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60782.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60802.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60805.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60806.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60826.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.0667,
+        0.8333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60829.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60830.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60875.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60878.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60879.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60899.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.5
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60902.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60903.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60923.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1667,
+        0.4
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60926.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60927.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60972.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 60975.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60976.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60996.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60999.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61000.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 61020.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1,
+        0.3
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61023.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61024.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 61059.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        0.7778,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 35.0
+    }
+  },
+  {
+    "step_time": 61062.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61063.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 61083.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.3
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61086.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61087.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 61107.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "state": [
+        0.0,
+        0.0,
+        1.0,
+        0.4444,
+        0.1,
+        0.3333
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61110.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61111.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 61156.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "state": [
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0333,
+        0.0667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 45.0
+    }
+  },
+  {
+    "step_time": 61159.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61160.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 61180.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "state": [
+        0.0,
+        1.0,
+        0.0,
+        0.4444,
+        0.0,
+        0.2667
+      ],
+      "action": 1,
+      "action_name": "SWITCH",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61183.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61184.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  }
+]

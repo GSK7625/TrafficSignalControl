@@ -1,220 +1,184 @@
-"""Module thu thập và tính toán các chỉ số đánh giá điều khiển tín hiệu đèn giao thông SUMO.
+"""Module thu thập, tính toán và tổng hợp 5 chỉ số đánh giá giao thông SUMO.
 
-Theo dõi 5 chỉ số giao thông tiêu chuẩn:
-  1. Thời gian chờ trung bình (Average Waiting Time - s) [qua đầu ra SUMO tripinfo]
-  2. Thời gian di chuyển trung bình (Average Travel Time - s) [qua đầu ra SUMO tripinfo]
-  3. Độ dài hàng đợi trung bình & cực đại (Mean & Max Queue Length - xe) [qua mẫu đo từng bước TraCI]
-  4. Tổn thất thời gian trung bình (Average Time Loss - s) [qua đầu ra SUMO tripinfo]
-  5. Thông lượng (Throughput - số xe hoàn thành) [qua đầu ra SUMO tripinfo]
+Được thiết kế đơn giản, minh bạch và đúng chuẩn lý thuyết:
+  1. Average Travel Time (s)
+  2. Average Waiting Time (s)
+  3. Average Time Loss (s)
+  4. Mean & Max Queue Length (xe)
+  5. Throughput (xe hoàn thành)
 """
 
-from dataclasses import dataclass
 import os
 from typing import Any, Dict, List, Optional, Sequence
 import xml.etree.ElementTree as ET
 
 
-@dataclass
-class StepRecord:
-    """Ảnh chụp nhanh (snapshot) điều kiện giao thông tại một bước mô phỏng đơn lẻ."""
-    step_time: float
-    queue_length: float
-    halted_vehicles: Optional[int] = None
-    running_vehicles: Optional[int] = None
-
-
-@dataclass
-class TripRecord:
-    """Dữ liệu hành trình chi tiết của một phương tiện đã hoàn thành lộ trình."""
-    vehicle_id: str
-    depart: float
-    arrival: float
-    duration: float
-    waiting_time: float
-    time_loss: float
-    route_length: float
-
-
 class MetricsCollector:
-    """Thu thập các chỉ số thời gian thực từ TraCI và phân tích file XML TripInfo sau mô phỏng.
+    """Bộ thu thập và tổng hợp chỉ số giao thông dùng chung cho mọi thuật toán."""
 
-    Cung cấp bản tổng hợp hợp nhất của 5 chỉ số hiệu năng giao thông cốt lõi.
-    """
+    def __init__(self, incoming_lanes: Sequence[str], total_demand: int = 0) -> None:
+        """Khởi tạo bộ thu thập chỉ số.
 
-    def __init__(self, monitored_lanes: Optional[Sequence[str]] = None) -> None:
-        """Khởi tạo MetricsCollector."""
-        self.step_records: List[StepRecord] = []
-        self.trip_records: List[TripRecord] = []
-        self.tripinfo_metrics: Dict[str, Any] = {}
+        Tham số:
+            incoming_lanes: Danh sách các làn vào của nút giao (mỗi làn chỉ tính 1 lần).
+            total_demand: Tổng số chuyến xe dự kiến trong file kịch bản.
+        """
+        # Loại bỏ trùng lặp và sắp xếp cố định danh sách làn vào
+        self.incoming_lanes: List[str] = sorted(list(set(incoming_lanes)))
+        self.total_demand: int = int(total_demand)
 
-    @property
-    def total_steps(self) -> int:
-        """Trả về tổng số bước mô phỏng đã ghi nhận."""
-        return len(self.step_records)
+        # Lịch sử ghi nhận từng bước
+        self.time_history: List[float] = []
+        self.queue_history: List[int] = []
+        self.running_history: List[int] = []
 
-    @property
-    def queue_history(self) -> List[float]:
-        """Trả về lịch sử độ dài hàng đợi tức thời được ghi nhận tại mỗi bước."""
-        return [record.queue_length for record in self.step_records]
-
-    @property
-    def mean_queue_length(self) -> float:
-        """Tính toán độ dài hàng đợi trung bình trên tất cả các bước mô phỏng đã ghi."""
-        if not self.step_records:
-            return 0.0
-        return float(sum(r.queue_length for r in self.step_records) / len(self.step_records))
-
-    @property
-    def max_queue_length(self) -> int:
-        """Trả về độ dài hàng đợi đỉnh (cực đại) quan sát được qua tất cả các bước."""
-        if not self.step_records:
-            return 0
-        return int(max(r.queue_length for r in self.step_records))
+        # Bộ đếm sự kiện tích lũy qua TraCI
+        self.total_inserted: int = 0
+        self.total_arrived_traci: int = 0
+        self.total_teleported: int = 0
+        self.total_collisions: int = 0
+        self.total_emergency_stops: int = 0
 
     def record_step(
         self,
-        step_time: float,
-        queue_length: float,
-        halted_vehicles: Optional[int] = None,
-        running_vehicles: Optional[int] = None,
+        sim_time: float,
+        step_queue: int,
+        running_count: int,
+        inserted_step: int = 0,
+        arrived_step: int = 0,
+        teleported_step: int = 0,
+        collisions_step: int = 0,
+        emergency_step: int = 0,
     ) -> None:
-        """Ghi nhận các chỉ số giao thông cho một bước mô phỏng đơn lẻ.
+        """Ghi nhận dữ liệu quan sát tại một bước mô phỏng đơn lẻ."""
+        self.time_history.append(float(sim_time))
+        self.queue_history.append(int(step_queue))
+        self.running_history.append(int(running_count))
+
+        self.total_inserted += int(inserted_step)
+        self.total_arrived_traci += int(arrived_step)
+        self.total_teleported += int(teleported_step)
+        self.total_collisions += int(collisions_step)
+        self.total_emergency_stops += int(emergency_step)
+
+    def parse_tripinfo(
+        self,
+        tripinfo_path: str,
+        begin_time: float,
+        end_time: float,
+    ) -> Dict[str, Any]:
+        """Phân tích file XML --tripinfo-output của SUMO cho các xe hoàn thành trong cửa sổ đánh giá.
 
         Tham số:
-            step_time: Dấu thời gian mô phỏng tính bằng giây.
-            queue_length: Độ dài hàng đợi / số lượng xe dừng tại bước này.
-            halted_vehicles: Số lượng xe dừng chờ cụ thể (tùy chọn).
-            running_vehicles: Số lượng xe đang di chuyển trên mạng lưới (tùy chọn).
-        """
-        record = StepRecord(
-            step_time=float(step_time),
-            queue_length=float(queue_length),
-            halted_vehicles=halted_vehicles,
-            running_vehicles=running_vehicles,
-        )
-        self.step_records.append(record)
-
-    def parse_tripinfo(self, xml_path: str) -> Dict[str, Any]:
-        """Phân tích file XML --tripinfo-output của SUMO và tính toán các chỉ số hành trình.
-
-        Tính toán:
-          - throughput: số lượng phương tiện đã đến đích/hoàn thành hành trình
-          - average_travel_time: thời gian hành trình trung bình (s)
-          - average_waiting_time: thời gian chờ trung bình với tốc độ < 0.1 m/s (s)
-          - average_time_loss: tổn thất thời gian trung bình do đèn/ùn tắc (s)
-          - total_travel_time, total_waiting_time, total_time_loss (s)
-
-        Tham số:
-            xml_path: Đường dẫn tuyệt đối hoặc tương đối tới file XML tripinfo của SUMO.
+            tripinfo_path: Đường dẫn tới file tripinfo.xml.
+            begin_time: Mốc thời gian bắt đầu đánh giá (s).
+            end_time: Mốc thời gian kết thúc đánh giá (s).
 
         Trả về:
-            Dictionary chứa các chỉ số hành trình đã tính toán.
-
-        Ngoại lệ:
-            FileNotFoundError: Nếu file XML không tồn tại.
-            ValueError: Nếu file không đúng định dạng XML.
+            Dictionary chứa các chỉ số hành trình của tập xe hoàn thành.
         """
-        if not os.path.isfile(xml_path):
-            raise FileNotFoundError(f"Tripinfo file not found: {xml_path}")
+        if not os.path.isfile(tripinfo_path):
+            raise FileNotFoundError(f"Không tìm thấy file tripinfo: {tripinfo_path}")
 
-        try:
-            tree = ET.parse(xml_path)
-            root = tree.getroot()
-        except ET.ParseError as err:
-            raise ValueError(f"Failed to parse XML from {xml_path}: {err}") from err
-        except Exception as err:
-            raise ValueError(f"Error reading tripinfo file {xml_path}: {err}") from err
+        tree = ET.parse(tripinfo_path)
+        root = tree.getroot()
 
-        total_duration = 0.0
-        total_waiting = 0.0
-        total_loss = 0.0
-        throughput = 0
-        self.trip_records.clear()
+        completed_trips: List[Dict[str, float]] = []
 
-        # Duyệt qua tất cả các phần tử tripinfo trong file XML
-        for elem in root.findall(".//tripinfo"):
+        for trip in root.findall(".//tripinfo"):
             try:
-                veh_id = elem.get("id", f"veh_{throughput}")
-                duration = float(elem.get("duration", "0.0"))
-                waiting_time = float(elem.get("waitingTime", "0.0"))
-                time_loss = float(elem.get("timeLoss", "0.0"))
-                depart = float(elem.get("depart", "0.0"))
-                arrival = float(elem.get("arrival", "0.0"))
-                route_length = float(elem.get("routeLength", "0.0"))
-
-                record = TripRecord(
-                    vehicle_id=veh_id,
-                    depart=depart,
-                    arrival=arrival,
-                    duration=duration,
-                    waiting_time=waiting_time,
-                    time_loss=time_loss,
-                    route_length=route_length,
-                )
-                self.trip_records.append(record)
-
-                total_duration += duration
-                total_waiting += waiting_time
-                total_loss += time_loss
-                throughput += 1
+                arrival = float(trip.get("arrival", "0.0"))
+                # Chỉ tính xe hoàn thành trong cửa sổ đánh giá [begin_time, end_time]
+                if begin_time <= arrival <= end_time:
+                    completed_trips.append({
+                        "id": trip.get("id", ""),
+                        "depart": float(trip.get("depart", "0.0")),
+                        "arrival": arrival,
+                        "duration": float(trip.get("duration", "0.0")),
+                        "waitingTime": float(trip.get("waitingTime", "0.0")),
+                        "timeLoss": float(trip.get("timeLoss", "0.0")),
+                    })
             except (ValueError, TypeError):
                 continue
 
-        avg_travel = (total_duration / throughput) if throughput > 0 else 0.0
-        avg_waiting = (total_waiting / throughput) if throughput > 0 else 0.0
-        avg_loss = (total_loss / throughput) if throughput > 0 else 0.0
+        count = len(completed_trips)
 
-        metrics = {
-            "throughput": throughput,
-            "average_travel_time": avg_travel,
-            "average_waiting_time": avg_waiting,
-            "average_time_loss": avg_loss,
-            "total_travel_time": total_duration,
-            "total_waiting_time": total_waiting,
-            "total_time_loss": total_loss,
-        }
+        # Xử lý nghiêm ngặt: nếu không có xe hoàn thành, trả về None, KHÔNG ghi 0.0 giả
+        if count == 0:
+            return {
+                "throughput": 0,
+                "average_travel_time": None,
+                "average_waiting_time": None,
+                "average_time_loss": None,
+                "completed_trips": [],
+            }
 
-        self.tripinfo_metrics = metrics
-        return metrics
-
-    def get_summary(self, tripinfo_path: Optional[str] = None) -> Dict[str, Any]:
-        """Trả về tổng hợp hợp nhất của 5 chỉ số hiệu năng giao thông tiêu chuẩn:
-
-        1. average_waiting_time (s)
-        2. average_travel_time (s)
-        3. mean_queue_length (xe) & max_queue_length (xe)
-        4. average_time_loss (s)
-        5. throughput (số lượng xe hoàn thành)
-
-        Tham số:
-            tripinfo_path: Đường dẫn tùy chọn tới file XML tripinfo để phân tích trước khi tổng hợp.
-
-        Trả về:
-            Dictionary chứa 5 chỉ số cốt lõi kèm siêu dữ liệu giám sát mô phỏng.
-        """
-        if tripinfo_path is not None:
-            self.parse_tripinfo(tripinfo_path)
-
-        avg_waiting = float(self.tripinfo_metrics.get("average_waiting_time", 0.0))
-        avg_travel = float(self.tripinfo_metrics.get("average_travel_time", 0.0))
-        avg_loss = float(self.tripinfo_metrics.get("average_time_loss", 0.0))
-        throughput = int(self.tripinfo_metrics.get("throughput", 0))
+        total_travel = sum(t["duration"] for t in completed_trips)
+        total_waiting = sum(t["waitingTime"] for t in completed_trips)
+        total_loss = sum(t["timeLoss"] for t in completed_trips)
 
         return {
-            "average_waiting_time": avg_waiting,
-            "average_travel_time": avg_travel,
-            "mean_queue_length": self.mean_queue_length,
-            "max_queue_length": self.max_queue_length,
-            "average_time_loss": avg_loss,
-            "throughput": throughput,
-            "total_steps": self.total_steps,
-            "queue_history": self.queue_history,
-            "tripinfo_metrics": dict(self.tripinfo_metrics),
+            "throughput": count,
+            "average_travel_time": round(total_travel / count, 2),
+            "average_waiting_time": round(total_waiting / count, 2),
+            "average_time_loss": round(total_loss / count, 2),
+            "completed_trips": completed_trips,
         }
 
-    def reset(self) -> None:
-        """Đặt lại tất cả các chỉ số bước và chỉ số tripinfo đã thu thập về trạng thái rỗng."""
-        self.step_records.clear()
-        self.trip_records.clear()
-        self.tripinfo_metrics.clear()
+    def get_summary(
+        self,
+        tripinfo_path: Optional[str] = None,
+        begin_time: float = 0.0,
+        end_time: float = 3600.0,
+    ) -> Dict[str, Any]:
+        """Tổng hợp toàn bộ 5 metrics cốt lõi cùng các thống kê phương tiện chi tiết."""
+        trip_metrics: Dict[str, Any] = {
+            "throughput": 0,
+            "average_travel_time": None,
+            "average_waiting_time": None,
+            "average_time_loss": None,
+            "completed_trips": [],
+        }
 
+        if tripinfo_path and os.path.isfile(tripinfo_path):
+            trip_metrics = self.parse_tripinfo(tripinfo_path, begin_time, end_time)
+
+        # Tính hàng đợi trung bình và cực đại từ lịch sử bước
+        total_steps = len(self.queue_history)
+        if total_steps > 0:
+            mean_q = round(sum(self.queue_history) / total_steps, 2)
+            max_q = max(self.queue_history)
+        else:
+            mean_q = None
+            max_q = None
+
+        throughput = trip_metrics["throughput"]
+        final_running = self.running_history[-1] if self.running_history else 0
+        waiting_to_enter = max(0, self.total_demand - self.total_inserted) if self.total_demand > 0 else 0
+        completion_rate = (
+            round((throughput / self.total_demand) * 100.0, 2) if self.total_demand > 0 else None
+        )
+
+        return {
+            # 5 Metrics cốt lõi
+            "average_travel_time": trip_metrics["average_travel_time"],
+            "average_waiting_time": trip_metrics["average_waiting_time"],
+            "average_time_loss": trip_metrics["average_time_loss"],
+            "mean_queue_length": mean_q,
+            "max_queue_length": max_q,
+            "throughput": throughput,
+            # Thống kê phương tiện
+            "total_demand": self.total_demand,
+            "inserted_vehicles": self.total_inserted,
+            "completed_vehicles": throughput,
+            "running_vehicles_at_end": final_running,
+            "waiting_to_enter": waiting_to_enter,
+            "completion_rate_pct": completion_rate,
+            # Sự kiện bất thường
+            "teleport_count": self.total_teleported,
+            "collision_count": self.total_collisions,
+            "emergency_stops": self.total_emergency_stops,
+            # Dữ liệu chuỗi thời gian
+            "total_simulation_steps": total_steps,
+            "queue_history": self.queue_history,
+        }

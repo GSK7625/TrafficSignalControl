@@ -1,0 +1,4242 @@
+[
+  {
+    "step_time": 57600.0,
+    "event": "start_simulation",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57620.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -1.0,
+        "1": 2.0,
+        "2": -2.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57623.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57624.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57644.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 14.0,
+        "1": 9.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57647.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57648.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57668.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 12.0,
+        "2": -5.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57671.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57672.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57692.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 13.0,
+        "1": 5.0,
+        "2": 5.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57695.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57696.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57716.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 12.0,
+        "1": 7.0,
+        "2": 2.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57719.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57720.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57740.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 6.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57743.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57744.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57764.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 3.0,
+        "2": 4.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57767.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57768.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57795.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -2.0,
+        "1": 1.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 27.0
+    }
+  },
+  {
+    "step_time": 57798.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57799.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57819.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 2.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57822.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57823.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57843.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 12.0,
+        "1": 5.0,
+        "2": 4.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57846.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57847.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57867.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 4.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57870.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57871.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 57891.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 1.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57894.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57895.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57915.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 4.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57918.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57919.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57939.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 0.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57942.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57943.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 57963.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 1.0,
+        "2": 2.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57966.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57967.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 57987.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -2.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 57990.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 57991.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58011.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 1.0,
+        "2": 2.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58014.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58015.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58041.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -4.0,
+        "1": 0.0,
+        "2": 1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 26.0
+    }
+  },
+  {
+    "step_time": 58044.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58045.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58065.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 0.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58068.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58069.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58089.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -1.0,
+        "1": -1.0,
+        "2": 1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58092.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58093.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58113.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58116.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58117.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58137.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 1.0,
+        "2": 5.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58140.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58141.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58161.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -5.0,
+        "1": 0.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58164.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58165.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58185.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 7.0,
+        "1": 1.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58188.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58189.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58209.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -1.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58212.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58213.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58233.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 14.0,
+        "1": 13.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58236.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58237.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58257.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 14.0,
+        "1": 6.0,
+        "2": 6.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58260.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58261.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58300.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": -1.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 39.0
+    }
+  },
+  {
+    "step_time": 58303.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58304.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58324.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 2.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58327.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58328.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58348.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 7.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58351.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58352.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58372.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": -2.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58375.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58376.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58396.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": 4.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58399.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58400.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58420.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 2.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58423.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58424.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58444.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58447.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58448.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58468.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 7.0,
+        "2": -4.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58471.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58472.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58492.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 5.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58495.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58496.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58516.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 6.0,
+        "2": -2.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58519.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58520.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58540.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 0.0,
+        "2": 4.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58543.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58544.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58564.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 0.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58567.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58568.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58592.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 2.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 24.0
+    }
+  },
+  {
+    "step_time": 58595.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58596.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58616.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 0.0,
+        "2": 4.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58619.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58620.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58644.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -6.0,
+        "1": 1.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 24.0
+    }
+  },
+  {
+    "step_time": 58647.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58648.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58668.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 3.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58671.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58672.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58692.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 10.0,
+        "1": 8.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58695.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58696.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58716.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 2.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58719.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58720.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58740.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58743.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58744.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58764.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -1.0,
+        "1": 1.0,
+        "2": 1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58767.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58768.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58788.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 1.0,
+        "2": 2.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58791.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58792.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58818.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 7.0,
+        "1": 8.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 26.0
+    }
+  },
+  {
+    "step_time": 58821.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58822.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58842.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 3.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58845.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58846.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58866.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -1.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58869.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58870.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58890.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 15.0,
+        "1": 3.0,
+        "2": 8.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58893.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58894.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58914.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 19.0,
+        "1": 13.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58917.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58918.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 58938.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -7.0,
+        "1": 2.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58941.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58942.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 58962.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 0.0,
+        "2": 4.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58965.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58966.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 58986.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 58989.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 58990.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59010.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 0.0,
+        "2": 1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59013.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59014.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59034.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 3.0,
+        "2": -1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59037.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59038.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59058.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -4.0,
+        "1": 2.0,
+        "2": -4.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59061.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59062.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59082.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 0.0,
+        "2": 4.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59085.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59086.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59106.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 5.0,
+        "2": -2.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59109.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59110.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59130.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 10.0,
+        "1": 0.0,
+        "2": 7.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59133.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59134.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59154.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -7.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59157.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59158.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59178.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 11.0,
+        "1": 0.0,
+        "2": 9.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59181.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59182.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59202.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -8.0,
+        "1": 2.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59205.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59206.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59226.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 2.0,
+        "2": 0.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59229.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59230.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59250.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 0.0,
+        "2": 1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59253.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59254.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59274.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 10.0,
+        "1": 0.0,
+        "2": 5.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59277.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59278.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59298.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 14.0,
+        "1": 0.0,
+        "2": 9.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59301.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59302.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59322.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -6.0,
+        "1": 1.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59325.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59326.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59346.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59349.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59350.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59370.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -2.0,
+        "1": 1.0,
+        "2": -1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59373.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59374.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59394.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59397.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59398.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59418.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 1.0,
+        "2": 2.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59421.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59422.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59442.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": 8.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59445.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59446.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59466.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 2.0,
+        "2": 2.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59469.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59470.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59490.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 1.0,
+        "2": 1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59493.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59494.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59514.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 1.0,
+        "2": 4.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59517.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59518.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59538.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -3.0,
+        "1": 1.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59541.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59542.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59562.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 5.0,
+        "2": 2.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59565.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59566.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59586.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 3.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59589.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59590.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59610.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -4.0,
+        "1": 3.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59613.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59614.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59634.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 11.0,
+        "1": 2.0,
+        "2": 6.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59637.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59638.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59658.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -5.0,
+        "1": 0.0,
+        "2": 0.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59661.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59662.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59682.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 7.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59685.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59686.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59706.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 3.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59709.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59710.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59730.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": -2.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59733.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59734.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59754.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -3.0,
+        "1": 4.0,
+        "2": -4.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59757.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59758.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59778.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 7.0,
+        "1": 2.0,
+        "2": 5.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59781.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59782.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59802.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 9.0,
+        "2": -1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59805.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59806.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59826.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 2.0,
+        "2": -2.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59829.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59830.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59850.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 13.0,
+        "1": 6.0,
+        "2": 4.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59853.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59854.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59874.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 7.0,
+        "1": 15.0,
+        "2": -4.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59877.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59878.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59898.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": 4.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59901.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59902.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 59922.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 9.0,
+        "2": -1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59925.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59926.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59946.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 4.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59949.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59950.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 59970.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 14.0,
+        "1": 11.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 59973.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 59974.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 59997.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 1.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 23.0
+    }
+  },
+  {
+    "step_time": 60000.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60001.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60021.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 1.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60024.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60025.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60045.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": 7.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60048.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60049.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60069.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 5.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60072.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60073.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60093.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -3.0,
+        "1": 2.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60096.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60097.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60117.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 1.0,
+        "2": 4.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60120.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60121.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60141.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": 4.0,
+        "2": 0.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60144.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60145.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60165.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 4.0,
+        "2": 2.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60168.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60169.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60189.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 7.0,
+        "1": 4.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60192.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60193.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60215.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -2.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 22.0
+    }
+  },
+  {
+    "step_time": 60218.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60219.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60239.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 6.0,
+        "1": 3.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60242.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60243.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60263.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 19.0,
+        "1": 17.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60266.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60267.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60287.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 12.0,
+        "1": 14.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60290.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60291.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60311.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 6.0,
+        "2": 4.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60314.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60315.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60335.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -1.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60338.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60339.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60359.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 1.0,
+        "2": 5.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60362.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60363.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60383.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60386.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60387.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60407.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -6.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60410.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60411.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60431.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 1.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60434.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60435.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60455.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 11.0,
+        "1": 0.0,
+        "2": 6.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60458.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60459.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60495.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -3.0,
+        "1": 1.0,
+        "2": -2.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 36.0
+    }
+  },
+  {
+    "step_time": 60498.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60499.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60519.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 2.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60522.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60523.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60543.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 2.0,
+        "2": 3.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60546.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60547.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60567.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 2.0,
+        "2": -2.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60570.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60571.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60591.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 10.0,
+        "1": 0.0,
+        "2": 6.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60594.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60595.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60615.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 6.0,
+        "2": -2.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60618.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60619.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60639.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 7.0,
+        "1": 2.0,
+        "2": 4.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60642.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60643.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60663.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -6.0,
+        "1": 0.0,
+        "2": -5.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60666.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60667.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60687.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 7.0,
+        "1": 6.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60690.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60691.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60711.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 3.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60714.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60715.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60735.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 2.0,
+        "2": 5.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60738.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60739.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60764.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 0.0,
+        "2": 4.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 25.0
+    }
+  },
+  {
+    "step_time": 60767.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60768.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60788.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 19.0,
+        "1": 18.0,
+        "2": 0.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60791.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60792.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60812.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 4.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60815.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60816.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60836.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 3.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60839.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60840.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60860.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 3.0,
+        "2": 2.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60863.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60864.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 60884.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "yyyrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 5.0,
+        "1": 0.0,
+        "2": 4.0
+      },
+      "target_phase": 2,
+      "current_phase": 1,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60887.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60888.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60908.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 9.0,
+        "1": 2.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60911.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60912.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60932.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -6.0,
+        "1": 0.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60935.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60936.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 60959.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 2.0,
+        "1": 0.0,
+        "2": 1.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 23.0
+    }
+  },
+  {
+    "step_time": 60962.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60963.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 60983.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": -3.0,
+        "1": 0.0,
+        "2": 0.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "starvation_override",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 60986.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 60987.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 61007.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 1.0,
+        "2": 2.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61010.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61011.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 61031.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 0.0,
+        "2": 2.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61034.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61035.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 61055.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrryyyrr",
+    "decision": {
+      "pressures": {
+        "0": 0.0,
+        "1": 1.0,
+        "2": -1.0
+      },
+      "target_phase": 1,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61058.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61059.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 61079.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 8.0,
+        "1": 1.0,
+        "2": 6.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61082.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61083.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 61105.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "yyyGrGyy",
+    "decision": {
+      "pressures": {
+        "0": -1.0,
+        "1": 0.0,
+        "2": 1.0
+      },
+      "target_phase": 2,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 22.0
+    }
+  },
+  {
+    "step_time": 61108.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61109.0,
+    "event": "enter_green",
+    "phase_index": 2,
+    "state": "rrrGGGrr"
+  },
+  {
+    "step_time": 61129.0,
+    "event": "enter_yellow",
+    "phase_index": 2,
+    "state": "rrrGyGrr",
+    "decision": {
+      "pressures": {
+        "0": 3.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "target_phase": 0,
+      "current_phase": 2,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61132.0,
+    "event": "enter_all_red",
+    "phase_index": 2,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61133.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  },
+  {
+    "step_time": 61154.0,
+    "event": "enter_yellow",
+    "phase_index": 0,
+    "state": "GGgyryyy",
+    "decision": {
+      "pressures": {
+        "0": 1.0,
+        "1": 2.0,
+        "2": 1.0
+      },
+      "target_phase": 1,
+      "current_phase": 0,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 21.0
+    }
+  },
+  {
+    "step_time": 61157.0,
+    "event": "enter_all_red",
+    "phase_index": 0,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61158.0,
+    "event": "enter_green",
+    "phase_index": 1,
+    "state": "GGGrrrrr"
+  },
+  {
+    "step_time": 61178.0,
+    "event": "enter_yellow",
+    "phase_index": 1,
+    "state": "GGGrrrrr",
+    "decision": {
+      "pressures": {
+        "0": 4.0,
+        "1": 0.0,
+        "2": 3.0
+      },
+      "target_phase": 0,
+      "current_phase": 1,
+      "reason": "max_pressure_switch",
+      "time_in_phase": 20.0
+    }
+  },
+  {
+    "step_time": 61181.0,
+    "event": "enter_all_red",
+    "phase_index": 1,
+    "state": "rrrrrrrr"
+  },
+  {
+    "step_time": 61182.0,
+    "event": "enter_green",
+    "phase_index": 0,
+    "state": "GGgGrGGG"
+  }
+]

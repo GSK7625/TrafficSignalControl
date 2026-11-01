@@ -33,3 +33,9 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 
+# Test and temporary simulation outputs
+results/runs/
+results/tests/
+results/temp_*/
+
+

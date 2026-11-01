@@ -1,334 +1,246 @@
-"""Module thực thi mô phỏng SUMO thông qua TraCI/libsumo với điều khiển tín hiệu đèn giao thông."""
+"""Vòng lặp mô phỏng SUMO và thu thập chỉ số giao thông dùng chung (Simulation Runner).
 
-from dataclasses import dataclass
+Triển khai quy trình mô phỏng tuần tự, rõ ràng:
+  1. Đọc cấu hình mạng lưới
+  2. Mở SUMO thông qua TraCI
+  3. Tiến hành chạy từng bước mô phỏng với bộ điều khiển đèn
+  4. Thu thập hàng đợi và sự kiện theo thời gian thực
+  5. Đóng TraCI đúng mốc thời gian quy định
+  6. Phân tích tệp TripInfo và tổng hợp 5 chỉ số đánh giá
+"""
+
+import json
 import os
-from typing import Any, Callable, List, Optional, Sequence, Tuple
-import sumolib
+import sys
+from typing import Any, Dict, List, Optional
 import traci
 
-try:
-    import libsumo
-    HAS_LIBSUMO = True
-except ImportError:
-    libsumo = None
-    HAS_LIBSUMO = False
-
-from src.controllers import (
+from src.controllers.fixed_time import (
     FixedTimeController,
-    MaxPressureController,
-    QLearningController,
-    build_default_controller,
+    build_all_red_state,
+    build_yellow_state,
 )
-from src.data_inspector import inspect_scenario, ScenarioInfo
+from src.data_inspector import read_scenario
+from src.metrics import MetricsCollector
 
 
-@dataclass
-class SimulationResult:
-    """Container chứa dữ liệu kết quả của một lượt chạy mô phỏng."""
-    total_steps: int
-    sim_time_start: float
-    sim_time_end: float
-    queue_history: List[int]
-    controller_step_count: int
-    mean_queue_length: float
-    max_queue_length: int
-    tripinfo_path: Optional[str] = None
-    completed: bool = True
-    tls_id: Optional[str] = None
-    controller_type: Optional[str] = None
-    backend: Optional[str] = None
+def run_simulation(
+    scenario_name: str,
+    controller: Optional[Any] = None,
+    data_dir: str = "data",
+    green_time: float = 30.0,
+    yellow_time: float = 3.0,
+    all_red_time: float = 1.0,
+    seed: int = 42,
+    max_steps: Optional[int] = None,
+    gui: bool = False,
+    output_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Khởi chạy mô phỏng điều khiển đèn và thu thập metrics đầy đủ.
 
+    Tham số:
+        scenario_name: Tên kịch bản ('cologne1' hoặc 'ingolstadt1').
+        controller: Đối tượng controller (nếu None, mặc định là FixedTimeController).
+        data_dir: Thư mục chứa dữ liệu kịch bản.
+        green_time: Thời gian giữ xanh cố định (giây).
+        yellow_time: Thời gian đèn vàng giải phóng nút (giây).
+        all_red_time: Thời gian đỏ toàn phần giải phóng nút (giây).
+        seed: Hạt giống ngẫu nhiên cho SUMO.
+        max_steps: Số bước mô phỏng tối đa (nếu None, chạy hết khung giờ gốc 3600s).
+        gui: Bật giao diện đồ họa SUMO-GUI nếu True.
+        output_dir: Thư mục lưu kết quả thô và tổng hợp.
 
-class SimulationRunner:
-    """Điều phối mô phỏng SUMO thông qua TraCI/libsumo kết hợp điều khiển tín hiệu đèn giao thông.
-
-    Điều phối vòng lặp mô phỏng theo từng giây:
-      1. Cập nhật pha tín hiệu đèn thông qua bộ điều khiển (controller)
-      2. Đo độ dài hàng đợi (số xe dừng với v < 0.1 m/s) trên các làn đi vào
-      3. Tiến một bước mô phỏng (conn.simulationStep())
-    Xử lý an toàn việc giải phóng kết nối TraCI/libsumo trong khối try...finally.
+    Trả về:
+        Dictionary chứa toàn bộ 5 metrics và thông tin phân tích mô phỏng.
     """
+    # 1. Đọc thông tin kịch bản
+    scenario = read_scenario(scenario_name, data_dir=data_dir)
+    tls_id = scenario["tls_id"]
+    green_phases = scenario["green_phases"]
+    incoming_lanes = scenario["incoming_lanes"]
+    begin_time = scenario["begin_time"]
+    nominal_end_time = scenario["end_time"]
+    total_demand = scenario["total_demand"]
 
-    def __init__(
-        self,
-        cfg_path: str,
-        controller: Optional[Any] = None,
-        tls_id: Optional[str] = None,
-        step_duration: float = 1.0,
-        tripinfo_output: Optional[str] = None,
-        incoming_lanes: Optional[Sequence[str]] = None,
-        additional_args: Optional[Sequence[str]] = None,
-        controller_type: str = "fixed_time",
-        use_libsumo: bool = False,
-    ) -> None:
-        if not os.path.isfile(cfg_path):
-            raise FileNotFoundError(f"SUMO configuration file not found: {cfg_path}")
+    # Xác định thời gian kết thúc: nếu max_steps được truyền vào, giới hạn thời gian chạy
+    if max_steps is not None and max_steps > 0:
+        end_time = begin_time + float(max_steps)
+    else:
+        end_time = nominal_end_time
 
-        if controller_type not in ("fixed_time", "max_pressure", "q_learning"):
-            raise ValueError(f"Unsupported controller_type: {controller_type}. Must be 'fixed_time', 'max_pressure', or 'q_learning'.")
+    # Chuẩn bị thư mục xuất kết quả
+    if output_dir is None:
+        controller_name = getattr(controller, "__class__", type(controller)).__name__ if controller else "FixedTime"
+        output_dir = os.path.join("results", "runs", f"{scenario_name}_{controller_name}_seed{seed}")
+    os.makedirs(output_dir, exist_ok=True)
+    tripinfo_path = os.path.join(output_dir, "tripinfo.xml")
 
-        self.cfg_path = os.path.abspath(cfg_path)
-        self.step_duration = float(step_duration)
-        self.tripinfo_output = os.path.abspath(tripinfo_output) if tripinfo_output else None
-        self.additional_args = list(additional_args) if additional_args else []
-        self.use_libsumo = bool(use_libsumo)
-        self._conn: Optional[Any] = None
-        self._backend: str = "traci"
+    # 2. Khởi tạo controller nếu chưa truyền vào
+    if controller is None:
+        controller = FixedTimeController(
+            green_phases=green_phases,
+            green_time=green_time,
+            yellow_time=yellow_time,
+            all_red_time=all_red_time,
+            tls_id=tls_id,
+        )
 
-        # Tải siêu dữ liệu kịch bản nếu thiếu controller, tls_id hoặc incoming_lanes
-        scenario_info: Optional[ScenarioInfo] = None
-        if controller is None or tls_id is None or incoming_lanes is None:
-            try:
-                scenario_info = inspect_scenario(
-                    scenario_name=os.path.splitext(os.path.basename(cfg_path))[0],
-                    cfg_path=self.cfg_path,
-                )
-            except Exception:
-                scenario_info = None
+    # 3. Khởi tạo bộ thu thập metrics và nhật ký chuyển pha
+    collector = MetricsCollector(incoming_lanes=incoming_lanes, total_demand=total_demand)
+    phase_log: List[Dict[str, Any]] = []
 
-        # Xác định mã định danh TLS ID
-        if tls_id:
-            self.tls_id = tls_id
-        elif controller and getattr(controller, "tls_id", None):
-            self.tls_id = controller.tls_id
-        elif scenario_info and scenario_info.tls_ids:
-            self.tls_id = scenario_info.tls_ids[0]
-        else:
-            self.tls_id = ""
+    # 4. Chuẩn bị câu lệnh khởi chạy SUMO
+    sumo_binary = "sumo-gui" if gui else "sumo"
+    sumo_cmd = [
+        sumo_binary,
+        "-c", scenario["cfg_path"],
+        "--seed", str(seed),
+        "--tripinfo-output", tripinfo_path,
+        "--no-step-log", "true",
+        "--time-to-teleport", "-1",  # Tắt teleport để giữ nguyên bản chất tắc nghẽn
+        "--collision.action", "warn",
+        "--duration-log.disable", "false",
+    ]
 
-        # Xác định bộ điều khiển (controller) và loại controller
-        if controller is not None:
-            self.controller = controller
-            if isinstance(controller, MaxPressureController):
-                self.controller_type = "max_pressure"
-            elif isinstance(controller, QLearningController):
-                self.controller_type = "q_learning"
-            elif isinstance(controller, FixedTimeController):
-                self.controller_type = "fixed_time"
-            else:
-                self.controller_type = controller_type
-        else:
-            self.controller_type = controller_type
-            if scenario_info is None:
-                raise ValueError(f"Cannot initialize {self.controller_type} controller without scenario metadata.")
-            green_phases = scenario_info.get_green_phases(self.tls_id)
-            if not green_phases:
-                raise ValueError(f"No green phases found for TLS '{self.tls_id}'.")
+    # 5. Mở kết nối TraCI
+    traci.start(sumo_cmd)
 
-            movements = scenario_info.get_movements(self.tls_id) if self.controller_type != "fixed_time" else None
-            self.controller = build_default_controller(
-                controller_type=self.controller_type,
-                green_phases=green_phases,
-                movements=movements,
-                tls_id=self.tls_id,
+    try:
+        current_sim_time = traci.simulation.getTime()
+
+        # Ghi nhận trạng thái kích hoạt pha ban đầu
+        initial_state = controller.get_current_state()
+        traci.trafficlight.setRedYellowGreenState(tls_id, initial_state)
+        phase_log.append({
+            "step_time": current_sim_time,
+            "event": "start_simulation",
+            "phase_index": controller.current_phase_idx,
+            "state": initial_state,
+        })
+
+        # 6. Vòng lặp từng bước mô phỏng
+        while current_sim_time < end_time:
+            # A. Bước tiến của bộ điều khiển tín hiệu đèn
+            step_res = controller.step(step_duration=1.0)
+            state = step_res[0]
+            changed = step_res[1]
+            event_name = step_res[2]
+            decision_info = step_res[3] if len(step_res) > 3 else None
+
+            traci.trafficlight.setRedYellowGreenState(tls_id, state)
+
+            if changed and event_name:
+                log_entry: Dict[str, Any] = {
+                    "step_time": current_sim_time,
+                    "event": event_name,
+                    "phase_index": getattr(controller, "current_phase_idx", -1),
+                    "state": state,
+                }
+                if decision_info:
+                    log_entry["decision"] = decision_info
+                phase_log.append(log_entry)
+
+            # B. Thu thập độ dài hàng đợi trên tất cả các làn vào
+            step_queue = sum(
+                traci.lane.getLastStepHaltingNumber(lane_id)
+                for lane_id in incoming_lanes
+            )
+            running_count = traci.vehicle.getIDCount()
+            inserted_step = traci.simulation.getDepartedNumber()
+            arrived_step = traci.simulation.getArrivedNumber()
+            teleport_step = traci.simulation.getStartingTeleportNumber()
+            collision_step = traci.simulation.getCollidingVehiclesNumber()
+
+            collector.record_step(
+                sim_time=current_sim_time,
+                step_queue=step_queue,
+                running_count=running_count,
+                inserted_step=inserted_step,
+                arrived_step=arrived_step,
+                teleported_step=teleport_step,
+                collisions_step=collision_step,
             )
 
-        # Xác định các làn đường đi vào nút giao (incoming lanes)
-        if incoming_lanes is not None:
-            self.incoming_lanes: List[str] = sorted(list(set(incoming_lanes)))
-        elif scenario_info and self.tls_id in scenario_info.controlled_lanes_per_tls:
-            self.incoming_lanes = sorted(list(set(scenario_info.controlled_lanes_per_tls[self.tls_id])))
-        else:
-            self.incoming_lanes = []
+            # C. Tiến mô phỏng 1 bước thời gian
+            traci.simulationStep()
+            current_sim_time = traci.simulation.getTime()
 
-    def build_sumo_cmd(self, gui: bool = False) -> List[str]:
-        """Xây dựng danh sách đối số dòng lệnh để khởi động SUMO.
+    finally:
+        # 7. Đóng TraCI an toàn
+        traci.close()
 
-        Tham số:
-            gui: True nếu muốn mở giao diện đồ họa 'sumo-gui', False để chạy ngầm 'sumo'.
+    # 8. Tổng hợp metrics và xuất dữ liệu thô
+    summary = collector.get_summary(
+        tripinfo_path=tripinfo_path,
+        begin_time=begin_time,
+        end_time=end_time,
+    )
 
-        Trả về:
-            Danh sách đối số dòng lệnh cho traci.start().
-        """
-        binary_name = "sumo-gui" if gui else "sumo"
-        try:
-            sumo_bin = sumolib.checkBinary(binary_name)
-        except Exception:
-            sumo_bin = binary_name
+    # Thêm cấu hình chạy vào bản tổng kết
+    run_config = {
+        "scenario": scenario_name,
+        "controller": controller.__class__.__name__,
+        "seed": seed,
+        "green_time": getattr(controller, "green_time", green_time),
+        "yellow_time": getattr(controller, "yellow_time", yellow_time),
+        "all_red_time": getattr(controller, "all_red_time", all_red_time),
+        "cycle_time": getattr(controller, "cycle_time", None),
+        "begin_time": begin_time,
+        "end_time": end_time,
+        "total_demand": total_demand,
+        "incoming_lanes": incoming_lanes,
+    }
+    summary["config"] = run_config
 
-        cmd = [
-            sumo_bin,
-            "-c",
-            self.cfg_path,
-            "--no-warnings",
-            "true",
-        ]
+    # Lưu tệp summary.json, phase_log.json và run_config.json
+    with open(os.path.join(output_dir, "summary.json"), "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        if self.tripinfo_output:
-            cmd.extend(["--tripinfo-output", self.tripinfo_output])
+    with open(os.path.join(output_dir, "phase_log.json"), "w", encoding="utf-8") as f:
+        json.dump(phase_log, f, indent=2, ensure_ascii=False)
 
-        # Nối các tham số bổ sung (tránh trùng lặp cờ)
-        if self.additional_args:
-            cmd.extend(self.additional_args)
+    with open(os.path.join(output_dir, "run_config.json"), "w", encoding="utf-8") as f:
+        json.dump(run_config, f, indent=2, ensure_ascii=False)
 
-        return cmd
+    return summary
 
-    @property
-    def conn(self) -> Any:
-        """Trả về đối tượng kết nối mô phỏng đang hoạt động (libsumo hoặc traci)."""
-        if self._conn is not None:
-            return self._conn
-        if self.use_libsumo and HAS_LIBSUMO:
-            return libsumo
-        return traci
 
-    @property
-    def backend(self) -> str:
-        """Tên backend đang hoạt động: 'libsumo' hoặc 'traci'."""
-        return self._backend
+if __name__ == "__main__":
+    import argparse
 
-    def start(self, gui: bool = False) -> None:
-        """Khởi động tiến trình SUMO và kết nối libsumo hoặc TraCI.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
 
-        Tham số:
-            gui: Nếu True, khởi chạy sumo-gui (buộc dùng traci do libsumo không hỗ trợ GUI).
-                 Nếu False, khởi chạy sumo ở chế độ headless với libsumo (nếu được yêu cầu và có sẵn).
-        """
-        # Đảm bảo đóng mọi kết nối đang treo trước khi khởi động lượt mới
-        self.close()
+    parser = argparse.ArgumentParser(description="Chạy mô phỏng SUMO và thu thập 5 chỉ số giao thông.")
+    parser.add_argument("--scenario", type=str, default="cologne1", choices=["cologne1", "ingolstadt1"], help="Tên kịch bản")
+    parser.add_argument("--green-time", type=float, default=30.0, help="Thời gian xanh cố định (s)")
+    parser.add_argument("--yellow-time", type=float, default=3.0, help="Thời gian vàng (s)")
+    parser.add_argument("--all-red-time", type=float, default=1.0, help="Thời gian đỏ toàn phần (s)")
+    parser.add_argument("--seed", type=int, default=42, help="Hạt giống ngẫu nhiên")
+    parser.add_argument("--max-steps", type=int, default=None, help="Số bước tối đa (mặc định: hết khung giờ 1h)")
+    parser.add_argument("--gui", action="store_true", help="Bật giao diện SUMO-GUI")
+    parser.add_argument("--output-dir", type=str, default=None, help="Thư mục xuất kết quả")
 
-        if self.use_libsumo and not gui:
-            if HAS_LIBSUMO:
-                self._conn = libsumo
-                self._backend = "libsumo"
-            else:
-                self._conn = traci
-                self._backend = "traci"
-        else:
-            self._conn = traci
-            self._backend = "traci"
+    args = parser.parse_args()
 
-        cmd = self.build_sumo_cmd(gui=gui)
-        self.conn.start(cmd)
+    print(f"=== BẮT ĐẦU MÔ PHỎNG: {args.scenario} (Seed {args.seed}) ===")
+    result = run_simulation(
+        scenario_name=args.scenario,
+        green_time=args.green_time,
+        yellow_time=args.yellow_time,
+        all_red_time=args.all_red_time,
+        seed=args.seed,
+        max_steps=args.max_steps,
+        gui=args.gui,
+        output_dir=args.output_dir,
+    )
 
-        # Nếu chưa biết các làn đi vào trước đó, truy vấn động từ mạng lưới
-        if not self.incoming_lanes and self.tls_id:
-            try:
-                lanes = self.conn.trafficlight.getControlledLanes(self.tls_id)
-                self.incoming_lanes = sorted(list(set(lanes)))
-            except Exception:
-                pass
-
-    def measure_queue(self) -> int:
-        """Đo tổng số lượng xe dừng chờ (vận tốc < 0.1 m/s) trên các làn đường đi vào.
-
-        Trả về:
-            Tổng số lượng xe trong hàng đợi trên tất cả các làn vào được theo dõi.
-        """
-        if not self.incoming_lanes:
-            return 0
-        total_halted = 0
-        for lane_id in self.incoming_lanes:
-            try:
-                total_halted += self.conn.lane.getLastStepHaltingNumber(lane_id)
-            except Exception:
-                pass
-        return total_halted
-
-    def step(self) -> Tuple[str, int]:
-        """Thực thi một bước điều phối mô phỏng đơn lẻ:
-
-        1. Cập nhật pha tín hiệu đèn thông qua bộ điều khiển
-        2. Đo độ dài hàng đợi trên các làn đi vào
-        3. Tiến một bước mô phỏng (conn.simulationStep())
-
-        Trả về:
-            Tuple[str, int]: (trạng_thái_đèn, độ_dài_hàng_đợi)
-        """
-        # 1. Cập nhật trạng thái tín hiệu đèn
-        state, _ = self.controller.step(self.step_duration)
-        if self.tls_id:
-            self.conn.trafficlight.setRedYellowGreenState(self.tls_id, state)
-
-        # 2. Đo hàng đợi
-        queue = self.measure_queue()
-
-        # 3. Bước mô phỏng tiếp theo
-        self.conn.simulationStep()
-
-        return state, queue
-
-    def close(self) -> None:
-        """Đóng an toàn kết nối TraCI hoặc libsumo nếu đang tải."""
-        targets = [self._conn, libsumo if HAS_LIBSUMO else None, traci]
-        for conn in targets:
-            if conn is not None:
-                try:
-                    if getattr(conn, "isLoaded", lambda: False)():
-                        conn.close()
-                except Exception:
-                    pass
-        self._conn = None
-
-    def __enter__(self) -> "SimulationRunner":
-        """Hỗ trợ context manager khi bắt đầu khối with."""
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Hỗ trợ context manager tự động đóng TraCI hoặc libsumo khi thoát."""
-        self.close()
-
-    def run(
-        self,
-        gui: bool = False,
-        max_steps: int = 3600,
-        step_callback: Optional[Callable[[int, str, int], None]] = None,
-    ) -> SimulationResult:
-        """Chạy mô phỏng tối đa max_steps bước với cơ chế xử lý ngoại lệ an toàn.
-
-        Tham số:
-            gui: True để bật giao diện GUI, False để chạy ngầm (headless).
-            max_steps: Số giây/bước mô phỏng tối đa cần chạy.
-            step_callback: Callback tùy chọn được gọi tại mỗi bước với dạng (step_idx, state, queue).
-
-        Trả về:
-            SimulationResult chứa số bước thực hiện và các chỉ số hàng đợi.
-        """
-        if max_steps <= 0:
-            raise ValueError(f"max_steps must be positive, got {max_steps}.")
-
-        queue_history: List[int] = []
-        sim_time_start: float = 0.0
-        sim_time_end: float = 0.0
-        completed = False
-
-        self.controller.reset()
-
-        try:
-            self.start(gui=gui)
-            sim_time_start = float(self.conn.simulation.getTime())
-
-            for step_idx in range(max_steps):
-                state, current_queue = self.step()
-                queue_history.append(current_queue)
-
-                if step_callback is not None:
-                    step_callback(step_idx, state, current_queue)
-
-                # Nếu không còn phương tiện nào trên mạng lưới, kết thúc sớm
-                if self.conn.simulation.getMinExpectedNumber() <= 0 and step_idx > 10:
-                    break
-
-            sim_time_end = float(self.conn.simulation.getTime())
-            completed = True
-        finally:
-            # Luôn đảm bảo đóng TraCI / libsumo an toàn
-            self.close()
-
-        mean_queue = float(sum(queue_history) / len(queue_history)) if queue_history else 0.0
-        max_queue = max(queue_history) if queue_history else 0
-
-        return SimulationResult(
-            total_steps=len(queue_history),
-            sim_time_start=sim_time_start,
-            sim_time_end=sim_time_end,
-            queue_history=queue_history,
-            controller_step_count=self.controller.step_count,
-            mean_queue_length=mean_queue,
-            max_queue_length=max_queue,
-            tripinfo_path=self.tripinfo_output,
-            completed=completed,
-            tls_id=self.tls_id,
-            controller_type=self.controller_type,
-            backend=self.backend,
-        )
+    print("\n=== KẾT QUẢ TỔNG HỢP (5 CORE METRICS) ===")
+    print(f"1. Average Travel Time: {result['average_travel_time']} s")
+    print(f"2. Average Waiting Time: {result['average_waiting_time']} s")
+    print(f"3. Average Time Loss: {result['average_time_loss']} s")
+    print(f"4. Mean Queue Length: {result['mean_queue_length']} xe (Max: {result['max_queue_length']} xe)")
+    print(f"5. Throughput: {result['throughput']} xe hoàn thành")
+    print(f"   - Tổng nhu cầu: {result['total_demand']} xe | Đã vào mạng: {result['inserted_vehicles']} xe")
+    print(f"   - Xe còn trên mạng: {result['running_vehicles_at_end']} xe | Xe chờ vào: {result['waiting_to_enter']} xe")
+    print(f"   - Tỷ lệ hoàn thành: {result['completion_rate_pct']} %")
