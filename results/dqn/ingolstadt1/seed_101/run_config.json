@@ -2,10 +2,13 @@
   "scenario": "ingolstadt1",
   "controller": "DQNController",
   "seed": 101,
-  "green_time": 30.0,
+  "control_type": "adaptive",
+  "decision_interval": 5.0,
+  "min_green": 20.0,
+  "max_green": 45.0,
+  "max_red": 90.0,
   "yellow_time": 3.0,
   "all_red_time": 1.0,
-  "cycle_time": null,
   "begin_time": 57600.0,
   "end_time": 61200.0,
   "total_demand": 1716,
@@ -17,5 +20,20 @@
     "201963537#1_1",
     "201963537#1_2",
     "201963537#1_3"
-  ]
+  ],
+  "sumo_backend": "libsumo",
+  "sumo_version": "SUMO 1.28.0 (API v22)",
+  "checkpoint_path": "models\\dqn\\ingolstadt1_best.pt",
+  "checkpoint_hash": "b76bcac3ba6a4d08",
+  "checkpoint_metadata": {
+    "scenario": "ingolstadt1",
+    "best_episode": 55,
+    "val_waiting_time": 17.96,
+    "val_metrics": {
+      "val_waiting_time": 17.96,
+      "val_travel_time": 48.34,
+      "val_queue_length": 2.41,
+      "val_throughput": 1686.7
+    }
+  }
 }

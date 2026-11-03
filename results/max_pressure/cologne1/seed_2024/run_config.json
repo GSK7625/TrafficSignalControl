@@ -2,10 +2,13 @@
   "scenario": "cologne1",
   "controller": "MaxPressureController",
   "seed": 2024,
-  "green_time": 30.0,
+  "control_type": "adaptive",
+  "decision_interval": null,
+  "min_green": 20.0,
+  "max_green": 45.0,
+  "max_red": 90.0,
   "yellow_time": 3.0,
   "all_red_time": 1.0,
-  "cycle_time": null,
   "begin_time": 25200.0,
   "end_time": 28800.0,
   "total_demand": 2015,
@@ -18,5 +21,10 @@
     "27115123#3_1",
     "28198821#3_0",
     "28198821#3_1"
-  ]
+  ],
+  "sumo_backend": "libsumo",
+  "sumo_version": "SUMO 1.28.0 (API v22)",
+  "checkpoint_path": null,
+  "checkpoint_hash": null,
+  "checkpoint_metadata": null
 }

@@ -44,13 +44,15 @@ def evaluate_dqn_scenario(
 
     print(f"--> Nạp model từ: {model_path}")
 
-    # Cấu hình vector state theo từng mạng
+    # Đọc cấu hình từ checkpoint để đồng bộ 100% state_dim và q_max của mô hình
+    checkpoint_data = torch.load(model_path, map_location="cpu")
+    saved_cfg = checkpoint_data.get("config", {})
+    state_dim = saved_cfg.get("state_dim", 2 * len(scenario["green_phases"]) + 1)
+
     if scenario_name == "ingolstadt1":
-        state_dim = 6
-        q_max = 30.0
+        q_max = saved_cfg.get("q_max", 30.0)
     elif scenario_name == "cologne1":
-        state_dim = 11
-        q_max = 50.0
+        q_max = saved_cfg.get("q_max", 50.0)
     else:
         raise ValueError(f"Kịch bản không được hỗ trợ: {scenario_name}")
 

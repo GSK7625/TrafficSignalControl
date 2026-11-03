@@ -13,7 +13,6 @@ import json
 import os
 import sys
 from typing import Any, Dict, List, Optional
-import traci
 
 from src.controllers.fixed_time import (
     FixedTimeController,
@@ -22,6 +21,19 @@ from src.controllers.fixed_time import (
 )
 from src.data_inspector import read_scenario
 from src.metrics import MetricsCollector
+
+
+def get_simulation_backend(gui: bool = False):
+    """Lấy backend điều khiển mô phỏng SUMO (libsumo chạy nhúng nhanh gấp 5-10 lần khi headless, traci cho GUI)."""
+    if gui:
+        import traci
+        return traci
+    try:
+        import libsumo
+        return libsumo
+    except ImportError:
+        import traci
+        return traci
 
 
 def run_simulation(
@@ -102,8 +114,20 @@ def run_simulation(
         "--duration-log.disable", "false",
     ]
 
-    # 5. Mở kết nối TraCI
+    # 5. Mở kết nối backend mô phỏng (libsumo hoặc traci)
+    traci = get_simulation_backend(gui=gui)
     traci.start(sumo_cmd)
+
+    sumo_backend_name = "libsumo" if getattr(traci, "__name__", "") == "libsumo" else "traci"
+    sumo_version = "unknown"
+    try:
+        ver = traci.getVersion()
+        if isinstance(ver, (tuple, list)) and len(ver) >= 2:
+            sumo_version = f"{ver[1]} (API v{ver[0]})"
+        else:
+            sumo_version = str(ver)
+    except Exception:
+        pass
 
     try:
         current_sim_time = traci.simulation.getTime()
@@ -129,10 +153,11 @@ def run_simulation(
 
             traci.trafficlight.setRedYellowGreenState(tls_id, state)
 
-            if changed and event_name:
+            # Ghi nhận toàn bộ sự kiện chuyển pha VÀ mọi quyết định RL (bao gồm cả KEEP)
+            if (changed and event_name) or decision_info:
                 log_entry: Dict[str, Any] = {
                     "step_time": current_sim_time,
-                    "event": event_name,
+                    "event": event_name or ("rl_decision_keep" if decision_info else "phase_step"),
                     "phase_index": getattr(controller, "current_phase_idx", -1),
                     "state": state,
                 }
@@ -140,9 +165,17 @@ def run_simulation(
                     log_entry["decision"] = decision_info
                 phase_log.append(log_entry)
 
-            # B. Thu thập độ dài hàng đợi trên tất cả các làn vào
+            # B. Tiến mô phỏng 1 bước thời gian
+            traci.simulationStep()
+            current_sim_time = traci.simulation.getTime()
+
+            # C. Thu thập dữ liệu giao thông ngay sau khi bước mô phỏng vừa hoàn thành
             step_queue = sum(
                 traci.lane.getLastStepHaltingNumber(lane_id)
+                for lane_id in incoming_lanes
+            )
+            step_waiting_time = sum(
+                traci.lane.getWaitingTime(lane_id)
                 for lane_id in incoming_lanes
             )
             running_count = traci.vehicle.getIDCount()
@@ -150,6 +183,7 @@ def run_simulation(
             arrived_step = traci.simulation.getArrivedNumber()
             teleport_step = traci.simulation.getStartingTeleportNumber()
             collision_step = traci.simulation.getCollidingVehiclesNumber()
+            emergency_step = traci.simulation.getEmergencyStoppingVehiclesNumber()
 
             collector.record_step(
                 sim_time=current_sim_time,
@@ -159,11 +193,19 @@ def run_simulation(
                 arrived_step=arrived_step,
                 teleported_step=teleport_step,
                 collisions_step=collision_step,
+                emergency_step=emergency_step,
             )
 
-            # C. Tiến mô phỏng 1 bước thời gian
-            traci.simulationStep()
-            current_sim_time = traci.simulation.getTime()
+            # D. Chuyển dữ liệu quan sát về controller để tích lũy reward SMDP sau bước thực thi
+            if hasattr(controller, "observe_step"):
+                try:
+                    controller.observe_step(step_queue=step_queue, step_waiting_time=step_waiting_time)
+                except TypeError:
+                    controller.observe_step(step_queue=step_queue)
+
+        # E. Xử lý chuyển tiếp cuối kỳ cho mô hình học tăng cường (Time-limit Truncation)
+        if hasattr(controller, "finalize_episode"):
+            controller.finalize_episode()
 
     finally:
         # 7. Đóng TraCI an toàn
@@ -176,19 +218,51 @@ def run_simulation(
         end_time=end_time,
     )
 
-    # Thêm cấu hình chạy vào bản tổng kết
+    # Phân loại và trích xuất cấu hình điều khiển chính xác, tránh gán green_time cố định cho các bộ điều khiển thích ứng
+    is_fixed = hasattr(controller, "green_time") and getattr(controller, "green_time") is not None
+    if is_fixed:
+        controller_params = {
+            "control_type": "fixed_time",
+            "green_time": float(getattr(controller, "green_time")),
+            "cycle_time": getattr(controller, "cycle_time", None),
+        }
+    else:
+        controller_params = {
+            "control_type": "adaptive",
+            "decision_interval": getattr(controller, "decision_interval", None),
+            "min_green": getattr(controller, "min_green", None),
+            "max_green": getattr(controller, "max_green", None),
+            "max_red": getattr(controller, "max_red", None),
+        }
+
+    # Trích xuất định danh model checkpoint (đường dẫn và checksum)
+    model_path = getattr(controller, "model_path", None)
+    model_hash = getattr(controller, "model_hash", None)
+    if model_path and not model_hash and os.path.isfile(model_path):
+        try:
+            import hashlib
+            with open(model_path, "rb") as f_bin:
+                model_hash = hashlib.sha256(f_bin.read()).hexdigest()[:16]
+        except Exception:
+            model_hash = None
+
+    # Thêm cấu hình chạy vào bản tổng kết phục vụ đối chuẩn tái lập 100%
     run_config = {
         "scenario": scenario_name,
         "controller": controller.__class__.__name__,
         "seed": seed,
-        "green_time": getattr(controller, "green_time", green_time),
+        **controller_params,
         "yellow_time": getattr(controller, "yellow_time", yellow_time),
         "all_red_time": getattr(controller, "all_red_time", all_red_time),
-        "cycle_time": getattr(controller, "cycle_time", None),
         "begin_time": begin_time,
         "end_time": end_time,
         "total_demand": total_demand,
         "incoming_lanes": incoming_lanes,
+        "sumo_backend": sumo_backend_name,
+        "sumo_version": sumo_version,
+        "checkpoint_path": model_path,
+        "checkpoint_hash": model_hash,
+        "checkpoint_metadata": getattr(controller, "model_metadata", None),
     }
     summary["config"] = run_config
 

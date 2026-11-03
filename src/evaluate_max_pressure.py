@@ -99,6 +99,7 @@ def evaluate_max_pressure_scenario(scenario_name: str, seeds: List[int] = TEST_S
             "inserted_vehicles": calc_stats(inserted_vehs),
             "completed_vehicles": calc_stats(throughputs),
             "running_at_end": calc_stats(running_vehs),
+            "running_vehicles_at_end": calc_stats(running_vehs),
             "completion_rate_pct": calc_stats(completion_rates),
         },
         "anomalies": {

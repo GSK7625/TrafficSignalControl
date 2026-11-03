@@ -27,7 +27,7 @@ from src.simulation_runner import run_simulation
 TRAIN_SEEDS: List[int] = list(range(1, 21))
 
 # Seed validation cố định (độc lập với train và test)
-VAL_SEEDS: List[int] = [99]
+VAL_SEEDS: List[int] = [21, 22, 23]
 
 
 def set_random_seed(seed: int) -> None:
@@ -95,7 +95,7 @@ def evaluate_on_validation(
 
 def train_dqn(
     scenario_name: str,
-    total_episodes: int = 30,
+    total_episodes: int = 100,
     eval_interval: int = 5,
     lr: float = 0.0005,
     gamma: float = 0.95,
@@ -122,21 +122,26 @@ def train_dqn(
     os.makedirs(model_dir, exist_ok=True)
     os.makedirs(os.path.join("results", "dqn"), exist_ok=True)
 
-    # Cấu hình kích thước vector state và ngưỡng hàng đợi theo kịch bản
+    # Cấu hình kích thước vector state nhận diện hàng đợi từng pha (2P + 1) và ngưỡng hàng đợi theo kịch bản
+    num_p = len(scenario["green_phases"])
+    state_dim = 2 * num_p + 1  # One-hot pha (P) + thời gian xanh (1) + hàng đợi chuẩn hóa từng pha (P)
     if scenario_name == "ingolstadt1":
-        state_dim = 6  # 3 one-hot + 1 time + 2 queues
         q_max = 30.0
     elif scenario_name == "cologne1":
-        state_dim = 11  # 8 one-hot + 1 time + 2 queues
         q_max = 50.0
     else:
         raise ValueError(f"Kịch bản không được hỗ trợ: {scenario_name}")
+
+    # Thiết lập seed trước khi khởi tạo mô hình mạng nơ-ron để tái lập trọng số khởi đầu
+    init_seed = train_seeds[0] if train_seeds else 42
+    set_random_seed(init_seed)
 
     controller = DQNController(
         green_phases=scenario["green_phases"],
         movements=scenario["movements"],
         state_dim=state_dim,
         q_max=q_max,
+        per_phase_queues=True,
         decision_interval=5.0,
         min_green=20.0,
         max_green=45.0,
@@ -288,7 +293,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Huấn luyện DQN cho điều khiển đèn giao thông.")
     parser.add_argument("--scenario", type=str, required=True, choices=["cologne1", "ingolstadt1"])
-    parser.add_argument("--episodes", type=int, default=30, help="Tổng số episode huấn luyện")
+    parser.add_argument("--episodes", type=int, default=100, help="Tổng số episode huấn luyện")
     parser.add_argument("--eval-interval", type=int, default=5, help="Chu kỳ chạy validation (episodes)")
     parser.add_argument("--lr", type=float, default=0.0005, help="Learning rate Adam")
     parser.add_argument("--gamma", type=float, default=0.95, help="Discount factor")

@@ -33,9 +33,27 @@ def build_yellow_state(
     return "".join(res)
 
 
-def build_all_red_state(curr_state: str) -> str:
-    """Tạo chuỗi trạng thái đỏ toàn phần: tất cả các đèn hiển thị 'r'."""
-    return "r" * len(curr_state)
+def build_all_red_state(
+    curr_state: str,
+    next_state: Optional[str] = None,
+    only_changing: bool = True,
+) -> str:
+    """Tạo chuỗi trạng thái đỏ dọn nút giao an toàn: các đèn chuyển sang 'r',
+    những link tiếp tục được phục vụ ở pha sau giữ nguyên xanh nếu only_changing=True.
+    """
+    res: List[str] = []
+    for idx, char in enumerate(curr_state):
+        if (
+            only_changing
+            and next_state is not None
+            and idx < len(next_state)
+            and char in ("G", "g", "s")
+            and next_state[idx] in ("G", "g", "s")
+        ):
+            res.append(char)  # Giữ nguyên xanh nếu pha sau tiếp tục được phục vụ
+        else:
+            res.append("r")
+    return "".join(res)
 
 
 class FixedTimeController:
@@ -100,18 +118,19 @@ class FixedTimeController:
                 res.append("r")
         return "".join(res)
 
-    def _build_all_red_state(self, curr_state: str) -> str:
-        """Tạo chuỗi trạng thái đỏ toàn phần: tất cả các đèn hiển thị 'r'."""
-        return "r" * len(curr_state)
+    def _build_all_red_state(self, curr_state: str, next_state: Optional[str] = None) -> str:
+        """Tạo chuỗi trạng thái đỏ dọn nút giao an toàn."""
+        return build_all_red_state(curr_state, next_state)
 
     def get_current_state(self) -> str:
-        """Lấy chuỗi trạng thái đèn hiện tại (xanh, vàng hoặc đỏ toàn phần)."""
+        """Lấy chuỗi trạng thái đèn hiện tại (xanh, vàng hoặc đỏ dọn nút)."""
         curr_green = self.green_phases[self.current_phase_idx]
         if self.is_yellow:
             next_green = self.green_phases[self.next_phase_idx]
             return self._build_yellow_state(curr_green, next_green)
         if self.is_all_red:
-            return self._build_all_red_state(curr_green)
+            next_green = self.green_phases[self.next_phase_idx]
+            return self._build_all_red_state(curr_green, next_green)
         return curr_green
 
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool, Optional[str]]:

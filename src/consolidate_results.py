@@ -57,7 +57,8 @@ def main():
         for algo_name, s in data.items():
             m = s["metrics"]
             v = s.get("vehicle_stats", {})
-            uncompleted = v.get("running_vehicles_at_end", {}).get("mean", 0)
+            uncompleted_stats = v.get("running_vehicles_at_end") or v.get("running_at_end") or {}
+            uncompleted = uncompleted_stats.get("mean", 0)
 
             # Delta so với FT cho waiting time
             wt_mean = m["average_waiting_time"]["mean"]

@@ -159,3 +159,17 @@ def test_simulation_runner_with_max_pressure():
     assert summary["mean_queue_length"] is not None
     assert os.path.isfile(os.path.join(out_dir, "summary.json"))
     assert os.path.isfile(os.path.join(out_dir, "phase_log.json"))
+
+
+def test_sensor_exception_not_swallowed_max_pressure():
+    """Kiểm tra Max-Pressure không nuốt âm thầm ngoại lệ cảm biến thành 0."""
+    def broken_fn(lane: str) -> int:
+        raise ValueError("Lỗi đọc dữ liệu cảm biến làn")
+
+    controller = MaxPressureController(
+        green_phases=["GGGrrr", "rrrGGG"],
+        movements=[{"link_index": 0, "from_lane": "l_in", "to_lane": "l_out"}],
+        vehicle_count_fn=broken_fn,
+    )
+    with pytest.raises(ValueError, match="Lỗi đọc dữ liệu cảm biến làn"):
+        controller.calculate_phase_pressures()

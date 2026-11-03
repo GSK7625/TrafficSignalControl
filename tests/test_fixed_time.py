@@ -81,3 +81,12 @@ def test_fixed_time_one_full_cycle_cologne1():
     )
     assert summary["total_simulation_steps"] == 272
     assert summary["config"]["cycle_time"] == 272.0
+
+
+def test_build_all_red_state_preserves_continuing_green():
+    """Kiểm tra build_all_red_state không làm link tiếp tục xanh bị ngắt sang đỏ đột ngột."""
+    curr_green = "GGrr"
+    next_green = "GrrG"
+    all_red = build_all_red_state(curr_green, next_green, only_changing=True)
+    assert all_red == "Grrr"
+

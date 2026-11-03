@@ -183,3 +183,166 @@ def test_simulation_runner_zero_completed_edge_case():
     assert summary["average_travel_time"] is None
     assert summary["average_waiting_time"] is None
     assert summary["average_time_loss"] is None
+
+
+def test_simulation_vehicle_conservation():
+    """Kiểm tra định luật bảo toàn phương tiện: inserted == completed + running_at_end."""
+    out_dir = os.path.join("results", "tests", "conservation_test")
+    summary = run_simulation(
+        scenario_name="ingolstadt1",
+        seed=42,
+        max_steps=200,
+        gui=False,
+        output_dir=out_dir,
+    )
+    inserted = summary["inserted_vehicles"]
+    completed = summary["completed_vehicles"]
+    running = summary["running_vehicles_at_end"]
+
+    # Bảo toàn tuyệt đối: tổng số xe vào phải bằng tổng số xe hoàn thành cộng xe còn trên mạng
+    assert inserted == completed + running
+
+
+def test_phase_log_records_keep_decisions():
+    """Kiểm tra phase_log.json ghi nhận đầy đủ mọi quyết định của RL (kể cả KEEP)."""
+    import json
+    from src.data_inspector import read_scenario
+    from src.controllers.q_learning import QLearningController
+
+    scen = read_scenario("ingolstadt1")
+    controller = QLearningController(
+        green_phases=scen["green_phases"],
+        movements=scen["movements"],
+        min_green=10.0,
+        decision_interval=5.0,
+        learning_enabled=False,
+    )
+    out_dir = os.path.join("results", "tests", "keep_log_test")
+    run_simulation(
+        scenario_name="ingolstadt1",
+        controller=controller,
+        max_steps=50,
+        gui=False,
+        output_dir=out_dir,
+    )
+    with open(os.path.join(out_dir, "phase_log.json"), encoding="utf-8") as f:
+        log_data = json.load(f)
+
+    # Tìm quyết định KEEP
+    keep_decisions = [
+        entry for entry in log_data
+        if entry.get("decision", {}).get("action_name") == "KEEP"
+    ]
+    assert len(keep_decisions) > 0, "Không tìm thấy quyết định KEEP nào được ghi nhận trong phase_log"
+    # Kiểm tra các trường audit trong decision
+    first_keep = keep_decisions[0]["decision"]
+    assert "action" in first_keep
+    assert "valid_actions" in first_keep
+    assert "is_forced" in first_keep
+
+
+def test_run_config_metadata_and_adaptive_timing():
+    """Kiểm tra run_config.json lưu đúng loại hình điều khiển:
+    1. Bộ điều khiển thích ứng (Adaptive RL): Không ghi nhận green_time cố định 30.0,
+       ghi nhận min_green, max_green, decision_interval, max_red, sumo_backend, sumo_version.
+    2. Bộ điều khiển cố định (Fixed-time): Ghi nhận control_type='fixed_time', green_time và cycle_time.
+    """
+    import json
+    from src.data_inspector import read_scenario
+    from src.controllers.q_learning import QLearningController
+    from src.controllers.fixed_time import FixedTimeController
+
+    scen = read_scenario("ingolstadt1")
+
+    # 1. Thử nghiệm với Q-Learning (Adaptive)
+    ql_controller = QLearningController(
+        green_phases=scen["green_phases"],
+        movements=scen["movements"],
+        min_green=15.0,
+        max_green=50.0,
+        decision_interval=5.0,
+        learning_enabled=False,
+    )
+    out_dir_ql = os.path.join("results", "tests", "test_run_config_ql")
+    run_simulation(
+        scenario_name="ingolstadt1",
+        controller=ql_controller,
+        max_steps=5,
+        gui=False,
+        output_dir=out_dir_ql,
+    )
+
+    with open(os.path.join(out_dir_ql, "run_config.json"), encoding="utf-8") as f:
+        cfg_ql = json.load(f)
+
+    assert cfg_ql["control_type"] == "adaptive"
+    assert "green_time" not in cfg_ql, "Bộ điều khiển thích ứng không được ghi 'green_time'"
+    assert cfg_ql["min_green"] == 15.0
+    assert cfg_ql["max_green"] == 50.0
+    assert cfg_ql["decision_interval"] == 5.0
+    assert cfg_ql["sumo_backend"] in ("traci", "libsumo")
+    assert "sumo_version" in cfg_ql
+    assert "checkpoint_path" in cfg_ql
+    assert "checkpoint_hash" in cfg_ql
+
+    # 2. Thử nghiệm với Fixed-Time (Fixed)
+    ft_controller = FixedTimeController(
+        green_phases=scen["green_phases"],
+        green_time=25.0,
+        yellow_time=3.0,
+        all_red_time=1.0,
+    )
+    out_dir_ft = os.path.join("results", "tests", "test_run_config_ft")
+    run_simulation(
+        scenario_name="ingolstadt1",
+        controller=ft_controller,
+        max_steps=5,
+        gui=False,
+        output_dir=out_dir_ft,
+    )
+
+    with open(os.path.join(out_dir_ft, "run_config.json"), encoding="utf-8") as f:
+        cfg_ft = json.load(f)
+
+    assert cfg_ft["control_type"] == "fixed_time"
+    assert cfg_ft["green_time"] == 25.0
+    assert cfg_ft["cycle_time"] is not None
+    assert cfg_ft["sumo_backend"] in ("traci", "libsumo")
+    assert "sumo_version" in cfg_ft
+
+
+def test_simulation_runner_passes_step_waiting_time():
+    """Kiểm tra simulation_runner trích xuất step_waiting_time từ TraCI và truyền vào controller.observe_step."""
+    class MockObserverController:
+        def __init__(self, green_phases):
+            self.green_phases = green_phases
+            self.current_phase_idx = 0
+            self.observed_waiting_times = []
+            self.observed_queues = []
+
+        def get_current_state(self):
+            return self.green_phases[0]
+
+        def step(self, step_duration=1.0):
+            return "phase_step", False, None
+
+        def observe_step(self, step_queue=None, step_waiting_time=None):
+            self.observed_queues.append(step_queue)
+            self.observed_waiting_times.append(step_waiting_time)
+
+    from src.data_inspector import read_scenario
+    scen = read_scenario("ingolstadt1")
+    ctrl = MockObserverController(scen["green_phases"])
+    out_dir = os.path.join("results", "tests", "test_mock_observer")
+    run_simulation(
+        scenario_name="ingolstadt1",
+        controller=ctrl,
+        max_steps=5,
+        gui=False,
+        output_dir=out_dir,
+    )
+    assert len(ctrl.observed_waiting_times) == 5
+    assert all(w is not None and isinstance(w, (int, float)) for w in ctrl.observed_waiting_times)
+
+
+

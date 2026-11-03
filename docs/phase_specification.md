@@ -1,142 +1,100 @@
-# Đặc Tả Pha Phục Vụ Và Quy Tắc Chuyển Pha (Phase Specification)
+# Đặc Tả Pha Phục Vụ & Chuyển Pha An Toàn (Phase Specification)
 
-Tài liệu này xác định ánh xạ chi tiết các liên kết (links/movements), ý nghĩa các ký hiệu đèn, tập pha xanh hợp lệ và quy tắc chuyển pha dọn nút giao an toàn dùng chung cho cả ba thuật toán: **Fixed-Time (FT)**, **Max-Pressure (MP)**, và **Tabular Q-Learning** trên hai bản đồ `cologne1` và `ingolstadt1`.
+Tài liệu xác định ánh xạ liên kết (links), tập pha xanh hợp lệ, quy tắc tạo chuỗi đèn vàng/đỏ dọn nút giao an toàn và các ràng buộc thời gian dùng chung cho cả 4 thuật toán (**Fixed-Time**, **Max-Pressure**, **Tabular Q-Learning**, **Deep Q-Network**) trên `ingolstadt1` và `cologne1`.
 
 ---
 
-## 1. Ý Nghĩa Các Ký Hiệu Đèn Tín Hiệu Trong SUMO
+## 1. Ký Hiệu Đèn Tín Hiệu Trong SUMO
 
-| Ký hiệu | Tên gọi | Quyền ưu tiên | Hành vi của phương tiện |
-| :---: | :--- | :--- | :--- |
-| `G` | Green Major (Xanh ưu tiên) | Quyền ưu tiên cao nhất | Xe được phép đi thẳng hoặc rẽ mà không phải nhường đường cho luồng ngược chiều. |
-| `g` | Green Minor (Xanh thứ cấp) | Không ưu tiên (nhường đường) | Xe được phép đi (thường là rẽ trái hoặc quay đầu), nhưng bắt buộc phải nhường đường cho xe đi thẳng đối diện. |
-| `y` | Yellow (Đèn vàng) | Chuyển tiếp dọn nút giao | Xe phải dừng lại trước vạch dừng trừ khi đã quá gần vạch dừng và không thể phanh an toàn. |
-| `r` | Red (Đèn đỏ) | Cấm tuyệt đối | Cấm phương tiện vượt qua vạch dừng. |
-| `s` | Stop-Green (Dừng quan sát) | Phải dừng hoàn toàn | Xe phải dừng hẳn trước vạch dừng, quan sát luồng ưu tiên, khi an toàn mới được di chuyển tiếp (tương tự biển STOP). |
+| Ký hiệu | Ý nghĩa | Hành vi phương tiện |
+| :---: | :--- | :--- |
+| `G` | Green Major (Xanh ưu tiên) | Được đi, quyền ưu tiên tuyệt đối không phải nhường đường. |
+| `g` | Green Minor (Xanh thứ cấp) | Được đi nhưng phải nhường đường cho luồng ngược chiều (rẽ trái/quay đầu). |
+| `y` | Yellow (Đèn vàng) | Dừng trước vạch trừ khi đã quá gần không thể phanh an toàn ($t=3$s). |
+| `r` | Red (Đèn đỏ) | Dừng tuyệt đối trước vạch dừng. |
+| `s` | Stop-Green (Dừng quan sát) | Phải dừng hẳn, quan sát an toàn mới được di chuyển (nhập làn rẽ phải). |
 
 ---
 
 ## 2. Bản Đồ `ingolstadt1`
 
-### 2.1. Ánh xạ 8 liên kết (Links 0 đến 7)
-- **Bộ điều khiển**: `cluster_274083968_cluster_1200364014_1200364088` (1 bộ điều khiển, 8 links).
+- **Bộ điều khiển:** `cluster_274083968_cluster_1200364014_1200364088` (8 liên kết, 3 pha xanh).
 
-| Link Index | Làn vào (`from_lane`) | Làn ra (`to_lane`) | Hướng (`dir`) | Mô tả chuyển động |
-| :---: | :--- | :--- | :---: | :--- |
-| **0** | `201963537#1_1` | `104010475#0_1` | `s` (thẳng) | Trục chính: Đi thẳng làn trong |
-| **1** | `201963537#1_2` | `104010475#0_2` | `s` (thẳng) | Trục chính: Đi thẳng làn giữa |
-| **2** | `201963537#1_3` | `-164051413_1` | `l` (trái) | Trục chính: Rẽ trái sang đường nhánh |
-| **3** | `164051413_1` | `124812857#0_1` | `r` (phải) | Đường nhánh: Rẽ phải nhập vào trục chính |
-| **4** | `164051413_2` | `104010475#0_2` | `l` (trái) | Đường nhánh: Rẽ trái cắt ngang trục chính |
-| **5** | `104010354_1` | `-164051413_1` | `r` (phải) | Hướng đối: Rẽ phải sang đường nhánh |
-| **6** | `104010354_1` | `124812857#0_2` | `s` (thẳng) | Hướng đối: Đi thẳng làn trong |
-| **7** | `104010354_2` | `124812857#0_3` | `s` (thẳng) | Hướng đối: Đi thẳng làn ngoài |
+### 2.1. Danh mục liên kết (Links 0 đến 7)
+- **Links 0, 1:** Trục chính đi thẳng (`201963537#1` $\rightarrow$ `104010475#0`).
+- **Link 2:** Trục chính rẽ trái (`201963537#1` $\rightarrow$ `-164051413`).
+- **Link 3:** Đường nhánh rẽ phải (`164051413` $\rightarrow$ `124812857#0`).
+- **Link 4:** Đường nhánh rẽ trái (`164051413` $\rightarrow$ `104010475#0`).
+- **Link 5:** Hướng đối rẽ phải (`104010354` $\rightarrow$ `-164051413`).
+- **Links 6, 7:** Hướng đối đi thẳng (`104010354` $\rightarrow$ `124812857#0`).
 
 ### 2.2. Tập 3 pha xanh hợp lệ
-- **Pha xanh 0 (`GGgGrGGG`)**: Trục chính hai chiều thông suốt (Links 0, 1, 3, 5, 6, 7 là `G`; link 2 rẽ trái nhường đường `g`).
-- **Pha xanh 1 (Index 2 trong XML: `GGGrrrrr`)**: Pha bảo hộ rẽ trái trục chính (Links 0, 1 đi thẳng `G`, link 2 rẽ trái bảo hộ `G`).
-- **Pha xanh 2 (Index 4 trong XML: `rrrGGGrr`)**: Pha đường nhánh cắt ngang (Link 3 rẽ phải `G`, link 4 rẽ trái `G`, link 5 rẽ phải `G`).
-
-### 2.3. Kiểm tra độ bao phủ
-- Cả 8/8 liên kết (100% các hướng) đều được phục vụ ít nhất 1 pha xanh:
-  - Links 0, 1: Xanh ở Pha 0, Pha 1.
-  - Link 2: Xanh ở Pha 0 (nhường đường `g`), Pha 1 (bảo hộ `G`).
-  - Links 3, 5: Xanh ở Pha 0, Pha 2.
-  - Link 4: Xanh ở Pha 2.
-  - Links 6, 7: Xanh ở Pha 0.
+- **Pha 0 (`GGgGrGGG`):** Trục chính hai chiều thông suốt (rẽ trái Link 2 nhường đường `g`).
+- **Pha 1 (`GGGrrrrr`):** Bảo hộ rẽ trái trục chính (Links 0, 1, 2 đều xanh `G`).
+- **Pha 2 (`rrrGGGrr`):** Đường nhánh phục vụ (Links 3, 4, 5 xanh `G`).
+*(Bao phủ 100% cả 8/8 liên kết).*
 
 ---
 
 ## 3. Bản Đồ `cologne1`
 
-### 3.1. Ánh xạ 20 liên kết (Links 0 đến 19)
-- **Bộ điều khiển**: `cluster_357187_359543` (1 bộ điều khiển, 20 links).
-- Gồm hai trục vuông góc: Trục 1 (A: `-32038056#3` đối xứng C: `28198821#3`), Trục 2 (B: `23429231#1` đối xứng D: `27115123#3`).
+- **Bộ điều khiển:** `cluster_357187_359543` (20 liên kết, 8 pha xanh hợp lệ).
+- Gồm hai trục vuông góc: **Trục 1** (Hướng A và C) và **Trục 2** (Hướng B và D).
 
-| Link Index | Làn vào | Làn ra | Hướng | Mô tả chuyển động |
-| :---: | :--- | :--- | :---: | :--- |
-| **0** | `-32038056#3_0` | `32038051#0_0` | `r` (phải) | Trục 1 - Hướng A: Rẽ phải |
-| **1** | `-32038056#3_0` | `-28198821#4_0`| `s` (thẳng) | Trục 1 - Hướng A: Đi thẳng làn ngoài |
-| **2** | `-32038056#3_1` | `-28198821#4_1`| `s` (thẳng) | Trục 1 - Hướng A: Đi thẳng làn trong |
-| **3** | `-32038056#3_1` | `32324544#0_1` | `l` (trái) | Trục 1 - Hướng A: Rẽ trái |
-| **4** | `-32038056#3_1` | `32038056#0_1` | `t` (quay) | Trục 1 - Hướng A: Quay đầu |
-| **5** | `23429231#1_0` | `32038056#0_0` | `r` (phải) | Trục 2 - Hướng B: Rẽ phải |
-| **6** | `23429231#1_0` | `32038051#0_0` | `s` (thẳng) | Trục 2 - Hướng B: Đi thẳng làn ngoài |
-| **7** | `23429231#1_1` | `32038051#0_1` | `s` (thẳng) | Trục 2 - Hướng B: Đi thẳng làn trong |
-| **8** | `23429231#1_1` | `-28198821#4_1`| `l` (trái) | Trục 2 - Hướng B: Rẽ trái |
-| **9** | `23429231#1_1` | `32324544#0_1` | `t` (quay) | Trục 2 - Hướng B: Quay đầu |
-| **10** | `28198821#3_0` | `32324544#0_0` | `r` (phải) | Trục 1 - Hướng C: Rẽ phải |
-| **11** | `28198821#3_0` | `32038056#0_0` | `s` (thẳng) | Trục 1 - Hướng C: Đi thẳng làn ngoài |
-| **12** | `28198821#3_1` | `32038056#0_1` | `s` (thẳng) | Trục 1 - Hướng C: Đi thẳng làn trong |
-| **13** | `28198821#3_1` | `32038051#0_1` | `l` (trái) | Trục 1 - Hướng C: Rẽ trái |
-| **14** | `28198821#3_1` | `-28198821#4_1`| `t` (quay) | Trục 1 - Hướng C: Quay đầu |
-| **15** | `27115123#3_0` | `-28198821#4_0`| `r` (phải) | Trục 2 - Hướng D: Rẽ phải |
-| **16** | `27115123#3_0` | `32324544#0_0` | `s` (thẳng) | Trục 2 - Hướng D: Đi thẳng làn ngoài |
-| **17** | `27115123#3_1` | `32324544#0_1` | `s` (thẳng) | Trục 2 - Hướng D: Đi thẳng làn trong |
-| **18** | `27115123#3_1` | `32038056#0_1` | `l` (trái) | Trục 2 - Hướng D: Rẽ trái |
-| **19** | `27115123#3_1` | `32038051#0_1` | `t` (quay) | Trục 2 - Hướng D: Quay đầu |
+### 2.1. Phân bổ 20 liên kết theo hướng
+- **Links 0–4 (Hướng A):** Rẽ phải (0), Đi thẳng (1, 2), Rẽ trái (3), Quay đầu (4).
+- **Links 5–9 (Hướng B):** Rẽ phải (5), Đi thẳng (6, 7), Rẽ trái (8), Quay đầu (9).
+- **Links 10–14 (Hướng C):** Rẽ phải (10), Đi thẳng (11, 12), Rẽ trái (13), Quay đầu (14).
+- **Links 15–19 (Hướng D):** Rẽ phải (15), Đi thẳng (16, 17), Rẽ trái (18), Quay đầu (19).
 
-### 3.2. Tập pha xanh hợp lệ
-Trong `cologne1.net.xml`, cả 8 pha gốc đều là các pha xanh hợp lệ (không có chứa đèn vàng `y`):
-- **Pha 0 (`srrrrrrrrrGGGGGrrrrr`)**: Trục 1 hướng C xanh toàn bộ, hướng A rẽ phải `s`.
-- **Pha 1 (`GGGGGrrrrrsrrrrrrrrr`)**: Trục 1 hướng A xanh toàn bộ, hướng C rẽ phải `s`.
-- **Pha 2 (`GGGggrrrrrGGGggrrrrr`)**: Trục 1 hai chiều thông suốt (A và C cùng đi thẳng/rẽ phải ưu tiên `G`, rẽ trái/quay đầu nhường đường `g`).
-- **Pha 3 (`rrrGGrrrrrrrrGGrrrrr`)**: Trục 1 bảo hộ rẽ trái hai chiều (A và C rẽ trái `G`).
-- **Pha 4 (`rrrrrGGGGGrrrrrsrrrr`)**: Trục 2 hướng B xanh toàn bộ, hướng D rẽ phải `s`.
-- **Pha 5 (`rrrrrsrrrrrrrrrGGGGG`)**: Trục 2 hướng D xanh toàn bộ, hướng B rẽ phải `s`.
-- **Pha 6 (`rrrrrGGGggrrrrrGGGgg`)**: Trục 2 hai chiều thông suốt (B và D cùng đi thẳng/rẽ phải ưu tiên `G`, rẽ trái/quay đầu nhường đường `g`).
-- **Pha 7 (`rrrrrrrrGGrrrrrrrrGG`)**: Trục 2 bảo hộ rẽ trái hai chiều (B và D rẽ trái `G`).
-
-### 3.3. Kiểm tra độ bao phủ
-- Toàn bộ 20/20 liên kết (100% các hướng) đều được phục vụ trong các pha trên.
-- Ngay cả khi xét tập thu gọn 2 pha chính (Pha 2 và Pha 6), toàn bộ 20 liên kết cũng đã được bao phủ đầy đủ.
+### 2.2. Tập 8 pha xanh hợp lệ
+- **Pha 0 (`srrrrrrrrrGGGGGrrrrr`):** Trục 1 - Hướng C xanh toàn bộ; hướng A rẽ phải `s`.
+- **Pha 1 (`GGGGGrrrrrsrrrrrrrrr`):** Trục 1 - Hướng A xanh toàn bộ; hướng C rẽ phải `s`.
+- **Pha 2 (`GGGggrrrrrGGGggrrrrr`):** Trục 1 - Hai chiều thông suốt (A và C cùng đi thẳng `G`, rẽ trái `g`).
+- **Pha 3 (`rrrGGrrrrrrrrGGrrrrr`):** Trục 1 - Bảo hộ rẽ trái hai chiều (A và C rẽ trái `G`).
+- **Pha 4 (`rrrrrGGGGGrrrrrsrrrr`):** Trục 2 - Hướng B xanh toàn bộ; hướng D rẽ phải `s`.
+- **Pha 5 (`rrrrrsrrrrrrrrrGGGGG`):** Trục 2 - Hướng D xanh toàn bộ; hướng B rẽ phải `s`.
+- **Pha 6 (`rrrrrGGGggrrrrrGGGgg`):** Trục 2 - Hai chiều thông suốt (B và D cùng đi thẳng `G`, rẽ trái `g`).
+- **Pha 7 (`rrrrrrrrGGrrrrrrrrGG`):** Trục 2 - Bảo hộ rẽ trái hai chiều (B và D rẽ trái `G`).
+*(Bao phủ 100% cả 20/20 liên kết).*
 
 ---
 
-## 4. Quy Tắc Chuyển Pha Dọn Nút Giao An Toàn (Clearance Rules)
+## 4. Chuỗi Chuyển Pha Dọn Nút An Toàn (Clearance Rules)
 
-### 4.1. Quy tắc cấm chuyển trực tiếp
-Tuyệt đối **không được chuyển trực tiếp giữa hai pha xanh có luồng xung đột**. Khi chuyển từ pha xanh hiện tại $P_{\text{curr}}$ sang pha xanh mục tiêu $P_{\text{target}}$ ($P_{\text{target}} \ne P_{\text{curr}}$):
-
+Tuyệt đối cấm chuyển trực tiếp giữa hai pha xanh có xung đột:
 $$\text{Pha Xanh Hiện Tại} \xrightarrow{t_{\text{yellow}} = 3,0\text{s}} \text{Pha Vàng Dọn Nút} \xrightarrow{t_{\text{all\_red}} = 1,0\text{s}} \text{Pha Đỏ Toàn Phần} \xrightarrow{} \text{Pha Xanh Mục Tiêu}$$
 
-### 4.2. Công thức tạo trạng thái đèn vàng
-Tại vị trí ký tự thứ $i$ của chuỗi tín hiệu:
-$$\text{State}_{\text{yellow}}[i] = \begin{cases}
-c, & \text{nếu } c \in \{\text{'G'}, \text{'g'}, \text{'s'}\} \text{ và } \text{State}_{\text{target}}[i] \in \{\text{'G'}, \text{'g'}, \text{'s'}\} \text{ (tiếp tục xanh)} \\
-\text{'y'}, & \text{nếu } c \in \{\text{'G'}, \text{'g'}, \text{'s'}\} \text{ và } \text{State}_{\text{target}}[i] = \text{'r'} \text{ (sắp đỏ)} \\
-\text{'r'}, & \text{nếu } c = \text{'r'} \text{ (tiếp tục đỏ)}
-\end{cases}$$
-
-### 4.3. Công thức tạo trạng thái đỏ toàn phần (All-Red)
-Toàn bộ chuỗi tín hiệu hiển thị `'r'`:
-$$\text{State}_{\text{all\_red}} = \text{'r'} \times N_{\text{links}}$$
+1. **Trạng thái đèn vàng (`build_yellow_state`):**
+   - Vị trí $i$ đang xanh (`G/g/s`) mà pha mục tiêu chuyển sang đỏ (`r`) $\rightarrow$ chuyển thành `'y'`.
+   - Vị trí $i$ tiếp tục xanh ở pha mục tiêu $\rightarrow$ giữ nguyên ký tự xanh.
+   - Vị trí $i$ đang đỏ (`r`) $\rightarrow$ giữ `'r'`.
+2. **Trạng thái đỏ toàn phần (`build_all_red_state`):**
+   - Vị trí $i$ tiếp tục xanh ở pha mục tiêu $\rightarrow$ giữ nguyên ký tự xanh.
+   - Toàn bộ các vị trí còn lại $\rightarrow$ chuyển thành `'r'` để giải phóng giao lộ.
 
 ---
 
 ## 5. Ràng Buộc Thời Gian & Quy Tắc Chọn Pha
 
-| Thuật toán | Giới hạn xanh tối thiểu ($t_{\text{min}}$) | Giới hạn xanh tối đa ($t_{\text{max}}$) | Thời gian xanh cố định ($t_{\text{green}}$) | Thời gian vàng ($t_{\text{yellow}}$) | Thời gian đỏ toàn phần ($t_{\text{all\_red}}$) | Giới hạn chống đói pha ($t_{\text{max\_red}}$) |
+| Thuật toán | Xanh tối thiểu ($t_{\text{min}}$) | Xanh tối đa ($t_{\text{max}}$) | Xanh cố định ($t_{\text{green}}$) | Đèn vàng ($t_{\text{yellow}}$) | Đỏ dọn nút ($t_{\text{all\_red}}$) | Giới hạn chống đói ($t_{\text{max\_red}}$) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Fixed-Time (FT)** | Không áp dụng | Không áp dụng | Đúng $30,0\text{ s}$ | $3,0\text{ s}$ | $1,0\text{ s}$ | Không áp dụng |
-| **Max-Pressure (MP)** | $20,0\text{ s}$ | $45,0\text{ s}$ | Thích ứng động | $3,0\text{ s}$ | $1,0\text{ s}$ | $90,0\text{ s}$ |
-| **Tabular Q-Learning**| $20,0\text{ s}$ | $45,0\text{ s}$ | Thích ứng động | $3,0\text{ s}$ | $1,0\text{ s}$ | $90,0\text{ s}$ |
+| **Fixed-Time (FT)** | — | — | Đúng $30,0\text{ s}$ | $3,0\text{ s}$ | $1,0\text{ s}$ | — |
+| **Max-Pressure (MP)**| $20,0\text{ s}$ | $45,0\text{ s}$ | Động | $3,0\text{ s}$ | $1,0\text{ s}$ | $90,0\text{ s}$ (khi $q > 0$) |
+| **Q-Learning (QL)** | $20,0\text{ s}$ | $45,0\text{ s}$ | Động | $3,0\text{ s}$ | $1,0\text{ s}$ | $90,0\text{ s}$ (Action Masking) |
+| **Deep Q-Network (DQN)** | $20,0\text{ s}$ | $45,0\text{ s}$ | Động | $3,0\text{ s}$ | $1,0\text{ s}$ | $90,0\text{ s}$ (Action Masking) |
 
-### 5.1. Quy tắc hòa (Tie-Breaking Rule)
-Khi có 2 hoặc nhiều pha đối thủ có cùng giá trị áp suất tối đa (MP) hoặc cùng giá trị Q tối đa (Q-learning):
-1. **Ưu tiên 1**: Nếu pha xanh hiện tại cũng nằm trong tập các pha đạt giá trị tối đa $\rightarrow$ Giữ nguyên pha hiện tại (tránh chuyển pha lãng phí thời gian dọn nút giao).
-2. **Ưu tiên 2**: Chọn pha đối thủ có thời gian chờ đèn đỏ (`phase_red_time`) lớn nhất (ưu tiên giải phóng hướng chờ lâu hơn).
-3. **Ưu tiên 3**: Nếu thời gian chờ đỏ bằng nhau, chọn pha có chỉ số index nhỏ hơn (đảm bảo tính tiền định và tái lập 100%).
+### Quy tắc phá vỡ thế hòa (Tie-Breaking)
+Khi nhiều pha có cùng giá trị đánh giá cực đại:
+1. Giữ pha hiện tại nếu nằm trong tập tốt nhất (tiết kiệm thời gian dọn nút 4s).
+2. Chọn pha có thời gian chờ đỏ (`phase_red_time`) lớn nhất.
+3. Nếu bằng nhau, chọn pha có chỉ số index nhỏ nhất (tiền định 100%).
 
 ---
 
-## 6. Hướng Dẫn Kiểm Tra Trực Quan Bằng SUMO-GUI
+## 6. Lệnh Kiểm Tra Trực Quan Với SUMO-GUI
 
-1. Khởi động SUMO-GUI:
-   ```powershell
-   & "C:\Program Files (x86)\SUMO\bin\sumo-gui.EXE" -c data/cologne1/cologne1.sumocfg
-   ```
-2. Phóng to nút giao `cluster_357187_359543`.
-3. Nhấp chuột phải vào nút giao $\rightarrow$ Chọn **Show Phases** hoặc mở cửa sổ theo dõi tín hiệu.
-4. Đặt độ trễ mô phỏng (Delay) khoảng $50\text{ms} - 100\text{ms}$ tại thanh trượt trên thanh công cụ.
-5. Nhấn nút **Play** (tam giác xanh) để quan sát luồng xe và trạng thái đèn.
+```powershell
+& "C:\Program Files (x86)\SUMO\bin\sumo-gui.EXE" -c data/cologne1/cologne1.sumocfg
+```
+*(Chỉnh thanh trượt Delay 50–100ms và nhấn Play để quan sát chuyển pha an toàn).*

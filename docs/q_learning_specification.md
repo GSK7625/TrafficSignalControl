@@ -1,79 +1,80 @@
-# Đặc Tả Kỹ Thuật Tabular Q-Learning Cho Điều Khiển Đèn Giao Thông (Q-Learning Specification)
+# Đặc Tả Thuật Toán Học Tăng Cường (Q-Learning & DQN Specification)
 
-Tài liệu này xác định đầy đủ không gian trạng thái, hành động, hàm phần thưởng, quy tắc cập nhật Bellman, và quy trình thực nghiệm cho thuật toán **Tabular Q-Learning** trên hai bản đồ `cologne1` và `ingolstadt1`.
+Tài liệu xác định không gian trạng thái, không gian hành động chọn pha trực tiếp, hàm phần thưởng **Delay-Aware Pressure (DAP)**, quy tắc cập nhật Bellman bán Markov (SMDP) và cơ chế Action Masking cho hai thuật toán học tăng cường (**Tabular Q-Learning** và **Deep Q-Network**).
 
 ---
 
-## 1. Không Gian Trạng Thái Rời Rạc Thu Gọn (Compact State Space)
+## 1. Không Gian Trạng Thái (State Space)
 
-Trạng thái tại thời điểm ra quyết định $s$ là một bộ tuple 4 phần tử:
+### 1.1. Tabular Q-Learning (Rời rạc thu gọn: 4 phần tử)
 $$s = (p_{\text{curr}}, t_{\text{bin}}, q_{\text{serving}}, q_{\text{competing}})$$
+1. $p_{\text{curr}}$: Chỉ số pha xanh hiện hành ($0 \dots N-1$).
+2. $t_{\text{bin}} \in \{0, 1\}$: Thời gian xanh đã phục vụ ($0$: $< 35$s; $1$: $\ge 35$s).
+3. $q_{\text{serving}} \in \{0, 1\}$: Hàng đợi pha hiện tại ($0$: $< 3$ xe; $1$: $\ge 3$ xe).
+4. $q_{\text{competing}} \in \{0, 1\}$: Hàng đợi lớn nhất của các pha đối thủ ($0$: $< 6$ xe; $1$: $\ge 6$ xe).
 
-1. **$p_{\text{curr}}$ (Pha xanh hiện tại)**:
-   - `ingolstadt1`: $p_{\text{curr}} \in \{0, 1, 2\}$ (3 giá trị).
-   - `cologne1`: $p_{\text{curr}} \in \{0, 1, 2, 3, 4, 5, 6, 7\}$ (8 giá trị).
-2. **$t_{\text{bin}}$ (Mức thời gian xanh đã phục vụ)**:
-   - $t_{\text{bin}} = 0$: $20\text{s} \le t_{\text{in\_phase}} < 35\text{s}$ (vừa qua thời gian xanh tối thiểu).
-   - $t_{\text{bin}} = 1$: $35\text{s} \le t_{\text{in\_phase}} < 45\text{s}$ (sắp chạm ngưỡng xanh tối đa).
-3. **$q_{\text{serving}}$ (Mức hàng đợi của pha hiện tại)**:
-   - $q_{\text{serving}} = 0$: $q_{\text{curr}} < 3\text{ xe}$ (ít xe dừng).
-   - $q_{\text{serving}} = 1$: $q_{\text{curr}} \ge 3\text{ xe}$ (còn nhiều xe dừng chờ).
-4. **$q_{\text{competing}}$ (Mức hàng đợi của các pha đối thủ)**:
-   - $q_{\text{competing}} = 0$: $\max_{p \ne p_{\text{curr}}} q_p < 6\text{ xe}$ (nhánh đối thủ thông thoáng).
-   - $q_{\text{competing}} = 1$: $\max_{p \ne p_{\text{curr}}} q_p \ge 6\text{ xe}$ (nhánh đối thủ đang dồn ứ).
+- **Q-Table Size:** 
+  - `ingolstadt1`: $|S| = 3 \times 2 \times 2 \times 2 = 24$ states $\times 3$ actions = **72 giá trị Q**.
+  - `cologne1`: $|S| = 8 \times 2 \times 2 \times 2 = 64$ states $\times 8$ actions = **512 giá trị Q**.
 
-### Kích thước Q-Table:
-- `ingolstadt1`: $|S| = 3 \times 2 \times 2 \times 2 = \mathbf{24}\text{ states} \implies 24 \times 2 = \mathbf{48}\text{ Q-values}$.
-- `cologne1`: $|S| = 8 \times 2 \times 2 \times 2 = \mathbf{64}\text{ states} \implies 64 \times 2 = \mathbf{128}\text{ Q-values}$.
+### 1.2. Deep Q-Network (Liên tục chuẩn hóa $[0, 1]$)
+Vector trạng thái đầu vào mạng MLP gồm:
+- One-hot encoding của pha hiện tại ($N$ phần tử).
+- Áp suất chuyển động chuẩn hóa của từng movement: $w_m / 20.0$.
+- Hàng đợi chuẩn hóa của từng pha: $q_p / 20.0$.
 
 ---
 
-## 2. Không Gian Hành Động (Action Space)
+## 2. Không Gian Hành Động Chọn Pha Trực Tiếp (Action Space)
 
-Tập hành động nhị phân $A = \{0, 1\}$:
-- **$a = 0$ (`KEEP`)**: Giữ nguyên pha xanh hiện tại thêm một khoảng quyết định $\Delta t_{\text{decision}} = 5\text{s}$.
-- **$a = 1$ (`SWITCH`)**: Yêu cầu kết thúc pha xanh hiện tại và chuyển tuần tự sang pha xanh kế tiếp $(p_{\text{curr}} + 1) \pmod{N_{\text{phases}}}$.
-  - Kích hoạt chuỗi dọn nút giao an toàn: $3\text{s}$ vàng $\rightarrow$ $1\text{s}$ đỏ toàn phần $\rightarrow$ bật pha xanh mới.
-
----
-
-## 3. Hàm Phần Thưởng (Reward Function)
-
-Phần thưởng $r$ là giá trị âm của hàng đợi trung bình trên tất cả các làn vào trong khoảng thời gian vừa qua:
-$$r = - \bar{Q}_{\text{interval}} = - \frac{1}{K} \sum_{k=1}^K \sum_{l \in L_{\text{incoming}}} \text{halting\_vehicles}(l, k)$$
-
-- **Đơn vị**: `- số xe` (giá trị thực dao động trong khoảng $[-50, 0]$).
-- Tối đa hóa reward $r$ đồng nghĩa với việc tối thiểu hóa tổng số xe dừng chờ, kéo giảm thời gian chờ của mạng lưới.
+Không gian hành động là tập chỉ số các pha xanh hợp lệ:
+$$A = \{0, 1, \dots, N_{\text{phases}} - 1\}$$
+- **$a = p_{\text{curr}}$ (`KEEP`):** Tiếp tục duy trì pha xanh hiện tại thêm chu kỳ quyết định $\Delta t_{\text{decision}} = 5,0$s.
+- **$a \ne p_{\text{curr}}$ (`SWITCH`):** Chuyển trực tiếp sang pha mục tiêu $a$ qua chuỗi an toàn 3s vàng + 1s đỏ toàn phần + tối thiểu 20s xanh ban đầu.
 
 ---
 
-## 4. Công Thức Cập Nhật Bellman & $\epsilon$-Greedy
+## 3. Hàm Phần Thưởng Delay-Aware Pressure (DAP-Reward)
 
-$$Q(s, a) \leftarrow Q(s, a) + \alpha \left[ r + \gamma \max_{a' \in A_{\text{valid}}(s')} Q(s', a') - Q(s, a) \right]$$
+Phần thưởng tức thời tại mỗi giây $k$:
+$$r_k = - \left( \frac{P_k}{\Delta t_{\text{decision}}} + \beta \cdot \frac{W_k}{\Delta t_{\text{decision}} \cdot N_{\text{lanes}}} \right) - c_{\text{switch}} \cdot \mathbb{I}(a \ne p_{\text{curr}})$$
 
-- $\alpha = 0,1$ (Tốc độ học - Learning Rate).
-- $\gamma = 0,95$ (Hệ số chiết khấu - Discount Factor).
-- Chính sách $\epsilon$-greedy:
-  - Xác suất $\epsilon$: Chọn ngẫu nhiên $a \in A_{\text{valid}}(s)$.
-  - Xác suất $1 - \epsilon$: Chọn $a = \arg\max_{a \in A_{\text{valid}}(s)} Q(s, a)$.
-  - Lịch giảm $\epsilon$: $\epsilon_e = \max(0,05, 1,0 \times 0,90^e)$ qua 30 episodes.
+- **Áp suất phân bổ bậc kết nối ($P_k$):** $P_k = \sum_{m} \left| \frac{x_u}{\text{deg}_u} - \frac{x_d}{\text{deg}_d} \right|$ (lấy cảm hứng từ PressLight; dùng trị tuyệt đối ngăn triệt tiêu và phạt nghẽn làn ra).
+- **Thời gian chờ thực tế ($W_k$):** Tổng thời gian chờ tích lũy trên các làn vào (TraCI `getWaitingTime`), chuẩn hóa theo $N_{\text{lanes}}$ với $\beta = 0,05$.
+- **Chi phí đổi pha ($c_{\text{switch}}$):** Phạt $1,0$ tại mốc ra quyết định SWITCH để bù đắp 4s tổn thất dọn nút.
 
----
-
-## 5. Xử Lý Ràng Buộc An Toàn & Hành Động Không Hợp Lệ
-
-1. Khi $t_{\text{in\_phase}} < 20\text{s}$: Chỉ cho phép `KEEP` (Action Masking).
-2. Khi $t_{\text{in\_phase}} \ge 45\text{s}$: Chỉ cho phép `SWITCH` (Force Switch).
-3. Khi có pha bị đói đèn đỏ $\ge 90\text{s}$: Bắt buộc `SWITCH`.
-4. Khi tính $\max_{a'} Q(s', a')$: Chỉ lấy max trên tập hành động hợp lệ $A_{\text{valid}}(s')$.
+### Tích lũy phần thưởng SMDP (Intra-Option Discounting)
+$$R_{\text{SMDP}} = \sum_{k=0}^{K-1} \gamma_{\text{step}}^k r_k \quad \text{với } \gamma_{\text{step}} = \gamma^{1 / \Delta t_{\text{decision}}} = 0,95^{1/5} \approx 0,9898$$
 
 ---
 
-## 6. Phân Chia Tập Dữ Liệu & Quy Trình Thực Nghiệm
+## 4. Công Thức Cập Nhật Bellman SMDP & Huấn Luyện
 
-- **Train Seeds**: $[1, 2, 3, \dots, 20]$ (luân phiên 30 episodes).
-- **Validation Seeds**: $[11, 22, 33]$ (đánh giá sau mỗi 5 episodes để chọn checkpoint tốt nhất).
-- **Test Seeds**: $[42, 101, 2024, 3407, 9999]$ (chạy độc lập ở giai đoạn đối chuẩn cuối cùng).
-- **Tiêu chí chọn model**:
-  $$\text{Best Checkpoint} = \arg\min_{\text{checkpoint}} \bar{T}_{\text{wait}}(S_{\text{val}})$$
-- **Thái độ khoa học**: Không khẳng định trước Q-learning sẽ thắng FT hay MP; kết quả sẽ được đối chiếu khách quan bằng số liệu thực nghiệm.
+### 4.1. Tabular Q-Learning
+$$Q(s, a) \leftarrow Q(s, a) + \alpha \left[ R_{\text{SMDP}} + \gamma_{\text{eff}} \max_{a' \in A_{\text{valid}}(s')} Q(s', a') - Q(s, a) \right]$$
+- $\alpha = 0,1$ (Tốc độ học).
+- Chiết khấu hiệu dụng: $\gamma_{\text{eff}} = \gamma^{\Delta t / 5}$ (`KEEP` 5s $\implies \gamma_{\text{eff}} = 0,95$; `SWITCH` 24s $\implies \gamma_{\text{eff}} \approx 0,782$).
+- $\epsilon$-Greedy: $\epsilon_e = \max(0,05, 1,0 \times 0,90^e)$ qua các episodes.
+
+### 4.2. Deep Q-Network (DQN)
+- **Kiến trúc MLP:** `state_dim` $\rightarrow$ `Linear(64)` $\rightarrow$ `ReLU` $\rightarrow$ `Linear(64)` $\rightarrow$ `ReLU` $\rightarrow$ `Linear(action_dim)`.
+- **Hàm mất mát:** Smooth L1 (Huber Loss) tối ưu bằng Adam ($\text{lr} = 10^{-3}$).
+- **Kỹ thuật ổn định:** Replay Buffer ($10.000$ transitions), mini-batch $64$, đồng bộ Target Network định kỳ mỗi $100$ bước cập nhật.
+
+---
+
+## 5. Ràng Buộc An Toàn & Action Masking
+
+Mọi quyết định chọn pha phải tuân thủ tập hành động hợp lệ $A_{\text{valid}}$:
+1. **$t_{\text{in\_phase}} < 20$s (`min_green`):** Bắt buộc giữ pha $A_{\text{valid}} = \{p_{\text{curr}}\}$.
+2. **$t_{\text{in\_phase}} \ge 45$s (`max_green`):** Bắt buộc đổi pha $A_{\text{valid}} = \{p \mid p \ne p_{\text{curr}}\}$.
+3. **Chống đói pha linh hoạt (`max_red = 90`s):** Bộ đếm thời gian đỏ chỉ tích lũy khi làn đường pha đó có xe chờ ($q > 0$). Khi $t_{\text{red}} \ge 90$s, $A_{\text{valid}}$ bị thu hẹp chỉ gồm các pha bị đói.
+4. **Khoảng tự do $[20\text{s}, 45\text{s})$:** Cho phép chọn bất kỳ pha nào $A_{\text{valid}} = \{0, \dots, N-1\}$.
+
+---
+
+## 6. Giao Thức Đánh Giá & Chọn Checkpoint
+
+- **Train Seeds:** $[1, 2, \dots, 20]$ (luân phiên 100 episodes).
+- **Validation Seeds:** $[21, 22, 23]$ (đánh giá định kỳ mỗi 5 episodes để lưu `*_best` checkpoint dựa trên $\bar{T}_{\text{wait}}$ nhỏ nhất).
+- **Test Seeds:** `[42, 101, 2024, 3407, 9999]` (kiểm thử khách quan cuối cùng).

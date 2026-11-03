@@ -83,21 +83,37 @@ class MaxPressureController:
     def num_phases(self) -> int:
         return len(self.green_phases)
 
-    def _get_lane_vehicle_count(self, lane_id: str) -> int:
-        """Lấy số lượng xe trên một làn đường qua hàm tùy biến hoặc TraCI."""
-        if not lane_id:
-            return 0
-        if self._vehicle_count_fn is not None:
-            try:
-                return int(self._vehicle_count_fn(lane_id))
-            except Exception:
-                return 0
+    def _get_backend(self) -> Any:
+        """Lấy backend mô phỏng hiện hành (libsumo hoặc traci)."""
+        try:
+            import libsumo
+            if libsumo.isLoaded():
+                return libsumo
+        except Exception:
+            pass
         try:
             import traci
             if traci.isLoaded():
-                return int(traci.lane.getLastStepVehicleNumber(lane_id))
+                return traci
         except Exception:
             pass
+        return None
+
+    def _get_lane_vehicle_count(self, lane_id: str) -> int:
+        """Lấy số lượng xe trên một làn đường qua hàm tùy biến hoặc backend mô phỏng (libsumo/traci).
+        
+        Không nuốt ngoại lệ âm thầm khi hàm tùy biến hoặc backend đang kết nối bị lỗi.
+        """
+        if not lane_id:
+            return 0
+        if self._vehicle_count_fn is not None:
+            return int(self._vehicle_count_fn(lane_id))
+
+        backend = self._get_backend()
+        if backend is not None:
+            return int(backend.lane.getLastStepVehicleNumber(lane_id))
+
+        # Trả về 0 chỉ khi không có backend nào đang chạy (ví dụ test offline độc lập)
         return 0
 
     def calculate_phase_pressures(self) -> Dict[int, float]:
@@ -156,9 +172,11 @@ class MaxPressureController:
         alt_phases = [p for p in range(num_p) if p != curr_p]
 
         # 1. Ràng buộc an toàn 1: Chống đói pha (Starvation Watchdog)
+        # Chỉ can thiệp nếu pha đó thực sự có xe đang chờ bị quá max_red
         starved_phases = [
             p for p in alt_phases
             if self.phase_red_timers[p] >= self.max_red - 1e-6
+            and any(self._get_lane_vehicle_count(m.get("from_lane", "")) > 0 for m in self._phase_movements[p])
         ]
         if starved_phases:
             # Chọn pha bị đói có thời gian đỏ lâu nhất, nếu bằng nhau xét áp suất
@@ -204,7 +222,8 @@ class MaxPressureController:
             next_green = self.green_phases[self.next_phase_idx]
             return build_yellow_state(curr_green, next_green)
         if self.is_all_red:
-            return build_all_red_state(curr_green)
+            next_green = self.green_phases[self.next_phase_idx]
+            return build_all_red_state(curr_green, next_green)
         return curr_green
 
     def step(self, step_duration: float = 1.0) -> Tuple[str, bool, Optional[str], Optional[Dict[str, Any]]]:
@@ -217,12 +236,19 @@ class MaxPressureController:
         phase_changed: bool = False
         decision_info: Optional[Dict[str, Any]] = None
 
-        # Cập nhật bộ đếm thời gian chờ đèn đỏ của các pha
+        # Cập nhật bộ đếm thời gian chờ đèn đỏ của các pha (chỉ tích lũy khi có xe trên làn vào)
         for p in range(self.num_phases):
             if p == self.current_phase_idx and not (self.is_yellow or self.is_all_red):
                 self.phase_red_timers[p] = 0.0
             else:
-                self.phase_red_timers[p] += step_duration
+                has_vehicles = any(
+                    self._get_lane_vehicle_count(m.get("from_lane", "")) > 0
+                    for m in self._phase_movements[p]
+                )
+                if has_vehicles:
+                    self.phase_red_timers[p] += step_duration
+                else:
+                    self.phase_red_timers[p] = 0.0
 
         # 1. Đang trong pha đèn vàng dọn nút giao
         if self.is_yellow:

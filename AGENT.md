@@ -63,13 +63,13 @@ Mỗi khi hoàn thành công việc, trình bày phản hồi theo 5 phần:
 
 ## 7. Phạm Vi Dự Án TrafficSignalControl
 
-Dự án so sánh các thuật toán điều khiển đèn giao thông bằng SUMO để học và báo cáo.
+Dự án so sánh các thuật toán điều khiển đèn giao thông bằng SUMO để học và báo cáo:
 
-- **Thuật toán**: Fixed-Time (FT), Max-Pressure (MP) và Q-learning dạng bảng.
-- **Hai map**: `data/cologne1` và `data/ingolstadt1`, mỗi map có một bộ điều khiển đèn.
-- **Nhu cầu xe**: Chỉ dùng nhu cầu xe có sẵn; chưa tạo thêm kịch bản lưu lượng.
-- **Năm metrics**: Average Waiting Time, Travel Time, Queue Length, Time Loss và Throughput.
-- **Fixed-Time**: Dự kiến giữ mỗi pha xanh đúng 30 giây; thời gian vàng và đỏ toàn phần tính riêng, không cộng vào 30 giây xanh.
+- **Thuật toán**: Fixed-Time (FT), Max-Pressure (MP), Tabular Q-Learning (QL), và Deep Q-Network (DQN).
+- **Hai bản đồ**: `data/cologne1` (8 pha) và `data/ingolstadt1` (3 pha).
+- **Nhu cầu xe**: Dùng nhu cầu xe có sẵn từ tập dữ liệu chuẩn RESCO.
+- **Năm chỉ số (Metrics)**: Average Waiting Time, Travel Time, Time Loss, Queue Length (Mean & Max), và Throughput.
+- **An toàn chuyển pha**: Dùng chung thời gian dọn nút vàng 3s + đỏ toàn phần 1s cho tất cả thuật toán.
 
 ## 8. Quy Tắc Làm Việc Theo Giai Đoạn
 

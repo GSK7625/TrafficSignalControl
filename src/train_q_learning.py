@@ -6,6 +6,7 @@ luân phiên tập Train Seeds, đánh giá Validation định kỳ và lưu che
 
 import json
 import os
+import random
 import sys
 import time
 from typing import Any, Dict, List, Optional
@@ -14,8 +15,9 @@ from src.controllers.q_learning import QLearningController
 from src.data_inspector import read_scenario
 from src.simulation_runner import run_simulation
 
+# Tập hạt giống huấn luyện (1 -> 20), validation (21 -> 23) và test [42, 101, 2024, 3407, 9999] hoàn toàn tách biệt
 TRAIN_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-VAL_SEEDS = [11, 22, 33]
+VAL_SEEDS = [21, 22, 23]
 
 
 def evaluate_on_validation(
@@ -37,6 +39,7 @@ def evaluate_on_validation(
 
     try:
         for seed in val_seeds:
+            random.seed(seed)
             controller.reset()
             # Chạy đánh giá không ghi đè thư mục chính
             val_out_dir = os.path.join("results", "temp_val", f"{scenario_name}_seed{seed}")
@@ -75,7 +78,7 @@ def evaluate_on_validation(
 
 def train_q_learning(
     scenario_name: str,
-    total_episodes: int = 30,
+    total_episodes: int = 100,
     eval_interval: int = 5,
     alpha: float = 0.1,
     gamma: float = 0.95,
@@ -111,6 +114,7 @@ def train_q_learning(
         epsilon=epsilon_start,
         learning_enabled=True,
         tls_id=scenario["tls_id"],
+        include_comp_phase_id=True,
     )
 
     training_logs: List[Dict[str, Any]] = []
@@ -127,8 +131,9 @@ def train_q_learning(
         controller.epsilon = current_eps
         controller.learning_enabled = True
 
-        # Chọn seed luân phiên từ danh sách train seeds
+        # Chọn seed luân phiên từ danh sách train seeds và đặt seed ngẫu nhiên cho Python
         train_seed = train_seeds[(ep - 1) % len(train_seeds)]
+        random.seed(train_seed)
         controller.reset()
 
         ep_out_dir = os.path.join("results", "temp_train", f"{scenario_name}_ep{ep}")
@@ -241,7 +246,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", type=str, default="ingolstadt1", choices=["cologne1", "ingolstadt1"])
-    parser.add_argument("--episodes", type=int, default=30)
+    parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--eval-interval", type=int, default=5)
     args = parser.parse_args()
 
