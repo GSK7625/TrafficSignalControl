@@ -25,3 +25,7 @@ __pycache__/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Generated simulation results and logs
+results/
+*.log
